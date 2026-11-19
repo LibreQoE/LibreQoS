@@ -15,6 +15,8 @@ import {
     shapedDeviceRowForId,
 } from "./config/shaped_device_identity.mjs";
 import { parseIpInput } from "./config/shaped_device_wire.mjs";
+import {t} from "./i18n/index.js";
+import {escapeAttr} from "./i18n/escape.mjs";
 
 let current_rows = [];
 let network_json = null;
@@ -31,6 +33,7 @@ let topology_editor_locked = false;
 let topology_editor_lock_message = "";
 
 function setModalReadOnly(readOnly) {
+    // translatable: false — "#sdEditForm input, #sdEditForm textarea, #sdEditForm select" is a DOM selector, not a label
     $("#sdEditForm input, #sdEditForm textarea, #sdEditForm select").prop("disabled", readOnly);
     $("#sdModalSave").prop("disabled", readOnly || modal_busy);
 }
@@ -50,14 +53,17 @@ function applyEditorLockState() {
 }
 
 function actionButtonAttrs() {
+    // translatable: false — "disabled aria-disabled='true'" is an HTML attribute fragment, not a label
     return topology_editor_locked ? " disabled aria-disabled='true'" : "";
 }
 
 function defaultDevice() {
     return {
         circuit_id: "new_circuit",
+        // translatable: false — "new circuit" is a default field value stored in ShapedDevices, not UI chrome
         circuit_name: "new circuit",
         device_id: "new_device",
+        // translatable: false — "new device" is a default field value stored in ShapedDevices, not UI chrome
         device_name: "new device",
         parent_node: "",
         mac: "",
@@ -209,8 +215,8 @@ function parseSqmOverride(raw) {
 
 function formatSqmDisplay(raw) {
     const parsed = parseSqmOverride(raw);
-    const down = parsed.down || "default";
-    const up = parsed.up || "default";
+    const down = parsed.down || t("config.devices.sqm_cell_default");
+    const up = parsed.up || t("config.devices.sqm_cell_default");
     return (
         "<div class='small'>" +
         "<div><span class='text-body-secondary'><i class='fa fa-arrow-down' aria-hidden='true'></i></span> " +
@@ -224,7 +230,7 @@ function formatSqmDisplay(raw) {
 }
 
 function buildParentNodeOptions(selectedNode) {
-    let html = "<option value=''>-- none --</option>";
+    let html = `<option value=''>${escapeHtml(t("config.devices.parent_none"))}</option>`;
     if (!network_json || typeof network_json !== "object") return html;
 
     function iterate(data, level) {
@@ -259,7 +265,9 @@ function currentQuery() {
 
 function renderLoading() {
     $("#sdTableContainer").html(
-        "<div class='text-center py-5'><div class='spinner-border' role='status'><span class='visually-hidden'>Loading...</span></div></div>",
+        "<div class='text-center py-5'><div class='spinner-border' role='status'><span class='visually-hidden'>" +
+        escapeHtml(t("common.state.loading")) +
+        "</span></div></div>",
     );
 }
 
@@ -292,7 +300,7 @@ function requestPage() {
         },
         () => {
             $("#sdTableContainer").html(
-                "<div class='alert alert-danger mb-0'>Failed to load shaped devices.</div>",
+                "<div class='alert alert-danger mb-0'>" + escapeHtml(t("config.devices.load_failed")) + "</div>",
             );
             $("#btnAddDevice").prop("disabled", topology_editor_locked);
             $("#btnSaveDevices").prop("disabled", false);
@@ -317,11 +325,11 @@ function renderSummary() {
     const end = total_rows === 0 ? 0 : page * page_size + current_rows.length;
     let text = "";
     if (total_rows === 0) {
-        text = "No devices to display";
+        text = t("config.devices.empty");
     } else if (search_term.trim().length > 0) {
-        text = `Showing ${start}-${end} of ${total_rows} matching devices`;
+        text = t("config.devices.showing_matching", {start, end, total: total_rows});
     } else {
-        text = `Showing ${start}-${end} of ${total_rows} devices across ${total_circuits} circuits`;
+        text = t("config.devices.showing_all", {start, end, total: total_rows, circuits: total_circuits});
     }
     $("#sdSummary").text(text);
 }
@@ -329,7 +337,7 @@ function renderSummary() {
 function renderTable() {
     const container = $("#sdTableContainer");
     if (current_rows.length === 0) {
-        container.html("<div class='alert alert-info mb-0'>No devices match the current search.</div>");
+        container.html("<div class='alert alert-info mb-0'>" + escapeHtml(t("config.devices.no_matches")) + "</div>");
         return;
     }
 
@@ -337,18 +345,18 @@ function renderTable() {
         "<table id='shapedDeviceTable' class='table table-striped table-hover table-sm align-middle small mb-0'>";
     html += "<thead class='table-dark sticky-top' style='top: 0; z-index: 2;'>";
     html += "<tr>";
-    html += "<th class='text-nowrap'>Actions</th>";
-    html += "<th class='text-nowrap'>Circuit ID</th>";
-    html += "<th>Circuit Name</th>";
-    html += "<th class='text-nowrap'>Device ID</th>";
-    html += "<th>Device Name</th>";
-    html += "<th>Parent Node</th>";
-    html += "<th class='text-nowrap'>MAC or RADIUS Username</th>";
-    html += "<th>IP Addresses</th>";
-    html += "<th class='text-nowrap'>Min Mbps</th>";
-    html += "<th class='text-nowrap'>Max Mbps</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("common.table.actions")) + "</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("config.devices.circuit_id")) + "</th>";
+    html += "<th>" + escapeHtml(t("config.devices.circuit_name")) + "</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("config.devices.device_id")) + "</th>";
+    html += "<th>" + escapeHtml(t("config.devices.device_name")) + "</th>";
+    html += "<th>" + escapeHtml(t("config.devices.parent_node")) + "</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("config.devices.mac_or_username")) + "</th>";
+    html += "<th>" + escapeHtml(t("config.devices.ip_addresses")) + "</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("config.devices.min_mbps")) + "</th>";
+    html += "<th class='text-nowrap'>" + escapeHtml(t("config.devices.max_mbps")) + "</th>";
     html += "<th class='text-nowrap'>SQM</th>";
-    html += "<th>Comment</th>";
+    html += "<th>" + escapeHtml(t("config.devices.comment")) + "</th>";
     html += "</tr>";
     html += "</thead><tbody>";
 
@@ -356,16 +364,14 @@ function renderTable() {
         const comment = row.comment ? String(row.comment) : "";
         const deviceId = escapeHtml(row.device_id || "");
         const actionAttrs = actionButtonAttrs();
+        const editLabel = escapeAttr(t("config.devices.edit_action"));
+        const deleteLabel = escapeAttr(t("config.devices.delete_action"));
 
         html += "<tr data-device-id='" + deviceId + "'>";
         html +=
             "<td class='text-nowrap'>" +
-            "<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-device-id='" +
-            deviceId +
-            "' title='Edit device' aria-label='Edit device'" + actionAttrs + "><i class='fa fa-edit' aria-hidden='true'></i></button>" +
-            "<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-device-id='" +
-            deviceId +
-            "' title='Delete device' aria-label='Delete device'" + actionAttrs + "><i class='fa fa-trash' aria-hidden='true'></i></button>" +
+            `<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-device-id='${deviceId}' title='${editLabel}' aria-label='${editLabel}'${actionAttrs}><i class='fa fa-edit' aria-hidden='true'></i></button>` +
+            `<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-device-id='${deviceId}' title='${deleteLabel}' aria-label='${deleteLabel}'${actionAttrs}><i class='fa fa-trash' aria-hidden='true'></i></button>` +
             "</td>";
         html += "<td class='text-nowrap'>" + formatIdCell(row.circuit_id, 5) + "</td>";
         html +=
@@ -561,7 +567,7 @@ function openEditModal(deviceId) {
     if (!device) return;
     edit_device_id = device.device_id;
     creating_new = false;
-    $("#sdEditModalLabel").text("Edit Device");
+    $("#sdEditModalLabel").text(t("config.devices.edit_title"));
     populateModal(device);
     showModal();
 }
@@ -570,7 +576,7 @@ function openNewModal() {
     if (topology_editor_locked) return;
     edit_device_id = null;
     creating_new = true;
-    $("#sdEditModalLabel").text("Add Device");
+    $("#sdEditModalLabel").text(t("config.devices.add"));
     populateModal(defaultDevice());
     showModal();
 }
@@ -595,57 +601,61 @@ function validateModalDevice(device) {
     const errors = [];
     const nodes = network_json ? validNodeList(network_json) : [];
 
-    if (!device.circuit_id) errors.push("Circuit ID is required");
-    if (!device.circuit_name) errors.push("Circuit Name is required");
-    if (!device.device_id) errors.push("Device ID is required");
-    if (!device.device_name) errors.push("Device Name is required");
+    if (!device.circuit_id) errors.push(t("config.devices.validation.circuit_id_required"));
+    if (!device.circuit_name) errors.push(t("config.devices.validation.circuit_name_required"));
+    if (!device.device_id) errors.push(t("config.devices.validation.device_id_required"));
+    if (!device.device_name) errors.push(t("config.devices.validation.device_name_required"));
 
     const parentNode = device.parent_node || "";
     if (nodes.length === 0) {
         if (parentNode.length > 0) {
-            errors.push("You have a flat network, so you can't specify a parent node.");
+            errors.push(t("config.devices.validation.flat_no_parent"));
         }
     } else if (parentNode.length > 0 && nodes.indexOf(parentNode) === -1) {
-        errors.push("Parent node does not exist.");
+        errors.push(t("config.devices.validation.parent_missing"));
     }
 
     const ipv4List = Array.isArray(device.ipv4) ? device.ipv4 : [];
     const ipv6List = Array.isArray(device.ipv6) ? device.ipv6 : [];
     if (ipv4List.length === 0 && ipv6List.length === 0) {
-        errors.push("You must specify either an IPv4 or IPv6 (or both) address.");
+        errors.push(t("config.devices.validation.ip_required"));
     }
 
     ipv4List.forEach((tuple) => {
         const formatted = formatIpTuple(tuple, 32);
         if (!formatted || !checkIpv4(formatted)) {
-            errors.push(`${formatted || "IPv4 entry"} is not a valid IPv4 address.`);
+            errors.push(t("config.devices.validation.invalid_ipv4", {
+                entry: formatted || t("config.devices.validation.ipv4_entry"),
+            }));
         }
     });
 
     ipv6List.forEach((tuple) => {
         const formatted = formatIpTuple(tuple, 128);
         if (!formatted || !checkIpv6(formatted)) {
-            errors.push(`${formatted || "IPv6 entry"} is not a valid IPv6 address.`);
+            errors.push(t("config.devices.validation.invalid_ipv6", {
+                entry: formatted || t("config.devices.validation.ipv6_entry"),
+            }));
         }
     });
 
     if (!Number.isFinite(device.download_min_mbps) || device.download_min_mbps < 0.1) {
-        errors.push("Download min must be 0.1 or more.");
+        errors.push(t("config.devices.validation.download_min"));
     }
     if (!Number.isFinite(device.upload_min_mbps) || device.upload_min_mbps < 0.1) {
-        errors.push("Upload min must be 0.1 or more.");
+        errors.push(t("config.devices.validation.upload_min"));
     }
     if (!Number.isFinite(device.download_max_mbps) || device.download_max_mbps < 0.2) {
-        errors.push("Download max must be 0.2 or more.");
+        errors.push(t("config.devices.validation.download_max"));
     }
     if (!Number.isFinite(device.upload_max_mbps) || device.upload_max_mbps < 0.2) {
-        errors.push("Upload max must be 0.2 or more.");
+        errors.push(t("config.devices.validation.upload_max"));
     }
 
     const sqm = device.sqm_override ? parseSqmOverride(device.sqm_override) : { down: "", up: "" };
     const validSqm = (token) => token === "" || token === "cake" || token === "fq_codel" || token === "none";
     if (!validSqm(sqm.down) || !validSqm(sqm.up)) {
-        errors.push("SQM overrides must be blank, cake, fq_codel, or none.");
+        errors.push(t("config.devices.validation.sqm"));
     }
 
     return { valid: errors.length === 0, errors };
@@ -677,28 +687,28 @@ function saveModalChanges() {
             requestPage();
             return;
         }
-        alert((msg && msg.message) ? msg.message : "Unable to save shaped device.");
+        alert((msg && msg.message) ? msg.message : t("config.devices.save_failed"));
     };
 
     if (creating_new) {
         createShapedDevice(device, onComplete, () => {
             setModalBusy(false);
-            alert("Unable to create shaped device.");
+            alert(t("config.devices.create_failed"));
         });
         return;
     }
 
     updateShapedDevice(edit_device_id, device, onComplete, () => {
         setModalBusy(false);
-        alert("Unable to update shaped device.");
+        alert(t("config.devices.update_failed"));
     });
 }
 
 function deleteDevice(deviceId) {
     if (topology_editor_locked) return;
     const device = findCurrentRow(deviceId);
-    const label = device?.device_name || deviceId || "this device";
-    if (!confirm(`Delete ${label}?`)) return;
+    const label = device?.device_name || deviceId || t("config.devices.this_device");
+    if (!confirm(t("common.confirm.delete", {name: label}))) return;
     deleteShapedDevice(
         deviceId,
         (msg) => {
@@ -706,10 +716,10 @@ function deleteDevice(deviceId) {
                 requestPage();
                 return;
             }
-            alert((msg && msg.message) ? msg.message : "Unable to delete shaped device.");
+            alert((msg && msg.message) ? msg.message : t("config.devices.delete_failed"));
         },
         () => {
-            alert("Unable to delete shaped device.");
+            alert(t("config.devices.delete_failed"));
         },
     );
 }
@@ -740,6 +750,7 @@ function start() {
         if (!Number.isNaN(value)) setPageSize(value);
     });
 
+    // translatable: false — "#sdPagination, #sdPaginationTop" is a DOM selector, not a label
     $("#sdPagination, #sdPaginationTop").on("click", "a.page-link", (event) => {
         event.preventDefault();
         const target = parseInt($(event.currentTarget).data("page"), 10);
@@ -784,14 +795,14 @@ function start() {
                 },
                 () => {
                     $("#sdTableContainer").html(
-                        "<div class='alert alert-danger mb-0'>Failed to load network configuration.</div>",
+                        "<div class='alert alert-danger mb-0'>" + escapeHtml(t("config.devices.network_load_failed")) + "</div>",
                     );
                 },
             );
         },
         () => {
             $("#sdTableContainer").html(
-                "<div class='alert alert-danger mb-0'>Failed to load configuration.</div>",
+                "<div class='alert alert-danger mb-0'>" + escapeHtml(t("config.devices.config_load_failed")) + "</div>",
             );
         },
     );

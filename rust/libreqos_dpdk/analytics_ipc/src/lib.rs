@@ -560,7 +560,14 @@ pub struct AnalyticsSnapshot {
 pub struct WorkerUtilRow {
     pub queue_id: u16,
     /// Busy-nanos / interval-nanos x 1e6 (poll-excluded), clamped to 1e6.
+    /// LIFETIME CUMULATIVE: accumulates since process start, so autobalance
+    /// makes it converge across workers — never use it as the live load.
     pub busy_ppm: u64,
+    /// 74t171 FOLLOW-UP: the RECENT (~5 s rolling window) poll-excluded busy
+    /// — the LIVE load signal. `None` on an old producer or before the first
+    /// window sample; consumers prefer it and fall back to `busy_ppm`.
+    #[serde(default)]
+    pub busy_ppm_recent: Option<u64>,
     /// `1_000_000 - busy_ppm`.
     #[serde(default)]
     pub idle_ppm: u64,
@@ -759,6 +766,130 @@ impl<'de> serde::Deserialize<'de> for RttHistogram {
 // lqosd Supervisor's probe policy (cadence, thresholds, MEDIUM-1's
 // busy/timeout-never-restart-worthy distinction) is PRODUCT-side.
 
+/// The bridge's self-classification, carried on [`HealthReport::status`].
+///
+/// Wire form: one lowercase tag — `"starting"` | `"healthy"` | `"degraded"`.
+/// Decoding is deliberately LENIENT: the bridge and lqosd are separate trees
+/// that can drift, and a strict enum would fail the whole `HealthReport` CBOR
+/// decode on a tag this build has not learned yet, turning a live bridge into a
+/// supervision `Down`. [`HealthStatus::Unknown`] therefore keeps the received
+/// text and serializes it back verbatim.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum HealthStatus {
+    /// No worker rollup has merged yet (a fresh boot).
+    Starting,
+    /// Serving: rollups are landing and no degrade condition (see
+    /// [`HealthStatus::Degraded`]) holds.
+    Healthy,
+    /// A worker reports `deadline_aqm` degraded, the classifier is empty, a
+    /// boot-time subsystem degrade latched, or the health ladder folded a
+    /// readiness miss into the same class.
+    Degraded,
+    /// A tag this build does not know, held verbatim (see the type doc).
+    Unknown(String),
+}
+
+impl Default for HealthStatus {
+    /// `Unknown("")`: absent stays absent, mirroring [`TopologyTier`]. A
+    /// `Default`-constructed report has no bridge behind it, so it must not
+    /// assert the transient live state `Starting`.
+    fn default() -> Self {
+        Self::Unknown(String::new())
+    }
+}
+
+impl HealthStatus {
+    /// The wire spelling. An unknown tag returns the received text unchanged,
+    /// so a decode/serialize cycle is lossless.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Starting => "starting",
+            Self::Healthy => "healthy",
+            Self::Degraded => "degraded",
+            Self::Unknown(received) => received,
+        }
+    }
+}
+
+impl From<String> for HealthStatus {
+    fn from(received: String) -> Self {
+        match received.as_str() {
+            "starting" => Self::Starting,
+            "healthy" => Self::Healthy,
+            "degraded" => Self::Degraded,
+            _ => Self::Unknown(received),
+        }
+    }
+}
+
+impl From<HealthStatus> for String {
+    fn from(status: HealthStatus) -> Self {
+        status.as_str().to_string()
+    }
+}
+
+/// The boot topology tier the bridge is shaping from, carried on
+/// [`HealthReport::topology_tier`].
+///
+/// Wire form: `"fresh"` | `"last_known_good"` | `"bootstrap_trunk"` |
+/// `"pass_through"`; the empty string a bridge sends when it latched no tier,
+/// and any unknown tag, are [`TopologyTier::Unknown`], kept verbatim and
+/// decoded leniently for the same reason as [`HealthStatus`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum TopologyTier {
+    /// The placement compiler produced this boot's tree from scratch.
+    Fresh,
+    /// The whole-tree import failed; the last verified tree is shaping.
+    LastKnownGood,
+    /// Placement was bypassed; the bootstrap trunk is shaping.
+    BootstrapTrunk,
+    /// No shaping tree; traffic passes through best-effort.
+    PassThrough,
+    /// An unknown or absent tier, held verbatim (`""` when none was latched).
+    Unknown(String),
+}
+
+impl Default for TopologyTier {
+    /// `Unknown("")`: what a missing field decodes to, and what a bridge that
+    /// latched no tier emits.
+    fn default() -> Self {
+        Self::Unknown(String::new())
+    }
+}
+
+impl TopologyTier {
+    /// The wire spelling. An unknown tier returns the received text unchanged.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::LastKnownGood => "last_known_good",
+            Self::BootstrapTrunk => "bootstrap_trunk",
+            Self::PassThrough => "pass_through",
+            Self::Unknown(received) => received,
+        }
+    }
+}
+
+impl From<String> for TopologyTier {
+    fn from(received: String) -> Self {
+        match received.as_str() {
+            "fresh" => Self::Fresh,
+            "last_known_good" => Self::LastKnownGood,
+            "bootstrap_trunk" => Self::BootstrapTrunk,
+            "pass_through" => Self::PassThrough,
+            _ => Self::Unknown(received),
+        }
+    }
+}
+
+impl From<TopologyTier> for String {
+    fn from(tier: TopologyTier) -> Self {
+        tier.as_str().to_string()
+    }
+}
+
 /// Top-level health view. `status` classification for the Supervisor:
 /// "starting" (no worker rollups yet — a fresh boot), "healthy" (serving;
 /// busy workers are HEALTHY — sustained silence is the only escalation
@@ -766,7 +897,7 @@ impl<'de> serde::Deserialize<'de> for RttHistogram {
 /// degraded).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HealthReport {
-    pub status: String,
+    pub status: HealthStatus,
     pub version: String,
     pub uptime_ms: u64,
     /// The completion-ring epoch (the flow-completion feed). `0` = the bridge
@@ -817,7 +948,7 @@ pub struct HealthReport {
     /// (serde default): older readers ignore it; the read-only System Health
     /// join maps it to lqosd's ONE `TopologySource`.
     #[serde(default)]
-    pub topology_tier: String,
+    pub topology_tier: TopologyTier,
     /// AVAIL (CARD §7 R1): named NON-DATA-PATH subsystems latched DEGRADED at
     /// boot (analytics_ipc / stats_collector / publish_driver /
     /// stats_summary). ADDITIVE (serde default); the status string folds it
@@ -1211,6 +1342,7 @@ mod worker_util_exposure_tests {
         let row = WorkerUtilRow {
             queue_id: 7,
             busy_ppm: 850_000,
+            busy_ppm_recent: Some(780_000),
             idle_ppm: 150_000,
             laps_per_s: 42,
             busy_laps: 35,
@@ -1255,5 +1387,186 @@ mod diagnostics_rx_nombuf_tests {
         assert_eq!(diagnostics.rx_nombuf, 0);
         assert_eq!(diagnostics.rx_nombuf_delta, 0);
         assert_eq!(diagnostics.pool_drop_packets, 0);
+    }
+}
+
+#[cfg(test)]
+mod health_vocabulary_tests {
+    use super::*;
+
+    /// The CBOR bytes the pre-typing `String` field produced for `text`.
+    fn string_bytes(text: &str) -> Vec<u8> {
+        serde_cbor::to_vec(&text.to_string()).unwrap()
+    }
+
+    #[test]
+    fn known_health_statuses_are_byte_identical_and_round_trip() {
+        for (status, spelling) in [
+            (HealthStatus::Starting, "starting"),
+            (HealthStatus::Healthy, "healthy"),
+            (HealthStatus::Degraded, "degraded"),
+        ] {
+            let encoded = serde_cbor::to_vec(&status).unwrap();
+            assert_eq!(encoded, string_bytes(spelling), "{spelling}: wire bytes");
+            let decoded: HealthStatus = serde_cbor::from_slice(&encoded).unwrap();
+            assert_eq!(decoded, status, "{spelling}: round trip");
+            assert_eq!(decoded.as_str(), spelling);
+        }
+    }
+
+    /// The tier field is ADDITIVE: a frame written by a peer that predates the
+    /// field (no `topology_tier` key at all) still decodes. This is the only
+    /// thing `#[serde(default)]` on the field buys, so it is pinned here.
+    #[test]
+    fn a_frame_without_the_topology_tier_key_still_decodes() {
+        use serde_cbor::Value;
+
+        let encoded = serde_cbor::to_vec(&HealthReport {
+            status: HealthStatus::Healthy,
+            topology_tier: TopologyTier::Fresh,
+            version: "test".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+        let value: Value = serde_cbor::from_slice(&encoded).unwrap();
+        let Value::Map(mut entries) = value else {
+            panic!("a health report encodes as a CBOR map")
+        };
+        assert!(
+            entries
+                .remove(&Value::Text("topology_tier".into()))
+                .is_some(),
+            "the fixture carries the key before the removal"
+        );
+
+        let pre_field = serde_cbor::to_vec(&Value::Map(entries)).unwrap();
+        let decoded: HealthReport = serde_cbor::from_slice(&pre_field)
+            .expect("a pre-field frame decodes (serde default on topology_tier)");
+        assert_eq!(decoded.topology_tier, TopologyTier::default());
+        assert_eq!(decoded.status, HealthStatus::Healthy);
+    }
+
+    /// An unrecognized tag must survive BOTH hops: the bridge's text is kept in
+    /// `Unknown` and re-serialized verbatim, never dropped or re-mapped.
+    #[test]
+    fn unknown_health_status_round_trips_verbatim_through_both_hops() {
+        let status = HealthStatus::from("mega_degraded".to_string());
+        assert_eq!(status, HealthStatus::Unknown("mega_degraded".to_string()));
+        assert_eq!(status.as_str(), "mega_degraded");
+
+        let encoded = serde_cbor::to_vec(&status).unwrap();
+        assert_eq!(encoded, string_bytes("mega_degraded"), "unknown tag bytes");
+        let decoded: HealthStatus = serde_cbor::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, status, "unknown tag survives the decode");
+        assert_eq!(
+            serde_cbor::to_vec(&decoded).unwrap(),
+            encoded,
+            "re-serialization is lossless"
+        );
+    }
+
+    #[test]
+    fn topology_tier_spellings_are_byte_identical() {
+        for (tier, spelling) in [
+            (TopologyTier::Fresh, "fresh"),
+            (TopologyTier::LastKnownGood, "last_known_good"),
+            (TopologyTier::BootstrapTrunk, "bootstrap_trunk"),
+            (TopologyTier::PassThrough, "pass_through"),
+            (TopologyTier::default(), ""),
+        ] {
+            let encoded = serde_cbor::to_vec(&tier).unwrap();
+            assert_eq!(encoded, string_bytes(spelling), "{spelling:?}: wire bytes");
+            let decoded: TopologyTier = serde_cbor::from_slice(&encoded).unwrap();
+            assert_eq!(decoded, tier, "{spelling:?}: round trip");
+        }
+        assert_eq!(
+            TopologyTier::default(),
+            TopologyTier::Unknown(String::new())
+        );
+    }
+
+    #[test]
+    fn unknown_topology_tier_round_trips_verbatim() {
+        let tier = TopologyTier::from("partial_trunk".to_string());
+        assert_eq!(tier, TopologyTier::Unknown("partial_trunk".to_string()));
+        let encoded = serde_cbor::to_vec(&tier).unwrap();
+        assert_eq!(encoded, string_bytes("partial_trunk"));
+        assert_eq!(
+            serde_cbor::from_slice::<TopologyTier>(&encoded).unwrap(),
+            tier
+        );
+    }
+
+    /// The default status has the pre-typing empty-string CBOR bytes, and both
+    /// fields still encode as empty text tags. `Default` is `Unknown("")`,
+    /// mirroring `TopologyTier`, so an absent status stays absent instead of
+    /// asserting the transient live state `Starting`.
+    #[test]
+    fn default_health_report_writes_a_plain_text_tag_and_empty_tier() {
+        use serde_cbor::Value;
+
+        let report = HealthReport::default();
+        assert_eq!(report.status, HealthStatus::Unknown(String::new()));
+        assert_eq!(report.topology_tier, TopologyTier::Unknown(String::new()));
+        assert_eq!(
+            serde_cbor::to_vec(&report.status).unwrap(),
+            string_bytes(""),
+            "the status default is the empty string the pre-typing String wrote"
+        );
+
+        let encoded = serde_cbor::to_vec(&report).unwrap();
+        let decoded: HealthReport = serde_cbor::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, report);
+        let value: Value = serde_cbor::from_slice(&encoded).unwrap();
+        let Value::Map(entries) = value else {
+            panic!("a health report encodes as a CBOR map")
+        };
+        for field in ["status", "topology_tier"] {
+            assert_eq!(
+                entries.get(&Value::Text(field.into())),
+                Some(&Value::Text(String::new())),
+                "{field}: still the empty text tag, as the old String field wrote"
+            );
+        }
+    }
+
+    /// A frame a pre-typing bridge wrote (plain strings in both fields) decodes
+    /// into the typed variants: the reader accepts the old shape unchanged.
+    #[test]
+    fn legacy_string_frame_decodes_into_the_typed_fields() {
+        use serde_cbor::Value;
+
+        let encoded = serde_cbor::to_vec(&HealthReport::default()).unwrap();
+        let value: Value = serde_cbor::from_slice(&encoded).unwrap();
+        let Value::Map(mut entries) = value else {
+            panic!("a health report encodes as a CBOR map")
+        };
+        entries.insert(Value::Text("status".into()), Value::Text("healthy".into()));
+        entries.insert(
+            Value::Text("topology_tier".into()),
+            Value::Text("last_known_good".into()),
+        );
+        let legacy = serde_cbor::to_vec(&Value::Map(entries)).unwrap();
+        let decoded: HealthReport = serde_cbor::from_slice(&legacy).unwrap();
+        assert_eq!(decoded.status, HealthStatus::Healthy);
+        assert_eq!(decoded.topology_tier, TopologyTier::LastKnownGood);
+    }
+
+    /// A whole report survives both hops with unknown tags in both fields: the
+    /// lenient policy is what keeps a newer bridge's spelling from failing the
+    /// decode (a strict enum would surface as a supervision "Down").
+    #[test]
+    fn health_report_round_trips_with_unknown_tags_in_both_fields() {
+        let report = HealthReport {
+            status: HealthStatus::from("throttled".to_string()),
+            topology_tier: TopologyTier::from("stale_trunk".to_string()),
+            version: "test".to_string(),
+            ..Default::default()
+        };
+        let encoded = serde_cbor::to_vec(&report).unwrap();
+        let decoded: HealthReport = serde_cbor::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.status.as_str(), "throttled");
+        assert_eq!(decoded.topology_tier.as_str(), "stale_trunk");
+        assert_eq!(serde_cbor::to_vec(&decoded).unwrap(), encoded);
     }
 }

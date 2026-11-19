@@ -4,18 +4,18 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <h5 class="card-title mb-0">
+                        <h5 class="card-title mb-0" data-i18n="help.tickets.title">
                             <i class="fa fa-life-ring"></i> Support Tickets
                         </h5>
-                        <div class="text-body-secondary small">
+                        <div class="text-body-secondary small" data-i18n="help.tickets.subtitle">
                             Priority support is available to entitled license tiers.
                         </div>
                     </div>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-outline-secondary" type="button" id="btnRefreshTickets">
+                        <button class="btn btn-outline-secondary" type="button" id="btnRefreshTickets" data-i18n="common.action.refresh">
                             <i class="fa fa-rotate"></i> Refresh
                         </button>
-                        <button class="btn btn-primary" type="button" id="btnNewTicket">
+                        <button class="btn btn-primary" type="button" id="btnNewTicket" data-i18n="help.tickets.new">
                             <i class="fa fa-plus"></i> New Ticket
                         </button>
                     </div>
@@ -23,8 +23,8 @@
 
                 <div id="ticketGateNoInsight" class="alert alert-info mt-3 mb-0 d-none">
                     <i class="fa fa-info-circle"></i>
-                    To submit a support ticket you need an entitled license.
-                    <a class="alert-link" href="config_lts.html">Open License &amp; Services</a>.
+                    <span data-i18n="help.tickets.license_required">To submit a support ticket you need an entitled license.</span>
+                    <a class="alert-link" href="config_lts.html" data-i18n="help.tickets.open_license">Open License &amp; Services</a>.
                 </div>
 
                 <div id="ticketGateInsight" class="mt-3 d-none">
@@ -37,15 +37,15 @@
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-circle-info"></i> About LibreQoS</h5>
+                <h5 class="card-title" data-i18n="help.about.title"><i class="fa fa-circle-info"></i> About LibreQoS</h5>
 
-                <p class="text-body-secondary">
+                <p class="text-body-secondary" data-i18n="help.about.body">
                     Learn more about the project and the people who helped shape it.
                 </p>
 
                 <div class="d-flex flex-wrap gap-2">
                     <a href="https://libreqos.io/" class="btn btn-primary d-inline-flex align-items-center gap-2">
-                        <i class="fa fa-globe"></i> Visit LibreQoS.io
+                        <i class="fa fa-globe"></i> <span data-i18n="help.about.visit">Visit LibreQoS.io</span>
                     </a>
                     <a
                         href="https://libreqos.io/2025/04/01/in-loving-memory-of-dave/"
@@ -54,7 +54,7 @@
                         rel="noopener noreferrer"
                     >
                         <i class="fa fa-heart"></i>
-                        In Loving Memory of Dave Täht
+                        <span data-i18n="help.about.memorial">In Loving Memory of Dave Täht</span>
                     </a>
                 </div>
             </div>
@@ -64,9 +64,9 @@
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-book"></i> Documentation</h5>
-                <p>The documentation is a great place to start!</p>
-                <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary"><i class="fa fa-book"></i> Read The LibreQoS Documentation</a>
+                <h5 class="card-title" data-i18n="help.docs.title"><i class="fa fa-book"></i> Documentation</h5>
+                <p data-i18n="help.docs.body">The documentation is a great place to start!</p>
+                <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary" data-i18n="help.docs.action"><i class="fa fa-book"></i> Read The LibreQoS Documentation</a>
             </div>
         </div>
     </div>
@@ -74,10 +74,10 @@
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-user-circle"></i> Chat</h5>
+                <h5 class="card-title" data-i18n="help.chat.title"><i class="fa fa-user-circle"></i> Chat</h5>
                 <p>
-                    Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat System. <br />
-                    <a class="btn btn-primary" href="https://chat.libreqos.io/"><i class="fa fa-user-circle"></i> Zulip chat system</a>.
+                    <span data-i18n="help.chat.body">Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat System.</span> <br />
+                    <a class="btn btn-primary" href="https://chat.libreqos.io/" data-i18n="help.chat.link"><i class="fa fa-user-circle"></i> Zulip chat system</a>.
                 </p>
             </div>
         </div>
@@ -86,10 +86,10 @@
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="fab fa-youtube"></i> Learn</h5>
+                <h5 class="card-title" data-i18n="help.learn.title"><i class="fab fa-youtube"></i> Learn</h5>
                 <p>
-                    Learn about LibreQoS, bufferbloat and our battle against Internet
-                    latency at our <a href="https://www.youtube.com/@LibreQoS">YouTube channel</a>.
+                    <span data-i18n="help.learn.body">Learn about LibreQoS, bufferbloat and our battle against Internet latency at our</span>
+                    <a href="https://www.youtube.com/@LibreQoS" data-i18n="help.learn.channel">YouTube channel</a>.
                 </p>
             </div>
         </div>
@@ -98,15 +98,16 @@
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title"><i class="fab fa-connectdevelop"></i> Connect</h5>
-                <p class="mb-2">
+                <h5 class="card-title" data-i18n="help.social.title"><i class="fab fa-connectdevelop"></i> Connect</h5>
+                <p class="mb-2" data-i18n="help.social.body">
                     We're on social media! Connect with us at:
                 </p>
+                <!-- translatable: false — "Twitter" "Facebook" are brand names the operator already knows by their English names -->
                 <ul class="mb-0">
                     <li><a href="https://www.linkedin.com/company/libreqos/"><i class="fab fa-linkedin"></i> LinkedIn</a></li>
                     <li><a href="https://twitter.com/libreqos"><i class="fab fa-twitter"></i> Twitter</a></li>
                     <li><a href="https://www.facebook.com/libreqos"><i class="fab fa-facebook"></i> Facebook</a></li>
-                    <li><a href="https://fosstodon.org/@LibreQoS/"><i class="fa fa-link"></i> Fosstodon (Free Open Source Mastodon)</a></li>
+                    <li><a href="https://fosstodon.org/@LibreQoS/" data-i18n="help.social.fosstodon"><i class="fa fa-link"></i> Fosstodon (Free Open Source Mastodon)</a></li>
                 </ul>
             </div>
         </div>
@@ -118,10 +119,10 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="ticketViewModalLabel">
+                <h5 class="modal-title" id="ticketViewModalLabel" data-i18n="help.ticket.view_title">
                     <i class="fa fa-ticket"></i> Ticket
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class="modal-body">
                 <div id="ticketViewAlert" class="alert alert-danger d-none"></div>
@@ -138,24 +139,24 @@
                 </div>
 
                 <div class="mb-3">
-                    <div class="text-body-secondary small mb-1">Description</div>
+                    <div class="text-body-secondary small mb-1" data-i18n="help.ticket.description">Description</div>
                     <div class="border rounded p-2 bg-body-tertiary">
                         <pre class="mb-0 small" style="white-space: pre-wrap;" id="ticketViewBody"></pre>
                     </div>
                 </div>
 
                 <div class="mb-3">
-                    <div class="text-body-secondary small mb-2">Comments</div>
+                    <div class="text-body-secondary small mb-2" data-i18n="help.ticket.comments">Comments</div>
                     <div id="ticketViewComments" class="vstack gap-2"></div>
                 </div>
 
                 <hr />
 
                 <div>
-                    <label class="form-label text-body-secondary small" for="ticketCommentBody">Add a comment</label>
-                    <textarea class="form-control" id="ticketCommentBody" rows="3" placeholder="Type your reply..."></textarea>
+                    <label class="form-label text-body-secondary small" for="ticketCommentBody" data-i18n="help.ticket.add_comment">Add a comment</label>
+                    <textarea class="form-control" id="ticketCommentBody" rows="3" placeholder="Type your reply..." data-i18n-placeholder="help.ticket.comment_placeholder"></textarea>
                     <div class="d-flex justify-content-end mt-2">
-                        <button class="btn btn-primary" type="button" id="btnSubmitComment">
+                        <button class="btn btn-primary" type="button" id="btnSubmitComment" data-i18n="help.ticket.send">
                             <i class="fa fa-paper-plane"></i> Send
                         </button>
                     </div>
@@ -170,36 +171,36 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="newTicketModalLabel">
+                <h5 class="modal-title" id="newTicketModalLabel" data-i18n="help.ticket.new_title">
                     <i class="fa fa-plus"></i> New Support Ticket
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class="modal-body">
                 <div id="newTicketAlert" class="alert alert-danger d-none"></div>
                 <div class="mb-3">
-                    <label class="form-label" for="newTicketSubject">Subject</label>
-                    <input class="form-control" id="newTicketSubject" type="text" placeholder="Brief summary" maxlength="200" />
+                    <label class="form-label" for="newTicketSubject" data-i18n="help.ticket.subject">Subject</label>
+                    <input class="form-control" id="newTicketSubject" type="text" placeholder="Brief summary" maxlength="200" data-i18n-placeholder="help.ticket.subject_placeholder" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" for="newTicketPriority">Priority (0-5)</label>
+                    <label class="form-label" for="newTicketPriority" data-i18n="help.ticket.priority">Priority (0-5)</label>
                     <select class="form-select" id="newTicketPriority">
-                        <option value="0">0 - Lowest</option>
+                        <option value="0" data-i18n="help.ticket.priority_lowest">0 - Lowest</option>
                         <option value="1">1</option>
                         <option value="2">2</option>
                         <option value="3" selected>3</option>
                         <option value="4">4</option>
-                        <option value="5">5 - Highest</option>
+                        <option value="5" data-i18n="help.ticket.priority_highest">5 - Highest</option>
                     </select>
                 </div>
                 <div class="mb-0">
-                    <label class="form-label" for="newTicketBody">Details</label>
-                    <textarea class="form-control" id="newTicketBody" rows="6" placeholder="Describe the issue, what you expected, and what happened."></textarea>
+                    <label class="form-label" for="newTicketBody" data-i18n="help.ticket.details">Details</label>
+                    <textarea class="form-control" id="newTicketBody" rows="6" placeholder="Describe the issue, what you expected, and what happened." data-i18n-placeholder="help.ticket.details_placeholder"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary" type="button" id="btnSubmitTicket">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal" data-i18n="common.action.cancel">Cancel</button>
+                <button class="btn btn-primary" type="button" id="btnSubmitTicket" data-i18n="help.ticket.submit">
                     <i class="fa fa-paper-plane"></i> Submit Ticket
                 </button>
             </div>

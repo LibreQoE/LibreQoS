@@ -1,15 +1,19 @@
-use crate::dynamic::{
-    CircuitObservation, expired_dynamic_circuit_ids, is_superseded_by_shaped_devices,
+use crate::dynamic::ProvisionedShapedRows;
+use crate::dynamic_engine::{
+    HostActivity, ObservedHost, PromotionEngine, PromotionPolicy, expired_dynamic_circuit_ids,
 };
-use crate::dynamic_store::{load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk};
+use crate::dynamic_store::{
+    load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk, persist_liveness_checkpoint,
+    require_store_membership,
+};
 use crate::state;
 use crate::{
-    DaemonHooks, LoadedShapedDevices, LoadedShapedDevicesSource, ShapedDevicesCatalog,
-    ShapedDevicesSnapshotProvenance, load_network_json, load_shaped_devices_with_source,
+    DaemonHooks, LoadedShapedDevices, LoadedShapedDevicesSource, ShapedDevicesSnapshotProvenance,
+    load_network_json, load_shaped_devices_with_source,
 };
 use anyhow::{Context, Result, anyhow};
 use crossbeam_channel::{Receiver, RecvTimeoutError, SendTimeoutError, Sender, bounded};
-use ip_network_table::IpNetworkTable;
+use lqos_dataplane_types::DATA_PLANE_ROOT_NAME;
 use lqos_utils::normalize_circuit_id_key;
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
@@ -24,7 +28,6 @@ const RELOAD_RETRY_DELAY_MS: u64 = 500;
 const RELOAD_ATTEMPTS: usize = 2;
 const ACTOR_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 const DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS: u64 = 60;
-const MAX_UNKNOWN_IP_PROMOTIONS_PER_OBSERVATION: usize = 32;
 
 static ACTOR_SENDER: OnceCell<Sender<NetworkDevicesCommand>> = OnceCell::new();
 
@@ -127,19 +130,6 @@ pub(crate) fn apply_shaped_devices_snapshot(
     receive_actor_reply(reply_rx, "Apply shaped devices")
 }
 
-pub(crate) fn report_observations(observations: &[CircuitObservation]) {
-    if observations.is_empty() {
-        return;
-    }
-
-    let Some(sender) = ACTOR_SENDER.get().cloned() else {
-        return;
-    };
-    let _ = sender.try_send(NetworkDevicesCommand::ReportObservations {
-        observations: observations.to_vec(),
-    });
-}
-
 /// K1 §1.4: report the bridge's active dynamic-circuit ids — the liveness
 /// backstop for the RADIUS-interim-stall class. Ids are normalized here; the
 /// state layer touches only matching dynamic circuits.
@@ -181,7 +171,7 @@ pub(crate) fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
 
 /// Dynamic-ranges H2: one RMW that removes every dynamic row covering any of
 /// the new device's IPs, then upserts the new row by normalized id. Used by the
-/// promotion scanner (idempotent) and RADIUS (the in-place plan upgrade) so a
+/// unshaped-host promotion (idempotent) and RADIUS (the in-place plan upgrade) so a
 /// session-derived id can never mint a duplicate /32 row + Map.
 pub(crate) fn replace_dynamic_circuit_by_ip(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
     let (reply_tx, reply_rx) = bounded(1);
@@ -195,19 +185,31 @@ pub(crate) fn replace_dynamic_circuit_by_ip(shaped_device: lqos_config::ShapedDe
     receive_actor_reply(reply_rx, "Replace dynamic circuit by IP")
 }
 
-/// Dynamic-ranges §7 (the SIGNAL → DECISION split): the lqosd
-/// bridge_analytics signal reports per-IP activity for in-range,
-/// catalog-unresolved hosts. The actor owns the sustained-activity window, the
-/// provisioning cap, the no-real-circuit check, and the store write.
-pub fn report_range_host_activity(range_id: &str, samples: &[(std::net::IpAddr, u64, u64)]) {
+/// Dynamic-ranges §7 + u11 (SIGNAL → DECISION split): the lqosd
+/// bridge_analytics signal reports one bounded batch of per-host CUMULATIVE byte
+/// counters for promotion candidates. A candidate is a host whose traffic a
+/// range FALLBACK carries (u11: the pre-u4 signal lqosd lost), or a genuinely
+/// unmapped host inside a configured range; each carries the counter source its
+/// bytes came from. The actor's pure engine owns eligibility, the
+/// sustained-activity window, the counter-source/reset rules, the cap, and the
+/// store write.
+///
+/// This is the ONLY promotion input: there is no other scanner.
+///
+/// Side effects: sends a message to the runtime actor without waiting for a
+/// reply; a full actor queue drops the batch (the next one diffs over a longer
+/// interval).
+pub fn report_promotion_candidate_activity(observed_at_millis: u64, samples: &[HostActivity]) {
     if samples.is_empty() {
         return;
     }
     let Some(sender) = ACTOR_SENDER.get().cloned() else {
         return;
     };
-    let _ = sender.try_send(NetworkDevicesCommand::ReportRangeHostActivity {
-        range_id: range_id.to_string(),
+    // try_send: the analytics cycle must never block on the actor, and a dropped
+    // batch is harmless (the next one diffs over a longer interval).
+    let _ = sender.try_send(NetworkDevicesCommand::ReportPromotionCandidateActivity {
+        observed_at_millis,
         samples: samples.to_vec(),
     });
 }
@@ -231,9 +233,6 @@ enum NetworkDevicesCommand {
         provenance: ShapedDevicesSnapshotProvenance,
         reply: Sender<Result<()>>,
     },
-    ReportObservations {
-        observations: Vec<CircuitObservation>,
-    },
     ReportBridgeActivity {
         circuit_ids: Vec<String>,
     },
@@ -249,9 +248,9 @@ enum NetworkDevicesCommand {
         shaped_device: Box<lqos_config::ShapedDevice>,
         reply: Sender<Result<()>>,
     },
-    ReportRangeHostActivity {
-        range_id: String,
-        samples: Vec<(std::net::IpAddr, u64, u64)>,
+    ReportPromotionCandidateActivity {
+        observed_at_millis: u64,
+        samples: Vec<HostActivity>,
     },
 }
 
@@ -261,8 +260,10 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
     // T1: tracks whether an artifact-derived tree ever loaded (MEDIUM-4:
     // keep-last-good applies only after the first good load).
     let mut dataplane_tree_loaded = false;
-    // Dynamic-ranges §7: the scanner's sustained-activity windows + the cap.
-    let mut range_scanner = RangeScanner::default();
+    // Dynamic-ranges §7: the pure engine's sustained-activity windows + cap.
+    let mut promotion_engine = PromotionEngine::default();
+    // u12: one warn per rule whose attachment resolves to no node.
+    let mut promotion_parent_warned: HashSet<String> = HashSet::new();
 
     if let Err(err) =
         reload_shaped_devices_inner("startup", hooks.as_deref(), &mut active_shaped_key)
@@ -278,8 +279,20 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
     {
         warn!("Initial dataplane-tree load failed: {err}");
     }
-    reload_dynamic_circuits_inner("startup");
-    prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks.as_deref());
+    match lqos_config::load_config() {
+        Ok(config) => {
+            if let Err(err) = reload_dynamic_circuits_inner(&config, "startup") {
+                warn!("Initial dynamic-circuits load failed: {err:?}");
+            }
+        }
+        Err(err) => {
+            // The store was never read, so this process does not hold the
+            // membership; membership writes stay refused until a load works.
+            state::note_dynamic_store_membership(state::DynamicStoreMembership::Failed);
+            warn!("Initial dynamic-circuits load failed: {err:?}");
+        }
+    }
+    prune_dynamic_circuits_superseded_by_shaped_devices_inner();
 
     let tick = crossbeam_channel::tick(Duration::from_secs(
         DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS,
@@ -339,56 +352,126 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                         reply,
                     } => {
                         let key = shaped_devices_key_for_snapshot(provenance, &shaped);
+                        // An applied snapshot is an EDIT of the world it replaces
+                        // (the callers derive it from the live catalog), so the
+                        // row origins carry forward; a full reload re-derives
+                        // them from the fold.
+                        let dynamic_origin_rows =
+                            state::dynamic_origin_rows().as_ref().clone();
                         let result = publish_shaped_devices_if_changed(
                             &reason,
                             *shaped,
+                            dynamic_origin_rows,
                             key,
                             hooks.as_deref(),
                             &mut active_shaped_key,
                         );
                         let _ = reply.send(result);
                     }
-                    NetworkDevicesCommand::ReportObservations { observations } => {
-                        handle_observations(&observations, hooks.as_deref());
-                    }
                     NetworkDevicesCommand::ReportBridgeActivity { circuit_ids } => {
                         let ids: std::collections::HashSet<String> = circuit_ids
                             .iter()
                             .map(|id| lqos_utils::normalize_circuit_id_key(id))
                             .collect();
-                        let now = lqos_utils::unix_time::unix_now().unwrap_or(0);
-                        crate::state::refresh_dynamic_circuits_last_seen_for_circuit_ids(&ids, now);
+                        // REV-C1(b): an unavailable clock is not a timestamp.
+                        // Skipping the touch leaves the previous (real) stamp in
+                        // place instead of zeroing it.
+                        match lqos_utils::unix_time::unix_now() {
+                            Ok(now) => {
+                                crate::state::refresh_dynamic_circuits_last_seen_for_circuit_ids(
+                                    &ids, now,
+                                );
+                            }
+                            Err(err) => {
+                                warn!(
+                                    "Bridge-activity liveness skipped: the clock is unavailable ({err:?})"
+                                );
+                            }
+                        }
                     }
                     NetworkDevicesCommand::UpsertDynamicCircuit {
                         shaped_device,
                         reply,
                     } => {
-                        let result = upsert_dynamic_circuit_inner(*shaped_device);
+                        let result = lqos_config::load_config()
+                            .context("load lqos config for dynamic circuit upsert")
+                            .and_then(|config| {
+                                upsert_dynamic_circuit_inner(&config, *shaped_device)
+                            });
                         let _ = reply.send(result);
                     }
                     NetworkDevicesCommand::RemoveDynamicCircuit { circuit_id, reply } => {
-                        let result = remove_dynamic_circuit_inner(&circuit_id);
+                        let result = lqos_config::load_config()
+                            .context("load lqos config for dynamic circuit removal")
+                            .and_then(|config| {
+                                remove_dynamic_circuit_inner(&config, &circuit_id)
+                            });
                         let _ = reply.send(result);
                     }
                     NetworkDevicesCommand::ReplaceDynamicCircuitByIp {
                         shaped_device,
                         reply,
                     } => {
-                        let result = replace_dynamic_circuit_by_ip_inner(*shaped_device);
+                        let result = lqos_config::load_config()
+                            .context("load lqos config for dynamic circuit replace")
+                            .and_then(|config| {
+                                replace_dynamic_circuit_by_ip_inner(&config, *shaped_device)
+                            });
                         let _ = reply.send(result);
                     }
-                    NetworkDevicesCommand::ReportRangeHostActivity { range_id, samples } => {
-                        handle_range_host_activity(
-                            &mut range_scanner,
-                            &range_id,
-                            &samples,
-                            hooks.as_deref(),
-                        );
+                    NetworkDevicesCommand::ReportPromotionCandidateActivity {
+                        observed_at_millis,
+                        samples,
+                    } => {
+                        match lqos_config::load_config() {
+                            Ok(config) => {
+                                // The catalog is the coverage authority: a host an
+                                // ordinary circuit already shapes is never promoted.
+                                let catalog = crate::network_devices_catalog();
+                                promote_sustained_hosts(
+                                    &mut promotion_engine,
+                                    &mut promotion_parent_warned,
+                                    &config,
+                                    &catalog,
+                                    observed_at_millis,
+                                    &samples,
+                                );
+                            }
+                            Err(err) => {
+                                warn!(
+                                    "Unable to load lqos config for sustained-host promotion: {err:?}"
+                                );
+                            }
+                        }
                     }
                 }
             }
             recv(tick) -> _ => {
-                prune_expired_dynamic_circuits_inner(hooks.as_deref());
+                match lqos_config::load_config() {
+                    Ok(config) => {
+                        if let Err(err) =
+                            prune_expired_dynamic_circuits_inner(&config)
+                        {
+                            warn!("Dynamic-circuit TTL prune skipped: {err:?}");
+                        }
+                        // Liveness checkpoint: bounded interval, never per
+                        // RADIUS interim. REV-C1(a): written only when this
+                        // process actually holds a non-empty membership for a
+                        // configured feature — an empty snapshot is not
+                        // evidence (a failed startup load leaves it empty while
+                        // the store file is not) and an unused feature must not
+                        // grow a stray checkpoint file.
+                        let snapshot = state::dynamic_circuits_snapshot();
+                        if crate::dynamic_store::should_checkpoint_liveness(&config, &snapshot)
+                            && let Err(err) = persist_liveness_checkpoint(&config, &snapshot)
+                        {
+                            warn!("Unable to checkpoint dynamic-circuit liveness: {err:?}");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("Unable to load lqos config on maintenance tick: {err:?}");
+                    }
+                }
             }
         }
     }
@@ -509,39 +592,56 @@ fn shaped_devices_key_for_snapshot(
     }
 }
 
-fn reload_dynamic_circuits_inner(reason: &str) {
-    let circuits = load_dynamic_circuits_from_disk();
+/// Loads the membership store and publishes it.
+///
+/// A load FAILURE is not an empty membership: the snapshot is left untouched
+/// (publishing an empty one would erase the live view) and the process records
+/// that it does not hold the membership, so membership writes stay refused until
+/// a load succeeds.
+pub(crate) fn reload_dynamic_circuits_inner(
+    config: &lqos_config::Config,
+    reason: &str,
+) -> Result<()> {
+    let circuits = match load_dynamic_circuits_from_disk(config) {
+        Ok(circuits) => circuits,
+        Err(err) => {
+            state::note_dynamic_store_membership(state::DynamicStoreMembership::Failed);
+            return Err(err);
+        }
+    };
     debug!("Loaded {} dynamic circuits reason={reason}", circuits.len());
+    state::note_dynamic_store_membership(state::DynamicStoreMembership::Loaded);
     state::publish_dynamic_circuits_snapshot(circuits);
+    Ok(())
 }
 
-fn prune_expired_dynamic_circuits_inner(hooks: Option<&dyn DaemonHooks>) {
-    let Ok(config) = lqos_config::load_config() else {
-        return;
-    };
+pub(crate) fn prune_expired_dynamic_circuits_inner(
+    config: &lqos_config::Config,
+) -> Result<()> {
+    require_store_membership(config)?;
     let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
-        return;
+        return Ok(());
     };
     if !dynamic_cfg.enabled {
-        return;
+        return Ok(());
     }
     let ttl_seconds = dynamic_cfg.ttl_seconds;
     if ttl_seconds == 0 {
-        return;
+        return Ok(());
     }
 
     let Ok(now_unix) = lqos_utils::unix_time::unix_now() else {
-        return;
+        return Ok(());
     };
 
     let snapshot = state::dynamic_circuits_snapshot();
     if snapshot.is_empty() {
-        return;
+        return Ok(());
     }
 
     let mut expired_ids = expired_dynamic_circuit_ids(snapshot.as_ref(), now_unix, ttl_seconds);
     if expired_ids.is_empty() {
-        return;
+        return Ok(());
     }
     expired_ids.sort();
     expired_ids.dedup();
@@ -559,37 +659,33 @@ fn prune_expired_dynamic_circuits_inner(hooks: Option<&dyn DaemonHooks>) {
         .cloned()
         .collect();
 
-    if let Err(err) = persist_dynamic_circuits_to_disk(&updated) {
-        warn!("Unable to persist dynamic circuits after TTL pruning: {err:?}");
-        return;
-    }
+    persist_dynamic_circuits_to_disk(config, &updated)
+        .context("persist dynamic circuits after TTL pruning")?;
     state::publish_dynamic_circuits_snapshot(updated);
     debug!(
         "Pruned {} expired dynamic circuits ttl_seconds={ttl_seconds}",
         expired_ids.len()
     );
 
-    if let Some(hooks) = hooks {
-        hooks.on_dynamic_circuits_expired(&expired_ids);
-    }
+    Ok(())
 }
 
-fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+pub(crate) fn upsert_dynamic_circuit_inner(
+    config: &lqos_config::Config,
+    mut shaped_device: lqos_config::ShapedDevice,
+) -> Result<()> {
+    require_store_membership(config)?;
     recompute_hashes(&mut shaped_device);
     let now_unix = lqos_utils::unix_time::unix_now().context("get unix time")?;
 
     let snapshot = state::dynamic_circuits_snapshot();
     let mut updated = snapshot.as_ref().clone();
     let key = normalize_circuit_id_key(&shaped_device.circuit_id);
-    let mut should_persist = false;
 
     if let Some(pos) = updated
         .iter()
         .position(|c| normalize_circuit_id_key(&c.shaped.circuit_id) == key)
     {
-        if updated[pos].shaped != shaped_device {
-            should_persist = true;
-        }
         updated[pos].shaped = shaped_device;
         updated[pos].last_seen_unix = now_unix;
     } else {
@@ -597,17 +693,23 @@ fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) ->
             shaped: shaped_device,
             last_seen_unix: now_unix,
         });
-        should_persist = true;
     }
 
-    if should_persist {
-        persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
-    }
+    // The store write is content-deduped, so a liveness-only renewal writes
+    // nothing here; liveness reaches the checkpoint on the maintenance tick.
+    persist_dynamic_circuits_to_disk(config, &updated)
+        .context("persist dynamic circuits to disk")?;
     state::publish_dynamic_circuits_snapshot(updated);
     Ok(())
 }
 
-fn remove_dynamic_circuit_inner(circuit_id: &str) -> Result<bool> {
+/// The store half of `remove_dynamic_circuit`; exposed to the crate tests so
+/// removal's store + checkpoint behaviour can be asserted without an actor.
+pub(crate) fn remove_dynamic_circuit_inner(
+    config: &lqos_config::Config,
+    circuit_id: &str,
+) -> Result<bool> {
+    require_store_membership(config)?;
     let snapshot = state::dynamic_circuits_snapshot();
     if snapshot.is_empty() {
         return Ok(false);
@@ -624,7 +726,8 @@ fn remove_dynamic_circuit_inner(circuit_id: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    persist_dynamic_circuits_to_disk(config, &updated)
+        .context("persist dynamic circuits to disk")?;
     state::publish_dynamic_circuits_snapshot(updated);
     Ok(true)
 }
@@ -663,12 +766,23 @@ pub(crate) fn merge_dynamic_circuits_replacing_by_ip(
 
 /// H2: one RMW — drop every dynamic row that covers any of `shaped_device`'s
 /// IPs, then upsert it by normalized circuit id.
-fn replace_dynamic_circuit_by_ip_inner(mut shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+///
+/// This is the store half of `replace_dynamic_circuit_by_ip` (the bus path
+/// RADIUS reaches); exposed to the crate tests as well.
+///
+/// The store write is content-deduped: a RADIUS Start/Interim that only renews
+/// liveness for an already-stored plan writes no file at all.
+pub(crate) fn replace_dynamic_circuit_by_ip_inner(
+    config: &lqos_config::Config,
+    mut shaped_device: lqos_config::ShapedDevice,
+) -> Result<()> {
+    require_store_membership(config)?;
     recompute_hashes(&mut shaped_device);
     let now_unix = lqos_utils::unix_time::unix_now().context("get unix time")?;
     let snapshot = state::dynamic_circuits_snapshot();
     let updated = merge_dynamic_circuits_replacing_by_ip(&snapshot, shaped_device, now_unix);
-    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    persist_dynamic_circuits_to_disk(config, &updated)
+        .context("persist dynamic circuits to disk")?;
     state::publish_dynamic_circuits_snapshot(updated);
     Ok(())
 }
@@ -687,308 +801,212 @@ fn device_ips(device: &lqos_config::ShapedDevice) -> HashSet<std::net::IpAddr> {
         .collect()
 }
 
-/// Dynamic-ranges §7: the scanner's per-(range, ip) sustained-activity windows
-/// and the per-range promotion timestamps (the cap).
-#[derive(Default)]
-struct RangeScanner {
-    windows: std::collections::HashMap<(String, std::net::IpAddr), RangeActivityWindow>,
-    promotions: std::collections::HashMap<String, std::collections::VecDeque<u64>>,
-}
-
-struct RangeActivityWindow {
-    first_unix: u64,
-    last_unix: u64,
-}
-
-/// Dynamic-ranges §7 (DECISION + WRITE): the actor owns the sustained-activity
-/// window, the cap, the no-real-circuit check, the plan class, and the store
-/// write via `replace_dynamic_circuit_by_ip_inner`.
-fn handle_range_host_activity(
-    scanner: &mut RangeScanner,
-    range_id: &str,
-    samples: &[(std::net::IpAddr, u64, u64)],
-    hooks: Option<&dyn DaemonHooks>,
+/// Dynamic-ranges §7 + u11 (DECISION + WRITE): folds one pushed candidate batch
+/// into the pure engine and provisions what it decides.
+///
+/// The engine owns every decision — eligibility, the sustained-activity window,
+/// counter sources/resets, the cap. This shell supplies only what a pure engine
+/// cannot know: the coverage catalog, the operator's ignore list, the resolved
+/// `attach_to` parent and the store write.
+///
+/// u11 A5: coverage is rechecked HERE, from the published world, not trusted from
+/// the sender: a host an ordinary circuit already shapes (a provisioned device or
+/// an existing dynamic row) is never promoted, and an address the operator's
+/// `ip_ranges.ignore_subnets` names is never promoted even when no circuit shapes
+/// it. The fold-synthesized range FALLBACK still owns nothing — it is the very
+/// source of the u11 signal.
+///
+/// u12: the row's parent is a resolved reference or the row is not written at all
+/// (see [`promotion_parent_node`]); `warned_parents` keeps that warn to one line
+/// per rule for the process lifetime. u13: a node is carried by NAME only — the
+/// id the loaded `network.json` view reports is not the exported tree's id.
+/// u15: a blank/`Root` attachment writes the fold's sentinel itself and consults
+/// no view, so only a NAMED attachment can reach the warn below.
+pub(crate) fn promote_sustained_hosts(
+    engine: &mut PromotionEngine,
+    warned_parents: &mut HashSet<String>,
+    config: &lqos_config::Config,
+    catalog: &crate::NetworkDevicesCatalog,
+    observed_at_millis: u64,
+    samples: &[HostActivity],
 ) {
-    let Ok(config) = lqos_config::load_config() else {
-        return;
-    };
     let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
         return;
     };
     if !dynamic_cfg.enabled || !dynamic_cfg.enable_unknown_ip_promotion {
         return;
     }
-    let Some(rule) = dynamic_cfg
-        .ranges
-        .iter()
-        .find(|rule| rule.name.trim() == range_id)
-    else {
-        return;
-    };
-    let min_bytes = dynamic_cfg.promotion_min_bytes_per_second;
-    let window = dynamic_cfg.promotion_window_seconds;
-    let cap = dynamic_cfg.promotion_cap_per_range_per_minute;
-    let now = lqos_utils::unix_time::unix_now().unwrap_or(0);
-    let catalog = state::shaped_devices_catalog();
 
-    for (ip, bytes_per_second, _packets) in samples {
-        let key = (range_id.to_string(), *ip);
-        if *bytes_per_second < min_bytes {
-            scanner.windows.remove(&key);
+    // Coverage authority for promotion (REV-D2/REV-T1): ONE named predicate built
+    // from the published world. A PROVISIONED row owns its address; the overlay
+    // store's own rows own theirs (a promotion that has not reached the shaped
+    // artifact yet); the fold-synthesized range FALLBACK owns nothing — it sits in
+    // the shaped snapshot with the dynamic-origin marker and covers its whole rule
+    // prefix, so counting it would stop promotion for every host inside a
+    // catch-all range (the u5 gate). The combined catalog's own lookup cannot be
+    // used alone here: it answers "does ANY row shape this address", which is
+    // exactly the question the fallback makes uninformative.
+    let origins = state::dynamic_origin_rows();
+    let coverage =
+        crate::dynamic::PublishedCoverage::new(catalog.shaped_devices(), origins.as_ref());
+    // u11 A5: the operator's management exclusions outrank promotion. `None` means
+    // a configured list that no entry described readably — fail CLOSED for the
+    // whole pass rather than promote an address that list may have named.
+    let ignores = promotion_ignore_table(config);
+    if ignores.is_none() {
+        debug!(
+            "promotion skipped this pass: ip_ranges.ignore_subnets is configured but no entry parses"
+        );
+    }
+    let observed: Vec<ObservedHost> = samples
+        .iter()
+        .map(|sample| {
+            let address = lqos_utils::XdpIpAddress::from_ip(sample.ip);
+            ObservedHost {
+                ip: sample.ip,
+                cumulative_bytes: sample.cumulative_bytes,
+                source: sample.source,
+                // An already-promoted host reads as covered through the store row,
+                // so it cannot consume another promotion slot; a provisioned host
+                // never promotes at all; an ignored host is never promotion
+                // material whatever carried its bytes.
+                ineligible: ignores.is_none()
+                    || coverage.promotion_covered(catalog, &address)
+                    || ignores
+                        .as_ref()
+                        .is_some_and(|table| table.longest_match(address.as_ip()).is_some()),
+            }
+        })
+        .collect();
+    let policy = PromotionPolicy {
+        ranges: &dynamic_cfg.ranges,
+        min_bytes_per_second: dynamic_cfg.promotion_min_bytes_per_second,
+        window_seconds: dynamic_cfg.promotion_window_seconds,
+        cap_per_range_per_minute: dynamic_cfg.promotion_cap_per_range_per_minute,
+    };
+
+    for promotion in engine.observe(observed_at_millis, &policy, &observed) {
+        let range_id = promotion.rule.name.trim();
+        // u12: a promoted row is a STORE row, and the store fold defers any row
+        // whose parent NAME lands no exported node. Writing an unresolvable
+        // parent would provision a row that defers on every publish (the live u11
+        // run did exactly that), so no row is written and the operator is told
+        // why — once per rule, because the engine would otherwise re-decide the
+        // same host every window. u15: only a NAMED attachment can get here; the
+        // blank/`Root` convention is always writable.
+        let Some(parent_node) = promotion_parent_node(promotion.rule.attach_to.trim()) else {
+            if warned_parents.insert(range_id.to_string()) {
+                warn!(
+                    "Promotion of {} in range '{range_id}' skipped: attach_to {:?} names no node in network.json, so the row would defer on every publish; no row is written (a blank or \"Root\" attach_to means the root and is always written)",
+                    promotion.ip, promotion.rule.attach_to
+                );
+            }
             continue;
-        }
-        let entry = scanner
-            .windows
-            .entry(key.clone())
-            .or_insert(RangeActivityWindow {
-                first_unix: now,
-                last_unix: now,
-            });
-        if now.saturating_sub(entry.last_unix) > window {
-            entry.first_unix = now;
-        }
-        entry.last_unix = now;
-        if now.saturating_sub(entry.first_unix) < window {
-            continue; // not sustained yet
-        }
-        // No-real-circuit check: the catalog is the authority (the range leaf
-        // is transaction-stage and absent from it).
-        if catalog
-            .device_longest_match_for_ip(&lqos_utils::XdpIpAddress::from_ip(*ip))
-            .is_some()
-        {
-            scanner.windows.remove(&key);
-            continue;
-        }
-        // Provisioning cap (per range per minute).
-        let stamps = scanner.promotions.entry(range_id.to_string()).or_default();
-        while stamps
-            .front()
-            .is_some_and(|stamp| now.saturating_sub(*stamp) >= 60)
-        {
-            stamps.pop_front();
-        }
-        if stamps.len() as u32 >= cap {
-            continue;
-        }
-        let parent_node = resolve_unknown_promotion_parent(rule.attach_to.trim());
-        if parent_node.trim().is_empty() {
-            continue;
-        }
-        let label = format!("dynamic-range:{range_id}:{ip}");
-        let device = shaped_device_from_unknown_ip(&label, &parent_node, *ip, rule);
-        match replace_dynamic_circuit_by_ip_inner(device.clone()) {
+        };
+        let label = format!("dynamic-range:{range_id}:{}", promotion.ip);
+        let device =
+            shaped_device_from_unknown_ip(&label, &parent_node, promotion.ip, &promotion.rule);
+        match replace_dynamic_circuit_by_ip_inner(config, device) {
             Ok(()) => {
-                stamps.push_back(now);
-                scanner.windows.remove(&key);
-                if let Some(hooks) = hooks {
-                    hooks.on_unknown_ip_promoted(&device);
-                }
+                debug!(
+                    "Promoted sustained host {} into range '{range_id}'",
+                    promotion.ip
+                );
             }
             Err(err) => warn!(
-                "Unable to persist dynamic-range promotion for {ip} in range {range_id}: {err:?}"
+                "Unable to persist dynamic-range promotion for {} in range '{range_id}': {err:?}",
+                promotion.ip
             ),
         }
     }
-    scanner
-        .windows
-        .retain(|_, entry| now.saturating_sub(entry.last_unix) <= window);
 }
 
-fn handle_observations(observations: &[CircuitObservation], hooks: Option<&dyn DaemonHooks>) {
-    if observations.is_empty() {
-        return;
-    }
-
-    let catalog = state::shaped_devices_catalog();
-    let dynamic_snapshot = state::dynamic_circuits_snapshot();
-    let mut dynamic_device_hashes: HashSet<i64> = HashSet::new();
-    let mut dynamic_circuit_hashes: HashSet<i64> = HashSet::new();
-    dynamic_device_hashes.reserve(dynamic_snapshot.len());
-    dynamic_circuit_hashes.reserve(dynamic_snapshot.len());
-    for circuit in dynamic_snapshot.iter() {
-        dynamic_device_hashes.insert(circuit.shaped.device_hash);
-        dynamic_circuit_hashes.insert(circuit.shaped.circuit_hash);
-    }
-
-    let mut seen_device_hashes: HashSet<i64> = HashSet::new();
-    let mut seen_circuit_hashes: HashSet<i64> = HashSet::new();
-    let mut unknown_candidates: Vec<CircuitObservation> = Vec::new();
-
-    for observation in observations {
-        if catalog
-            .device_by_hashes(observation.device_hash, observation.circuit_hash)
-            .is_some()
-        {
-            continue;
-        }
-
-        if let Some(device_hash) = observation.device_hash
-            && dynamic_device_hashes.contains(&device_hash)
-        {
-            seen_device_hashes.insert(device_hash);
-            continue;
-        }
-
-        if let Some(circuit_hash) = observation.circuit_hash
-            && dynamic_circuit_hashes.contains(&circuit_hash)
-        {
-            seen_circuit_hashes.insert(circuit_hash);
-            continue;
-        }
-
-        unknown_candidates.push(*observation);
-    }
-
-    if (!seen_device_hashes.is_empty() || !seen_circuit_hashes.is_empty())
-        && let Ok(now_unix) = lqos_utils::unix_time::unix_now()
-    {
-        state::refresh_dynamic_circuits_last_seen_for_hashes(
-            &seen_device_hashes,
-            &seen_circuit_hashes,
-            now_unix,
-        );
-    }
-
-    if !unknown_candidates.is_empty() {
-        maybe_promote_unknown_ips(&unknown_candidates, &catalog, hooks);
-    }
-}
-
-fn maybe_promote_unknown_ips(
-    unknown_candidates: &[CircuitObservation],
-    catalog: &ShapedDevicesCatalog,
-    hooks: Option<&dyn DaemonHooks>,
-) {
-    let Ok(config) = lqos_config::load_config() else {
-        return;
+/// The `ip_ranges.ignore_subnets` gate for promotion (u11 A5).
+///
+/// `Some(table)` is the operator's parsed exclusion set (empty when they
+/// configured none). `None` means entries WERE configured and none parsed: the
+/// u8 lenient parser cannot say what the operator excluded, so promotion fails
+/// closed rather than enrol a management address the unreadable line named.
+///
+/// Side effects: `lqos_config` logs one `warn!` per malformed entry (its own
+/// once-per-process gate); this function adds a `debug!` only on the fail-closed
+/// path.
+fn promotion_ignore_table(
+    config: &lqos_config::Config,
+) -> Option<ip_network_table::IpNetworkTable<bool>> {
+    let Ok(table) = config.ip_ranges.ignored_network_table() else {
+        // No error arm today; if one ever appears, fail closed rather than
+        // promote against an unknown exclusion set.
+        return None;
     };
-
-    let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
-        return;
-    };
-    if !dynamic_cfg.enabled || !dynamic_cfg.enable_unknown_ip_promotion {
-        return;
+    if !config.ip_ranges.ignore_subnets.is_empty() && table.is_empty() {
+        return None;
     }
-    if dynamic_cfg.ranges.is_empty() {
-        return;
-    }
-
-    let mut trie: IpNetworkTable<usize> = IpNetworkTable::new();
-    for (idx, rule) in dynamic_cfg.ranges.iter().enumerate() {
-        trie.insert(rule.ip_range, idx);
-    }
-
-    let mut promoted = 0usize;
-    for observation in unknown_candidates {
-        if promoted >= MAX_UNKNOWN_IP_PROMOTIONS_PER_OBSERVATION {
-            break;
-        }
-
-        // Never promote an IP that is already covered by static shaped devices.
-        if catalog
-            .device_longest_match_for_ip(&observation.ip)
-            .is_some()
-        {
-            continue;
-        }
-
-        let ip: IpAddr = observation.ip.as_ip();
-        let Some((_net, rule_idx)) = trie.longest_match(ip) else {
-            continue;
-        };
-        let Some(rule) = dynamic_cfg.ranges.get(*rule_idx) else {
-            continue;
-        };
-
-        let label = format!("[dyn] ({}) {}", rule.name.trim(), observation.ip);
-        let parent_node = resolve_unknown_promotion_parent(rule.attach_to.trim());
-        if parent_node.trim().is_empty() {
-            continue;
-        }
-
-        let shaped_device = shaped_device_from_unknown_ip(&label, &parent_node, ip, rule);
-        if let Err(err) = upsert_dynamic_circuit_inner(shaped_device.clone()) {
-            warn!(
-                "Unable to persist dynamic circuit from unknown IP promotion for {}: {err:?}",
-                observation.ip
-            );
-            continue;
-        }
-
-        if let Some(hooks) = hooks {
-            hooks.on_unknown_ip_promoted(&shaped_device);
-        }
-
-        promoted += 1;
-    }
-
-    if promoted > 0 {
-        debug!(
-            "Promoted {promoted} unknown IP(s) into dynamic circuits (candidates={})",
-            unknown_candidates.len()
-        );
-    }
+    Some(table)
 }
 
-fn resolve_unknown_promotion_parent(attach_to: &str) -> String {
-    let trimmed_attach = attach_to.trim();
-    if !trimmed_attach.is_empty() {
-        if let Some(resolved) = crate::resolve_parent_node(trimmed_attach) {
-            return resolved.name;
-        }
-
-        // In "flat" setups (no meaningful `network.json`), attachments are just site-name strings.
-        let is_flat = state::with_network_json_read(|net_json| {
-            let nodes = net_json.get_nodes_when_ready();
-            let has_non_root = nodes
-                .iter()
-                .any(|node| node.name.trim() != "Root" && !node.name.trim().is_empty());
-            nodes.len() <= 1 || !has_non_root
-        });
-        if is_flat {
-            return trimmed_attach.to_string();
-        }
+/// The node NAME a PROMOTED row is written under (u12, u13, u15).
+///
+/// A promoted row is a STORE row, so it is folded by
+/// `fold_dynamic_circuits_into_devices`, which resolves the row's
+/// `(parent_node, parent_node_id)` against the EXPORTED EFFECTIVE tree and
+/// DEFERS anything that lands no real node. The id `network.json`'s legacy
+/// parser reports for a node is NOT that tree's id (u13: the live u8 run
+/// deferred a row with a correct parent name because an unprovable id rode
+/// along), so only a name ever leaves this function.
+///
+/// - blank `attach_to` (or the fold's `Root` sentinel) -> the fold's OWN root
+///   convention and nothing else: the sentinel name, no id. The store fold
+///   resolves that sentinel to the world's ROOT NODE (`u15` A2), so the value
+///   does not depend on any view of the loaded topology — which is exactly what
+///   the two live runs disproved: the old "first node after the sentinel" guess
+///   ran over a store that also carries SYNTHESIZED CIRCUIT nodes, and answered
+///   `dynamic-range:range-24` — a circuit id, so the row deferred forever;
+/// - a named `attach_to` -> that node's canonical NAME, by name/alias precedence
+///   in the loaded `network.json` (never by id, per u13);
+/// - `None` -> no deterministic node, so the caller writes NO row and warns once.
+///
+/// Side effects: a NAMED attachment reads the process-global `network.json`
+/// snapshot (one read lock). A blank/root attachment reads nothing.
+fn promotion_parent_node(attach_to: &str) -> Option<String> {
+    let trimmed = attach_to.trim();
+    if trimmed.is_empty() || is_dataplane_root_name(trimmed) {
+        return Some(DATA_PLANE_ROOT_NAME.to_string());
     }
-
-    let (node_len, orphans, first_non_root) = state::with_network_json_read(|net_json| {
+    state::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
-        let first_non_root = nodes
-            .iter()
-            .find(|node| node.name.trim() != "Root" && !node.name.trim().is_empty())
-            .map(|node| node.name.clone());
-        let orphans = nodes
-            .iter()
-            .find(|node| node.name.trim().eq_ignore_ascii_case("ORPHANS"))
-            .map(|node| node.name.clone());
-
-        (nodes.len(), orphans, first_non_root)
-    });
-    // "Flat" means `network.json` had no meaningful tree beyond Root.
-    let is_flat = node_len <= 1 || first_non_root.is_none();
-    if !is_flat {
-        if let Some(orphans) = orphans {
-            return orphans;
-        }
-        if let Some(first) = first_non_root {
-            return first;
-        }
-    }
-
-    let shaped_parent = state::shaped_devices_snapshot()
-        .devices
-        .iter()
-        .find_map(|dev| {
-            let trimmed = dev.parent_node.trim();
-            (!trimmed.is_empty()).then_some(trimmed.to_string())
-        });
-
-    shaped_parent.unwrap_or_else(|| "Root".to_string())
+        let resolved = crate::resolve_parent_node_reference_in_nodes(nodes, trimmed, None)?;
+        let name = resolved.name;
+        (!name.trim().is_empty()).then_some(name)
+    })
 }
 
+/// Whether an attachment names the fold's root sentinel.
+///
+/// NAME only, by construction: the sentinel carries no id (`u13`), so an
+/// id-shaped check could only match a node the loaded view synthesized.
+fn is_dataplane_root_name(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case(DATA_PLANE_ROOT_NAME)
+}
+
+/// One promoted host's store row (u11): the rule's rates, the host `/32`
+/// (`/128`) mapping, and the parent reference the rule supplies.
+///
+/// u13: `parent_node_id` is ALWAYS `None`, and `anchor_node_id` stays `None`. The
+/// fold proves a fallback-supplied id against the EXPORTED EFFECTIVE tree
+/// (`fallback_identity_resolves`), and the id the legacy `network.json` parser
+/// reports for a node is not that tree's id, so an id here is unprovable: the
+/// fold defers the whole row (`shaping_deferred`) even when the name is right —
+/// the live u8 run's `has an unresolvable fallback parent/anchor id`. The
+/// name-only shape is the one the range fallback uses and the one the fold
+/// resolves by name, so the id is dropped rather than guessed.
+///
+/// u15: the name may be the fold's `Root` sentinel, which the fold resolves to
+/// the world's root node — that is the blank-attachment convention, and carrying
+/// it here is what keeps the write independent of any topology view.
 fn shaped_device_from_unknown_ip(
     label: &str,
-    parent_node: &str,
+    parent_node_name: &str,
     ip: IpAddr,
     rule: &lqos_config::DynamicCircuitRangeRule,
 ) -> lqos_config::ShapedDevice {
@@ -997,7 +1015,11 @@ fn shaped_device_from_unknown_ip(
         circuit_name: label.to_string(),
         device_id: label.to_string(),
         device_name: label.to_string(),
-        parent_node: parent_node.to_string(),
+        // u13: a node NAME (or the fold's `Root` sentinel, u15), never a circuit
+        // id, and never an id the exported tree cannot verify.
+        parent_node: parent_node_name.to_string(),
+        parent_node_id: None,
+        anchor_node_id: None,
         download_min_mbps: rule.download_min_mbps,
         upload_min_mbps: rule.upload_min_mbps,
         download_max_mbps: rule.download_max_mbps,
@@ -1016,6 +1038,7 @@ fn shaped_device_from_unknown_ip(
 fn publish_shaped_devices_if_changed(
     reason: &str,
     shaped: lqos_config::ConfigShapedDevices,
+    dynamic_origin_rows: lqos_utils::DynamicOriginRows,
     key: ShapedDevicesProvenanceKey,
     hooks: Option<&dyn DaemonHooks>,
     active_key: &mut Option<ShapedDevicesProvenanceKey>,
@@ -1026,9 +1049,9 @@ fn publish_shaped_devices_if_changed(
     }
 
     debug!("Publishing shaped-devices snapshot reason={reason}");
-    state::publish_shaped_devices(shaped);
+    state::publish_shaped_devices(shaped, dynamic_origin_rows);
     *active_key = Some(key);
-    prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks);
+    prune_dynamic_circuits_superseded_by_shaped_devices_inner();
     if let Some(hooks) = hooks {
         hooks.on_shaped_devices_updated();
     }
@@ -1048,6 +1071,7 @@ fn reload_shaped_devices_inner(
                 return publish_shaped_devices_if_changed(
                     reason,
                     loaded.shaped,
+                    loaded.dynamic_origin_rows,
                     key,
                     hooks,
                     active_key,
@@ -1073,37 +1097,32 @@ fn reload_shaped_devices_inner(
     unreachable!("reload loop must return");
 }
 
-fn prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks: Option<&dyn DaemonHooks>) {
+fn prune_dynamic_circuits_superseded_by_shaped_devices_inner() {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
     let catalog = state::shaped_devices_catalog();
     let snapshot = state::dynamic_circuits_snapshot();
     if snapshot.is_empty() {
         return;
     }
+    let provisioned = ProvisionedShapedRows::new(&catalog, &state::dynamic_origin_rows());
 
-    let mut removed_ids: Vec<String> = Vec::new();
     let mut removed_keys: HashSet<String> = HashSet::new();
-
     for circuit in snapshot.iter() {
-        if !is_superseded_by_shaped_devices(circuit, &catalog) {
+        if !provisioned.is_superseded_by(circuit) {
             continue;
         }
-
         let circuit_id = circuit.shaped.circuit_id.trim();
         if circuit_id.is_empty() {
             continue;
         }
-        let key = normalize_circuit_id_key(circuit_id);
-        if removed_keys.insert(key) {
-            removed_ids.push(circuit_id.to_string());
-        }
+        removed_keys.insert(normalize_circuit_id_key(circuit_id));
     }
 
     if removed_keys.is_empty() {
         return;
     }
-
-    removed_ids.sort();
-    removed_ids.dedup();
 
     let updated: Vec<_> = snapshot
         .iter()
@@ -1118,18 +1137,14 @@ fn prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks: Option<&dyn 
         .cloned()
         .collect();
 
-    if let Err(err) = persist_dynamic_circuits_to_disk(&updated) {
+    if let Err(err) = persist_dynamic_circuits_to_disk(&config, &updated) {
         warn!("Unable to persist dynamic circuits after shaped-devices conflict prune: {err:?}");
     }
     state::publish_dynamic_circuits_snapshot(updated);
     debug!(
         "Pruned {} dynamic circuits superseded by ShapedDevices.csv changes",
-        removed_ids.len()
+        removed_keys.len()
     );
-
-    if let Some(hooks) = hooks {
-        hooks.on_dynamic_circuits_expired(&removed_ids);
-    }
 }
 
 fn reload_network_json_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> Result<()> {

@@ -25,7 +25,15 @@ pub struct ShapedDevice {
     /// The display name of the device.
     pub device_name: String,
 
-    /// The parent node of the device, derived from `network.json`
+    /// The parent node of the device, derived from `network.json`.
+    ///
+    /// RESERVED VALUE: a row may name the dataplane's synthetic root with the
+    /// shared sentinel `"Root"` (`lqos_dataplane_types::DATA_PLANE_ROOT_NAME`)
+    /// and no `parent_node_id`. That is not a node in `network.json` — the root
+    /// is implicit — so the dynamic fold resolves the sentinel to the wire root
+    /// (empty parent id, normalized to `root`) rather than looking the name up.
+    /// Dynamic-store rows written by unknown-IP promotion carry it whenever the
+    /// range rule's `attach_to` is blank.
     pub parent_node: String,
 
     /// Optional stable `network.json` identifier for the parent node.

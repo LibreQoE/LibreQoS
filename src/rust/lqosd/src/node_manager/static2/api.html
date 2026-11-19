@@ -3,42 +3,44 @@
 <!-- Benefits intro -->
 <div class="text-secondary">
 <h2 class="h4 mb-2">
-  <i class="fa-solid fa-robot me-2"></i>LibreQoS API and Libby
-  <span class="text-muted">— faster answers, better visibility</span>
+  <i class="fa-solid fa-robot me-2"></i><span data-i18n="api.title">LibreQoS API and Libby</span>
+  <span class="text-muted" data-i18n="api.subtitle">— faster answers, better visibility</span>
   </h2>
-<p class="text-secondary">
+<p class="text-secondary" data-i18n="api.lead">
   The Local API exposes real‑time telemetry and network insights from your node, while Libby combines those
   live metrics with embedded documentation to deliver concise, actionable answers. Use them to accelerate troubleshooting,
   automate checks, and keep operators focused on outcomes instead of digging for data.
   </p>
 
 <!-- Capabilities list -->
-<h3 class="h5 mt-4">What you can do</h3>
+<h3 class="h5 mt-4" data-i18n="api.what.title">What you can do</h3>
 <ul class="mb-4">
-  <li><i class="fa-solid fa-gauge-high me-2 text-secondary"></i>Query live throughput, packet rates, and shaped vs. unshaped traffic.</li>
-  <li><i class="fa-solid fa-tower-broadcast me-2 text-secondary"></i>See circuits and nodes nearing capacity to prevent congestion.</li>
-  <li><i class="fa-solid fa-arrows-turn-to-dots me-2 text-secondary"></i>Analyze TCP retransmits and latency to pinpoint quality issues.</li>
-  <li><i class="fa-solid fa-sitemap me-2 text-secondary"></i>Summarize your network tree and trace upstream paths (funnel views).</li>
-  <li><i class="fa-solid fa-magnifying-glass me-2 text-secondary"></i>Look up flows by IP, top downloaders, and active endpoints.</li>
-  <li><i class="fa-regular fa-file-lines me-2 text-secondary"></i>Generate ticket suggestions with clear next steps and likely causes.</li>
-  <li><i class="fa-regular fa-circle-question me-2 text-secondary"></i>Ask Libby anything—she uses tools first, then explains results in plain English.</li>
-  <li><i class="fa-solid fa-language me-2 text-secondary"></i>Chat in your native language — Libby understands and replies in the same language, clearly and concisely.</li>
-  <li><i class="fa-solid fa-book me-2 text-secondary"></i>Get relevant docs snippets (RAG) with citations to official LibreQoS guidance.</li>
+  <li data-i18n="api.what.throughput"><i class="fa-solid fa-gauge-high me-2 text-secondary"></i>Query live throughput, packet rates, and shaped vs. unshaped traffic.</li>
+  <li data-i18n="api.what.capacity"><i class="fa-solid fa-tower-broadcast me-2 text-secondary"></i>See circuits and nodes nearing capacity to prevent congestion.</li>
+  <li data-i18n="api.what.retransmits"><i class="fa-solid fa-arrows-turn-to-dots me-2 text-secondary"></i>Analyze TCP retransmits and latency to pinpoint quality issues.</li>
+  <li data-i18n="api.what.tree"><i class="fa-solid fa-sitemap me-2 text-secondary"></i>Summarize your network tree and trace upstream paths (funnel views).</li>
+  <li data-i18n="api.what.flows"><i class="fa-solid fa-magnifying-glass me-2 text-secondary"></i>Look up flows by IP, top downloaders, and active endpoints.</li>
+  <li data-i18n="api.what.tickets"><i class="fa-regular fa-file-lines me-2 text-secondary"></i>Generate ticket suggestions with clear next steps and likely causes.</li>
+  <li data-i18n="api.what.libby"><i class="fa-regular fa-circle-question me-2 text-secondary"></i>Ask Libby anything—she uses tools first, then explains results in plain English.</li>
+  <li data-i18n="api.what.language"><i class="fa-solid fa-language me-2 text-secondary"></i>Chat in your native language — Libby understands and replies in the same language, clearly and concisely.</li>
+  <li data-i18n="api.what.docs"><i class="fa-solid fa-book me-2 text-secondary"></i>Get relevant docs snippets (RAG) with citations to official LibreQoS guidance.</li>
 </ul>
 
 <!-- Getting started blurb -->
 <div class="card">
   <div class="card-body">
-    <h4 class="h6 card-title mb-2"><i class="fa-solid fa-plug me-2"></i>Getting started</h4>
+    <h4 class="h6 card-title mb-2" data-i18n="api.start.title"><i class="fa-solid fa-plug me-2"></i>Getting started</h4>
     <p class="mb-2 text-secondary">
-      The API is part of this web interface: <code>lqosd</code> serves it at <code>/api/v3</code> on the
-      same listener as this page, so there is nothing extra to install or enable. Every request needs a
-      local API key in the <code>x-bearer</code> header; create and revoke keys under
-      <a href="config_lts.html">License &amp; Services &rarr; Local API Keys</a> (the key is shown once and
-      only its digest is stored).
+      <span data-i18n="api.start.part1">The API is part of this web interface:</span> <code>lqosd</code>
+      <span data-i18n="api.start.part2">serves it at</span> <code>/api/v3</code>
+      <span data-i18n="api.start.part3">on the same listener as this page, so there is nothing extra to install or enable. Every request needs a local API key in the</span>
+      <code>x-bearer</code>
+      <span data-i18n="api.start.part4">header; create and revoke keys under</span>
+      <a href="config_lts.html" data-i18n="api.start.keys_link">License &amp; Services &rarr; Local API Keys</a>
+      <span data-i18n="api.start.part5">(the key is shown once and only its digest is stored).</span>
     </p>
     <p class="mb-0 text-secondary">
-      Interactive documentation lives at <a href="/api/v3/docs/">/api/v3/docs</a>, generated from
+      <span data-i18n="api.start.docs">Interactive documentation lives at</span> <a href="/api/v3/docs/">/api/v3/docs</a><span data-i18n="api.start.generated">, generated from</span>
       <code>/api/v3/openapi.json</code>.
     </p>
   </div>

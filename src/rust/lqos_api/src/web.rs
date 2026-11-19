@@ -143,9 +143,13 @@ fn document_key_only_auth(operation: &mut Operation) {
     let Some(parameters) = operation.parameters.as_mut() else {
         return;
     };
+    // utoipa 6 holds parameters as `RefOr`; the handlers only emit inline ones.
     for parameter in parameters.iter_mut() {
-        if parameter.name == BEARER_HEADER && parameter.parameter_in == ParameterIn::Header {
-            *parameter = key_parameter();
+        if let utoipa::openapi::RefOr::T(inline) = parameter
+            && inline.name == BEARER_HEADER
+            && inline.parameter_in == ParameterIn::Header
+        {
+            *inline = key_parameter();
         }
     }
 }

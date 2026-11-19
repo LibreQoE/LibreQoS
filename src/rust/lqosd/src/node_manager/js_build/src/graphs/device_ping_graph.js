@@ -2,6 +2,7 @@ import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {applyCircuitDeviceChartTheme} from "./circuit_device_chart_theme";
+import {t} from "../i18n/index.js";
 
 export class DevicePingHistogram extends DashboardGraph {
     constructor(id) {
@@ -20,16 +21,16 @@ export class DevicePingHistogram extends DashboardGraph {
         }
         this.option = {
             title: {
-                text: "Ping Time Histogram",
+                text: t("graph.ping.title"),
             },
             xAxis: {
                 type: 'category',
                 data: axis,
-                name: "Ping Time (ms)"
+                name: t("graph.ping.axis_time")
             },
             yAxis: {
                 type: 'value',
-                name: "Samples"
+                name: t("graph.axis.samples")
             },
             series: {
                 data: d,

@@ -112,6 +112,22 @@ impl NetworkDevicesCatalog {
         self.dynamic.get(*idx).map(|circuit| (net, &circuit.shaped))
     }
 
+    /// Whether a PUBLISHED dynamic circuit covers `ip`.
+    ///
+    /// These are the overlay store's own rows — RADIUS circuits and range
+    /// promotions — never the topology fold's synthesized range FALLBACK, which
+    /// lives in the shaped-devices snapshot instead. Promotion eligibility needs
+    /// exactly this split: a promoted host must not read as uncovered (it would
+    /// re-promote every window), and a whole-prefix fallback must not read as an
+    /// owner (it would stop promotion for every host inside its rule).
+    pub fn dynamic_covers_ip(&self, ip: &XdpIpAddress) -> bool {
+        let lookup = match ip.as_ip() {
+            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+            IpAddr::V6(ip) => ip,
+        };
+        self.dyn_ip_table.longest_match(lookup).is_some()
+    }
+
     /// Returns true if the device hash is currently tracked as a dynamic circuit.
     pub fn is_dynamic_device_hash(&self, device_hash: i64) -> bool {
         self.dyn_by_device_hash.contains_key(&device_hash)

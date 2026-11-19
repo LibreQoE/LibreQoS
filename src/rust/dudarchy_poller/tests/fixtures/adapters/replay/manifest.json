@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "airos",
+      "document": "../../../../adapters/airos.json",
+      "transcript": "airos/transcript.json",
+      "expect": "airos/expect.json"
+    },
+    {
+      "name": "cambium-epmp",
+      "document": "../../../../adapters/cambium_epmp.json",
+      "transcript": "cambium-epmp/transcript.json",
+      "expect": "cambium-epmp/expect.json"
+    },
+    {
+      "name": "airos-ap",
+      "document": "../valid/airos-ap.json",
+      "transcript": "airos-ap/transcript.json",
+      "expect": "airos-ap/expect.json"
+    },
+    {
+      "name": "edgeos",
+      "document": "../../../../adapters/edgeos.json",
+      "transcript": "edgeos/transcript.json",
+      "expect": "edgeos/expect.json"
+    },
+    {
+      "name": "ltu-rocket",
+      "document": "../../../../adapters/ltu_rocket.json",
+      "transcript": "ltu-rocket/transcript.json",
+      "expect": "ltu-rocket/expect.json"
+    },
+    {
+      "name": "wave-ap",
+      "document": "../../../../adapters/wave_ap.json",
+      "transcript": "wave-ap/transcript.json",
+      "expect": "wave-ap/expect.json"
+    },
+    {
+      "name": "wave-ap-legacy",
+      "document": "../../../../adapters/wave_ap_legacy.json",
+      "transcript": "wave-ap-legacy/transcript.json",
+      "expect": "wave-ap-legacy/expect.json"
+    },
+    {
+      "name": "netonix-switch",
+      "document": "../../../../adapters/netonix.json",
+      "transcript": "netonix-switch/transcript.json",
+      "expect": "netonix-switch/expect.json"
+    },
+    {
+      "name": "procurve",
+      "document": "../../../../adapters/procurve.json",
+      "transcript": "procurve/transcript.json",
+      "expect": "procurve/expect.json"
+    },
+    {
+      "name": "routeros-snmp",
+      "document": "../../../../adapters/routeros.json",
+      "surface": "snmp",
+      "transcript": "routeros-snmp/transcript.json",
+      "expect": "routeros-snmp/expect.json"
+    },
+    {
+      "name": "routeros-api",
+      "document": "../../../../adapters/routeros.json",
+      "surface": "api",
+      "transcript": "routeros-api/transcript.json",
+      "expect": "routeros-api/expect.json"
+    },
+    {
+      "name": "swos-switch",
+      "document": "../../../../adapters/swos.json",
+      "transcript": "swos-switch/transcript.json",
+      "expect": "swos-switch/expect.json"
+    }
+  ]
+}

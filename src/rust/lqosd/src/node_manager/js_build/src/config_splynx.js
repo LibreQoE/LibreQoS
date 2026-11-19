@@ -5,29 +5,31 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableSplynx").checked) {
         if (!secretWillExistAfterSave("splynx_integration", "api_key", "apiKey")) {
-            alert("API Key is required when Splynx integration is enabled");
+            alert(t("config.splynx.validation.key_required"));
             return false;
         }
 
         if (!secretWillExistAfterSave("splynx_integration", "api_secret", "apiSecret")) {
-            alert("API Secret is required when Splynx integration is enabled");
+            alert(t("config.splynx.validation.secret_required"));
             return false;
         }
 
         const url = document.getElementById("splynxUrl").value.trim();
         if (!url) {
-            alert("Splynx URL is required when Splynx integration is enabled");
+            alert(t("config.splynx.validation.url_required"));
             return false;
         }
         try {
             new URL(url);
         } catch {
-            alert("Splynx URL must be a valid URL");
+            alert(t("config.splynx.validation.url_invalid"));
             return false;
         }
     }
@@ -47,9 +49,13 @@ function updateConfig() {
 
 // Render the configuration menu
 renderConfigMenu('splynx');
+// The compile-mode hint wraps `Integration - Common` in `<code>`, which the DOM
+// applier cannot keep: the paragraph is empty in the page and rendered here.
+renderMarkupText({splynxCompileModeHelp: tHtml("config.splynx.compile_mode_help")});
 
 loadConfig(() => {
     if (!window.config) {
+        // translatable: false — "Configuration not loaded" is a console diagnostic, never rendered
         console.error("Configuration not loaded");
         return;
     }
@@ -80,7 +86,7 @@ loadConfig(() => {
         if (validateConfig()) {
             updateConfig();
             saveConfig(() => {
-                alert("Configuration saved successfully!");
+                alert(t("config.splynx.saved"));
             });
         }
     });

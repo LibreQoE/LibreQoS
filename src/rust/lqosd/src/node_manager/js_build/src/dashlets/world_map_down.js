@@ -2,8 +2,13 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {colorByRttMs} from "../helpers/color_scales";
 import {isDarkMode} from "../helpers/dark_mode";
 import {ensureMapLibreAssets} from "./world_map_assets.mjs";
-import {applyWorldMapFeatureUpdate, WORLD_MAP_ENCODING_DESCRIPTION} from "./world_map_dashlet_state.mjs";
+import {applyWorldMapFeatureUpdate, worldMapEncodingDescription} from "./world_map_dashlet_state.mjs";
 import {emptyFeatureCollection, rowsToEndpointFeatures} from "./world_map_model.mjs";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "rgba(0,0,0,0)" "rgba(79, 172, 254, 0.45)" "rgba(124, 255, 178, 0.55)" "rgba(253, 221, 96, 0.7)" "rgba(255, 110, 118, 0.8)" are map paint colours
+// translatable: false — "WorldMapGraph: missing DOM element ' '" is a programmer-error message thrown for a malformed container id
+// translatable: false — "_empty" "_description" "_status" are DOM id suffixes this dashlet appends, not labels
 
 const WORLD_CENTER = [0, 18];
 const WORLD_ZOOM = 0.85;
@@ -117,9 +122,9 @@ export class WorldMapGraph {
         this.dom.textContent = "";
         ensureMapLibreAssets()
             .then(() => this.initMap())
-            .catch((err) => {
+            .catch(() => {
                 if (this.disposed) return;
-                this.dom.textContent = err?.message || "Unable to load map";
+                this.dom.textContent = t("dashlet.world_map.load_failed");
             });
     }
 
@@ -248,7 +253,7 @@ export class ShaperWorldMapDashlet extends BaseDashlet {
     }
     canBeSlowedDown(){ return true; }
     title(){ return this._title; }
-    tooltip(){ return `<h5>${this.title()}</h5><p>${WORLD_MAP_ENCODING_DESCRIPTION}</p>`; }
+    tooltip(){ return `<h5>${this.title()}</h5><p>${worldMapEncodingDescription()}</p>`; }
     subscribeTo(){ return ["EndpointLatLon"]; }
     buildContainer(){
         let b = super.buildContainer();
@@ -258,7 +263,7 @@ export class ShaperWorldMapDashlet extends BaseDashlet {
         const description = document.createElement("div");
         description.id = this._descriptionId;
         description.classList.add("visually-hidden");
-        description.textContent = `World map showing recent endpoint locations. ${WORLD_MAP_ENCODING_DESCRIPTION}`;
+        description.textContent = t("dashlet.world_map.description", {encoding: worldMapEncodingDescription()});
         const status = document.createElement("div");
         status.id = this._statusId;
         status.classList.add("visually-hidden");
@@ -281,7 +286,7 @@ export class ShaperWorldMapDashlet extends BaseDashlet {
         const status = document.getElementById(this._statusId);
         if (status) status.textContent = msg;
     }
-    _showEmpty(show, msg = "No recent endpoint location data"){
+    _showEmpty(show, msg = t("dashlet.world_map.empty")){
         const card = document.getElementById(this.id);
         if (!card) return;
         let empty = document.getElementById(this._emptyId);
@@ -297,7 +302,7 @@ export class ShaperWorldMapDashlet extends BaseDashlet {
         if (show) {
             empty.style.display = '';
             if (graph) graph.style.display = 'none';
-            this._setStatus("No recent endpoint location data.");
+            this._setStatus(t("dashlet.world_map.empty"));
         } else {
             empty.style.display = 'none';
             if (graph) graph.style.display = '';
@@ -313,5 +318,5 @@ export class ShaperWorldMapDashlet extends BaseDashlet {
 }
 
 export class ShaperWorldMapDown extends ShaperWorldMapDashlet {
-    constructor(slot){ super(slot, "Shaper World Map (Download)"); }
+    constructor(slot){ super(slot, t("dashlet.name.shaper_world_map_download")); }
 }

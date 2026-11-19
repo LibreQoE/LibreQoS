@@ -5,6 +5,7 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function arrayToString(arr) {
     return arr ? arr.join(', ') : '';
@@ -48,6 +49,7 @@ function renderRecurringRateRows(rules = []) {
 }
 
 function collectRecurringRateRows() {
+    // translatable: false — "#recurringServiceRatesBody tr" is a DOM selector, not a label
     return Array.from(document.querySelectorAll("#recurringServiceRatesBody tr"))
         .map((row) => ({
             enabled: row.querySelector(".recurring-enabled").checked,
@@ -63,35 +65,35 @@ function validateConfig() {
     if (document.getElementById("enableSonar").checked) {
         const apiUrl = document.getElementById("sonarApiUrl").value.trim();
         if (!apiUrl) {
-            alert("API URL is required when Sonar integration is enabled");
+            alert(t("config.sonar.validation.url_required"));
             return false;
         }
         try {
             new URL(apiUrl);
         } catch {
-            alert("API URL must be a valid URL");
+            alert(t("config.sonar.validation.url_invalid"));
             return false;
         }
 
         if (!secretWillExistAfterSave("sonar_integration", "sonar_api_key", "sonarApiKey")) {
-            alert("API Key is required when Sonar integration is enabled");
+            alert(t("config.sonar.validation.key_required"));
             return false;
         }
 
         const snmpCommunity = document.getElementById("snmpCommunity").value.trim();
         if (!snmpCommunity) {
-            alert("SNMP Community is required when Sonar integration is enabled");
+            alert(t("config.sonar.validation.snmp_required"));
             return false;
         }
     }
 
     for (const rule of collectRecurringRateRows()) {
         if (!Number.isFinite(rule.download_mbps) || rule.download_mbps <= 0) {
-            alert(`Recurring service "${rule.service_name}" must have a valid download rate`);
+            alert(t("config.sonar.validation.download_rate", {service: rule.service_name}));
             return false;
         }
         if (!Number.isFinite(rule.upload_mbps) || rule.upload_mbps <= 0) {
-            alert(`Recurring service "${rule.service_name}" must have a valid upload rate`);
+            alert(t("config.sonar.validation.upload_rate", {service: rule.service_name}));
             return false;
         }
     }
@@ -158,11 +160,12 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.sonar.saved"));
                 });
             }
         });
     } else {
+        // translatable: false — "Sonar integration configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Sonar integration configuration not found in window.config");
     }
 });

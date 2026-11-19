@@ -49,6 +49,7 @@ import {
     formatRatePairValue,
     hasUsableRatePair,
 } from "./circuit_rate_display.mjs";
+import {t, tAttr, tn} from "./i18n/index.js";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -130,10 +131,15 @@ function ethernetCapsPageHref(advisory) {
 }
 
 function ethernetTooltipHtml(advisory) {
-    return (
-        `Requested plan ${formatMbps(advisory.requested_download_mbps)} / ${formatMbps(advisory.requested_upload_mbps)} exceeded detected Ethernet speed. ` +
-        `Shaping auto-capped to ${formatMbps(advisory.applied_download_mbps)} / ${formatMbps(advisory.applied_upload_mbps)}.`
-    );
+    const requested = t("common.ethernet.requested_exceeded", {
+        down: formatMbps(advisory.requested_download_mbps),
+        up: formatMbps(advisory.requested_upload_mbps),
+    });
+    const applied = t("common.ethernet.auto_capped", {
+        down: formatMbps(advisory.applied_download_mbps),
+        up: formatMbps(advisory.applied_upload_mbps),
+    });
+    return `${requested} ${applied}`;
 }
 
 function formatPlanSpeedPair(downloadMbps, uploadMbps) {
@@ -172,7 +178,7 @@ function renderEthernetAdvisory(advisory) {
     badge.href = ethernetCapsPageHref(advisory);
     badge.setAttribute("title", note);
     badge.setAttribute("data-bs-original-title", note);
-    badge.setAttribute("aria-label", `Review ${portLabel} Ethernet-limited circuits`);
+    badge.setAttribute("aria-label", t("common.ethernet.review_aria", {tier: portLabel}));
     disposeTooltip();
     initTooltipsWithin(badge.parentElement || document);
 }
@@ -272,7 +278,7 @@ function applyParentNodeLink(parentNode) {
             params.set("nodeId", parentNode.id);
         }
         parentNodeEl.href = `tree.html?${params.toString()}`;
-        parentNodeEl.title = `Open ${parentNodeName} in Tree`;
+        parentNodeEl.title = t("circuit.parent_link.open_tree", {name: parentNodeName});
         return;
     }
     getNodeIdMap().then((nodeIdLookup) => {
@@ -284,7 +290,7 @@ function applyParentNodeLink(parentNode) {
             return;
         }
         parentNodeEl.href = href;
-        parentNodeEl.title = `Open ${parentNodeName} in Tree`;
+        parentNodeEl.title = t("circuit.parent_link.open_tree", {name: parentNodeName});
     });
 }
 
@@ -374,8 +380,13 @@ function currentQueuingActivitySnapshot() {
     // §`lqos-74t.46` (#1159): BOTH directions at once (no toggle). Flows is a
     // circuit-level scalar, NOT per-direction.
     const directionSnapshot = (direction) => {
-        const throughputBps = currentDirectionValue(latestCircuitSummary?.bytes_per_second, direction, 0) * 8;
-        const enqueuedBps = currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, direction, 0) * 8;
+        // Backend semantics (lqos_api CircuitTransit, api manual + changelog
+        // 2026-08-14): bytes_per_second = ENQUEUED (pre-shaping demand);
+        // actual_bytes_per_second = the DELIVERED (shaped) rate. The comment
+        // above is the contract; these two assignments matched it backwards
+        // and made a perfectly shaped circuit read >100% utilization.
+        const throughputBps = currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, direction, 0) * 8;
+        const enqueuedBps = currentDirectionValue(latestCircuitSummary?.bytes_per_second, direction, 0) * 8;
         const ceilingMbps = currentDirectionValue(plan, direction, 0);
         const ceilingBps = ceilingMbps * 1_000_000.0;
         const utilizationPercent = ceilingBps > 0
@@ -731,7 +742,7 @@ function buildFunnelPathCard(state, displayParents) {
 
     const title = document.createElement("div");
     title.classList.add("lqos-funnel-path-title");
-    title.textContent = "Queue Path";
+    title.textContent = t("circuit.queue_tree.path_title");
     topRow.appendChild(title);
 
     const meta = document.createElement("div");
@@ -739,12 +750,12 @@ function buildFunnelPathCard(state, displayParents) {
 
     const parentPill = document.createElement("span");
     parentPill.classList.add("lqos-funnel-path-pill");
-    parentPill.textContent = "Circuit parent";
+    parentPill.textContent = t("circuit.queue_tree.circuit_parent");
     meta.appendChild(parentPill);
 
     const countPill = document.createElement("span");
     countPill.classList.add("lqos-funnel-path-pill");
-    countPill.textContent = `${displayParents.length} upstream node${displayParents.length === 1 ? "" : "s"}`;
+    countPill.textContent = tn("circuit.queue_tree.upstream_count", displayParents.length);
     meta.appendChild(countPill);
 
     topRow.appendChild(meta);
@@ -755,7 +766,7 @@ function buildFunnelPathCard(state, displayParents) {
 
     const origin = document.createElement("span");
     origin.classList.add("lqos-funnel-path-node", "is-origin", "redactable");
-    origin.textContent = state.immediateParent.name || "Unknown";
+    origin.textContent = state.immediateParent.name || t("circuit.queue_tree.unknown_node");
     chain.appendChild(origin);
 
     displayParents.forEach(({ node }) => {
@@ -766,7 +777,7 @@ function buildFunnelPathCard(state, displayParents) {
 
         const ancestor = document.createElement("span");
         ancestor.classList.add("lqos-funnel-path-node", "redactable");
-        ancestor.textContent = node.name || "Unknown";
+        ancestor.textContent = node.name || t("circuit.queue_tree.unknown_node");
         chain.appendChild(ancestor);
     });
 
@@ -774,10 +785,9 @@ function buildFunnelPathCard(state, displayParents) {
 
     const note = document.createElement("p");
     note.classList.add("text-muted", "small", "mb-0");
-    note.textContent =
-        displayParents.length > 0
-            ? "Live upstream queue ancestors for this circuit, shown with the same order used below."
-            : "This circuit parent does not currently have additional upstream queue ancestors.";
+    note.textContent = displayParents.length > 0
+        ? t("circuit.queue_tree.ancestors_note")
+        : t("circuit.queue_tree.no_extra_ancestors");
     pathCard.appendChild(note);
 
     return pathCard;
@@ -809,7 +819,7 @@ function renderFunnel(state) {
         funnelParents = [];
         funnelParentSignature = [];
         clearDiv(target);
-        target.appendChild(buildFunnelEmptyState("No parent node found for this circuit."));
+        target.appendChild(buildFunnelEmptyState(t("circuit.queue_tree.no_parent")));
         return;
     }
 
@@ -833,7 +843,7 @@ function renderFunnel(state) {
     parentDiv.appendChild(buildFunnelPathCard(state, displayParents));
 
     if (displayParents.length === 0) {
-        parentDiv.appendChild(buildFunnelEmptyState("No upstream queue ancestors are currently available beyond the circuit parent."));
+        parentDiv.appendChild(buildFunnelEmptyState(t("circuit.queue_tree.no_ancestors")));
     }
 
     displayParents.forEach(({ parent, node, position }) => {
@@ -853,13 +863,13 @@ function renderFunnel(state) {
 
         const name = document.createElement("span");
         name.classList.add("redactable");
-        name.textContent = node.name || "Unknown";
+        name.textContent = node.name || t("circuit.queue_tree.unknown_node");
         heading.appendChild(name);
         titleWrap.appendChild(heading);
 
         const subtitle = document.createElement("p");
         subtitle.classList.add("text-muted", "small", "mb-0");
-        subtitle.textContent = "Live queue telemetry for this upstream node.";
+        subtitle.textContent = t("circuit.queue_tree.node_telemetry");
         titleWrap.appendChild(subtitle);
 
         header.appendChild(titleWrap);
@@ -869,7 +879,10 @@ function renderFunnel(state) {
 
         const stepBadge = document.createElement("span");
         stepBadge.classList.add("lqos-funnel-node-step");
-        stepBadge.textContent = `Ancestor ${position} / ${displayParents.length}`;
+        stepBadge.textContent = t("circuit.queue_tree.ancestor_position", {
+            position,
+            total: displayParents.length,
+        });
         badges.appendChild(stepBadge);
 
         header.appendChild(badges);
@@ -913,9 +926,9 @@ function renderFunnel(state) {
                 if (!document.getElementById("funnel_tp_" + parent)) {
                     return;
                 }
-                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
-                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
-                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
+                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, t("common.table.throughput"));
+                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, t("common.table.retransmits"));
+                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, t("circuit.graph.latency_histogram"), 300000);
                 funnelGraphs[parent] = {
                     tp: tpGraph,
                     rxmit: rxmitGraph,
@@ -952,7 +965,7 @@ function updateCakeTabAvailability(msg) {
         if (tabContent) tabContent.style.display = "";
 
         if (tabBtn) {
-            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> Queue Stats';
+            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + t("circuit.tab.queue_stats");
         }
     } catch (e) {
         // Ignore label updates; data updates still continue.
@@ -977,13 +990,13 @@ function renderCakeGraphShell() {
         <div class="lqos-cake-panel">
             <div class="lqos-cake-header">
                 <div class="lqos-cake-header-copy">
-                    <h5><i class="fa fa-birthday-cake"></i> Queue Stats</h5>
-                    <p class="text-muted small mb-0">Raw 1s scatter samples over the last 3 minutes. Hover any queue chart to inspect the same timestamp across all six charts.</p>
+                    <h5><i class="fa fa-birthday-cake"></i> ${t("circuit.tab.queue_stats")}</h5>
+                    <p class="text-muted small mb-0">${t("circuit.cake.intro")}</p>
                 </div>
                 <div class="lqos-cake-meta">
-                    <span class="lqos-cake-meta-pill">Last 3 minutes</span>
-                    <span class="lqos-cake-meta-pill">1s samples</span>
-                    <span class="lqos-cake-meta-pill">Synchronized hover</span>
+                    <span class="lqos-cake-meta-pill">${t("circuit.cake.last_3_minutes")}</span>
+                    <span class="lqos-cake-meta-pill">${t("circuit.cake.samples")}</span>
+                    <span class="lqos-cake-meta-pill">${t("circuit.cake.synchronized_hover")}</span>
                 </div>
             </div>
             <div class="row g-3">
@@ -1020,16 +1033,16 @@ function renderCakeGraphShell() {
                 <div class="col-12">
                     <div class="lqos-cake-info-card">
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Queue Memory</div>
+                            <div class="lqos-cake-info-label">${t("circuit.cake.queue_memory")}</div>
                             <div class="lqos-cake-info-value"><span id="cakeQueueMemory">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Live Queue Type</div>
+                            <div class="lqos-cake-info-label">${t("circuit.cake.queue_type")}</div>
                             <div class="lqos-cake-info-value"><span id="cakeQueueType">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Interpretation</div>
-                            <div class="lqos-cake-info-value text-muted small">Download plots above zero, upload plots below zero. Tooltips always show absolute values with direction labels.</div>
+                            <div class="lqos-cake-info-label">${t("circuit.cake.interpretation")}</div>
+                            <div class="lqos-cake-info-value text-muted small">${t("circuit.cake.interpretation_text")}</div>
                         </div>
                     </div>
                 </div>
@@ -1092,6 +1105,7 @@ function ensureCakeGraphs() {
 }
 
 function initTabLifecycle(parentNode) {
+    // translatable: false — '#myTab button[data-bs-toggle="tab"]' is a DOM selector, not a label
     const tabs = document.querySelectorAll('#myTab button[data-bs-toggle="tab"]');
     tabs.forEach((tab) => {
         tab.addEventListener("shown.bs.tab", () => {
@@ -1209,8 +1223,8 @@ function formatQueueTypeDisplay(sqmToken) {
 function formatDirectionalQueueTypeDisplay(downToken, upToken) {
     const down = (downToken ?? "").toString().trim().toLowerCase();
     const up = (upToken ?? "").toString().trim().toLowerCase();
-    const downLabel = down || "Unknown";
-    const upLabel = up || down || "Unknown";
+    const downLabel = down || t("circuit.cake.queue_type_unknown");
+    const upLabel = up || down || t("circuit.cake.queue_type_unknown");
     return `${downLabel} / ${upLabel}`;
 }
 
@@ -1405,7 +1419,7 @@ function initExcludeRttToggle() {
             (msg) => {
                 excludeRttBusy = false;
                 if (!msg || !msg.ok) {
-                    alert((msg && msg.message) ? msg.message : "Failed to update RTT exclusion");
+                    alert((msg && msg.message) ? msg.message : t("circuit.rtt.update_failed"));
                     excludeRttToggle.checked = !!excludeRttLastValue;
                     return;
                 }
@@ -1483,7 +1497,7 @@ function startPingMonitor(circuits) {
             if (target != null) {
                 let myPing = devicePings[msg.ip];
                 if (myPing.count === myPing.timeout) {
-                    target.innerHTML = "<i class='fa fa-minus-circle text-secondary' data-bs-toggle='tooltip' data-bs-placement='top' title='No ping response - this is normal for many ISPs'></i>";
+                    target.innerHTML = "<i class='fa fa-minus-circle text-secondary' data-bs-toggle='tooltip' data-bs-placement='top' title='" + tAttr("circuit.devices.ping_timeout_title") + "'></i>";
                 } else {
                     let loss = ((myPing.timeout / myPing.count) * 100);
                     let lossStr = loss.toFixed(1);
@@ -1500,7 +1514,7 @@ function startPingMonitor(circuits) {
                     }
                     let pingRamp = Math.min(avg / 200, 1);
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
-                    target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
+                    target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='" + tAttr("circuit.devices.ping_responding_title") + "'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
             }
         }
@@ -1716,6 +1730,7 @@ function initFlowFilters() {
             if (!remoteIp) {
                 return;
             }
+            // translatable: false — "Circuit" is a value the flow-RTT wizard renders inside its own English sentence
             openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
         });
     }
@@ -1887,6 +1902,7 @@ function wireCircuitDataTableHover(table) {
     };
 
     table.addEventListener("pointerover", (event) => {
+        // translatable: false — "th, td" is a DOM selector
         const cell = event.target.closest("th, td");
         if (!cell || !table.contains(cell)) {
             return;
@@ -1930,7 +1946,10 @@ function updateTrafficPaginationControls() {
     const prev = document.getElementById("trafficPagePrev");
     const next = document.getElementById("trafficPageNext");
     if (info) {
-        info.textContent = `Page ${trafficCurrentPage} / ${totalPages}`;
+        info.textContent = t("circuit.traffic.page_info", {
+            page: trafficCurrentPage,
+            total: totalPages,
+        });
     }
     if (prev) {
         prev.disabled = trafficCurrentPage <= 1;
@@ -2037,13 +2056,13 @@ function renderTopAsnTab() {
     };
 
     thead.appendChild(createSortableHeader("ASN", "asn"));
-    thead.appendChild(createSortableHeader("Country", "country"));
-    thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.country"), "country"));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.current_rate"), "rate", 2));
     // §lqos-74t.47: D=Subscriber leg, U=Internet leg; Full(est.) = D+U.
-    thead.appendChild(createSortableHeader("RTT Access / Internet / Full (est.)", "rtt", 3));
-    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
-    thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
-    thead.appendChild(createSortableHeader("Flows", "flows"));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.rtt_columns"), "rtt", 3));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.qoo_columns"), "qoo", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.rxmit_columns"), "retransmits", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.flows"), "flows"));
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
@@ -2052,7 +2071,7 @@ function renderTopAsnTab() {
         const td = document.createElement("td");
         td.colSpan = 11;
         td.classList.add("text-center", "text-muted", "small");
-        td.textContent = "No recent ASN activity available for this circuit.";
+        td.textContent = t("circuit.traffic.no_asn_activity");
         empty.appendChild(td);
         tbody.appendChild(empty);
     } else {
@@ -2124,17 +2143,17 @@ function renderTrafficTab() {
         return th;
     };
 
-    thead.appendChild(createSortableHeader("Protocol", "protocol"));
-    thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
-    thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
-    thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
-    thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
-    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
-    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.protocol"), "protocol"));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.current_rate"), "rate", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.total_bytes"), "bytes", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.total_packets"), "packets", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.rxmit_columns"), "retransmits", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.rtt"), "rtt", 2));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.qoo_columns"), "qoo", 2));
     thead.appendChild(createSortableHeader("ASN", "asn"));
-    thead.appendChild(createSortableHeader("Country", "country"));
-    thead.appendChild(createSortableHeader("Remote IP", "ip"));
-    thead.appendChild(theading("RTT Exclude"));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.country"), "country"));
+    thead.appendChild(createSortableHeader(t("circuit.traffic.remote_ip"), "ip"));
+    thead.appendChild(theading(t("circuit.traffic.rtt_exclude")));
     table.appendChild(thead);
 
     let tbody = document.createElement("tbody");
@@ -2143,7 +2162,7 @@ function renderTrafficTab() {
         const td = document.createElement("td");
         td.colSpan = 17;
         td.classList.add("text-center", "text-muted", "small");
-        td.textContent = "No recent flows match the current filter.";
+        td.textContent = t("circuit.traffic.no_flows");
         empty.appendChild(td);
         tbody.appendChild(empty);
     } else {
@@ -2174,9 +2193,9 @@ function renderTrafficTab() {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "btn btn-outline-secondary btn-sm flow-rtt-exclude-btn";
-            button.textContent = "Exclude";
+            button.textContent = t("circuit.rtt.exclude");
             button.disabled = !rowData.remote_ip;
-            button.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+            button.title = t("circuit.rtt.wizard_title");
             button.dataset.remoteIp = rowData.remote_ip;
             td.appendChild(button);
             row.appendChild(td);
@@ -2327,7 +2346,7 @@ function initialDevices(circuits) {
         // MAC Row
         let tr = document.createElement("tr");
         let td = document.createElement("td");
-        td.textContent = "MAC Address";
+        td.textContent = t("circuit.devices.mac");
         td.classList.add("table-label-cell");
         tr.appendChild(td);
         td = document.createElement("td");
@@ -2341,7 +2360,7 @@ function initialDevices(circuits) {
         // Comment Row
         let tr2 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "Comment";
+        td.textContent = t("circuit.devices.comment");
         td.classList.add("table-label-cell");
         tr2.appendChild(td);
         td = document.createElement("td");
@@ -2354,7 +2373,7 @@ function initialDevices(circuits) {
         // IPv4 Row
         let tr3 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "IPv4 Address(es)";
+        td.textContent = t("circuit.devices.ipv4");
         td.classList.add("table-label-cell");
         tr3.appendChild(td);
         td = document.createElement("td");
@@ -2380,7 +2399,7 @@ function initialDevices(circuits) {
         if (circuit.ipv4.length === 0) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = "No IPv4 addresses assigned";
+            label.textContent = t("circuit.devices.no_ipv4");
             tr.appendChild(label);
             ipv4Body.appendChild(tr);
         }
@@ -2393,7 +2412,7 @@ function initialDevices(circuits) {
         // IPv6 Row
         let tr4 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "IPv6 Address(es)";
+        td.textContent = t("circuit.devices.ipv6");
         td.classList.add("table-label-cell");
         tr4.appendChild(td);
         td = document.createElement("td");
@@ -2420,7 +2439,7 @@ function initialDevices(circuits) {
         if (circuit.ipv6.length === 0) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = "No IPv6 addresses assigned";
+            label.textContent = t("circuit.devices.no_ipv6");
             tr.appendChild(label);
             ipv6Body.appendChild(tr);
         }
@@ -2439,68 +2458,68 @@ function initialDevices(circuits) {
         // Placeholder for Last Seen
         let tr8 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "Last Seen";
+        td.textContent = t("common.table.last_seen");
         td.classList.add("table-label-cell");
         tr8.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.colSpan = 2;
         td.id = "last_seen_" + circuit.device_id;
-        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> " + t("common.state.loading");
         tr8.appendChild(td);
         tbody.appendChild(tr8);
 
         // Placeholder for throughput
         let tr5 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "Throughput";
+        td.textContent = t("common.table.throughput");
         td.classList.add("table-label-cell");
         tr5.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.id = "throughputDown_" + circuit.device_id;
-        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> " + t("common.state.loading");
         tr5.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.id = "throughputUp_" + circuit.device_id;
-        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> " + t("common.state.loading");
         tr5.appendChild(td);
         tbody.appendChild(tr5);
 
         // Placeholder for RTT
         let tr6 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "RTT P50/P95";
+        td.textContent = t("circuit.devices.rtt_p50_p95");
         td.classList.add("table-label-cell");
         tr6.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
+        td.innerHTML = formatRttMetricBlock(t("circuit.devices.sampling"), t("circuit.devices.sampling"));
         tr6.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttUp_" + circuit.device_id;
-        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
+        td.innerHTML = formatRttMetricBlock(t("circuit.devices.sampling"), t("circuit.devices.sampling"));
         tr6.appendChild(td);
         tbody.appendChild(tr6);
 
         // Placeholder for TCP Retransmits
         let tr7 = document.createElement("tr");
         td = document.createElement("td");
-        td.textContent = "TCP Re-Xmits";
+        td.textContent = t("circuit.devices.tcp_rexmits");
         td.classList.add("table-label-cell");
         tr7.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsDown_" + circuit.device_id;
-        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> " + t("common.state.loading");
         tr7.appendChild(td);
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsUp_" + circuit.device_id;
-        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> " + t("common.state.loading");
         tr7.appendChild(td);
         tbody.appendChild(tr7);
 
@@ -2524,7 +2543,7 @@ function initialDevices(circuits) {
             div.id = divId;
             div.classList.add("lqos-circuit-device-graph");
             div.style.height = "250px";
-            div.innerHTML = loadingBlockHtml("Loading chart…", "lqos-loading-block-sm");
+            div.innerHTML = loadingBlockHtml(t("circuit.loading.chart"), "lqos-loading-block-sm");
             col.appendChild(div);
             graphRow.appendChild(col);
             deviceGraphSpecs.push({
@@ -2533,9 +2552,9 @@ function initialDevices(circuits) {
             });
         }
 
-        addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, "Throughput"));
-        addGraph("tcpRetransmitsGraph_" + circuit.device_id, (id) => new CircuitRetransmitGraph(id, "Retransmits"));
-        addGraph("rttHistogramGraph_" + circuit.device_id, (id) => new WindowedLatencyHistogram(id, "RTT Histogram", 300000));
+        addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, t("common.table.throughput")));
+        addGraph("tcpRetransmitsGraph_" + circuit.device_id, (id) => new CircuitRetransmitGraph(id, t("common.table.retransmits")));
+        addGraph("rttHistogramGraph_" + circuit.device_id, (id) => new WindowedLatencyHistogram(id, t("circuit.graph.rtt_histogram"), 300000));
         addGraph("pingGraph_" + circuit.device_id, (id) => new DevicePingHistogram(id));
 
     });
@@ -2608,7 +2627,10 @@ function subscribeToCake() {
     // Function to show "Queue not loaded" message
     function showNoQueueMessage() {
         if (!hasReceivedData) {
-            renderCakeStatusMessage('<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>');
+            renderCakeStatusMessage(
+                '<div class="row"><div class="col-12 text-center mt-5"><h4>' + t("circuit.cake.not_loaded_title") +
+                '</h4><p class="text-muted">' + t("circuit.cake.not_loaded_body") + "</p></div></div>",
+            );
         }
     }
     
@@ -2651,7 +2673,7 @@ function wireupAnalysis(circuits) {
     listBtn.id = "CaptureTopBtn";
     listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
     listBtn.setAttribute("data-bs-toggle", "dropdown");
-    setIconText(listBtn, ["fa", "fa-search"], "Packet Capture");
+    setIconText(listBtn, ["fa", "fa-search"], t("circuit.capture.title"));
     list.appendChild(listBtn);
 
     let listUl = document.createElement("ul");
@@ -2661,7 +2683,7 @@ function wireupAnalysis(circuits) {
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
         let address = ip[0]; // For closure capture
-        setIconText(item, ["fa", "fa-search"], "Capture packets from ");
+        setIconText(item, ["fa", "fa-search"], t("circuit.capture.from"));
         appendRedactableText(item, address);
         item.onclick = () => {
             //console.log("Clicky " + address);
@@ -2669,14 +2691,14 @@ function wireupAnalysis(circuits) {
                 const data = msg ? msg.data : null;
                 const okData = data && data.Ok ? data.Ok : null;
                 if (!okData) {
-                    alert("Packet capture is already active for another IP. Please try again when it is finished.")
+                    alert(t("circuit.capture.busy"));
                     return;
                 }
                 let counter = parseInt(okData.countdown) + 1;
                 let sessionId = okData.session_id;
                 let btn = document.getElementById("CaptureTopBtn");
                 btn.disabled = true;
-                setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
+                setIconText(btn, ["fa", "fa-spinner", "fa-spin"], t("circuit.capture.capturing", {count: counter}));
                 let interval = setInterval(() => {
                     counter--;
                     if (counter === -1) {
@@ -2697,7 +2719,7 @@ function wireupAnalysis(circuits) {
                         }
                         return;
                     }
-                    setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
+                    setIconText(btn, ["fa", "fa-spinner", "fa-spin"], t("circuit.capture.capturing", {count: counter}));
                 }, 1000);
             });
             wsClient.send({ RequestAnalysis: { ip: address } });
@@ -2759,9 +2781,7 @@ function refreshAdminHealthGate() {
             const enabled = actionsEnabledForHealth(verdict);
             adminButtons().forEach((button) => {
                 button.disabled = !enabled;
-                button.title = enabled
-                    ? ""
-                    : "Bridge is not reachable — actions are disabled";
+                button.title = enabled ? "" : t("circuit.actions.bridge_unreachable");
             });
         },
         () => { /* no supervisor data: leave buttons as-is */ },
@@ -2819,7 +2839,7 @@ function startOutcomePoll(generation, onApplied) {
 /// followed for THAT generation to a settled outcome.
 function dispatchAdminAction(saveFn, onApplied) {
     saveFn((generation) => {
-        setActionPending(adminBar, "Applying to bridge…");
+        setActionPending(adminBar, t("circuit.actions.applying"));
         startOutcomePoll(generation, onApplied);
     }, (message) => {
         // Save rejected locally (validation/authz/persistence).
@@ -2860,8 +2880,8 @@ function renderOverrideBadge(speeds) {
     badge.classList.remove("d-none");
     if (isSuspendedOverride(speeds)) {
         badge.classList.add("text-bg-danger");
-        badge.title = "This circuit is SUSPENDED — shaped to a trickle (0.01 Mbps floor). Resume restores the plan.";
-        badge.appendChild(document.createTextNode("SUSPENDED"));
+        badge.title = t("circuit.badge.suspended_title");
+        badge.appendChild(document.createTextNode(t("circuit.badge.suspended")));
     } else {
         badge.classList.add("text-bg-warning");
         const rates = [
@@ -2870,8 +2890,8 @@ function renderOverrideBadge(speeds) {
             speeds.min_upload_bandwidth,
             speeds.max_upload_bandwidth,
         ].map((value) => (value === null || value === undefined ? "plan" : value)).join("/");
-        badge.title = `Operator override active (${rates} Mbps dl-min/dl-max/ul-min/ul-max). Revert to plan clears it.`;
-        badge.appendChild(document.createTextNode("OVERRIDDEN"));
+        badge.title = t("circuit.badge.override_title", {rates});
+        badge.appendChild(document.createTextNode(t("circuit.badge.overridden")));
     }
 }
 
@@ -2942,20 +2962,20 @@ function openRateModal() {
     const note = document.createElement("div");
     note.classList.add("text-muted", "small", "mb-2");
     note.textContent = overrideSpeedsState
-        ? "An operator override is active for this circuit. Saving replaces it; Revert to plan clears it. The override applies to the whole circuit and survives integration regeneration."
-        : "Saving writes an operator override for the whole circuit (base plan data is never rewritten). Clear it with Revert to plan.";
+        ? t("circuit.rates.intro")
+        : t("circuit.rates.intro_edit");
     fields.appendChild(note);
     [
-        ["min_download_bandwidth", "Down Min"],
-        ["max_download_bandwidth", "Down Max"],
-        ["min_upload_bandwidth", "Up Min"],
-        ["max_upload_bandwidth", "Up Max"],
+        ["min_download_bandwidth", () => t("circuit.rates.down_min")],
+        ["max_download_bandwidth", () => t("circuit.rates.down_max")],
+        ["min_upload_bandwidth", () => t("circuit.rates.up_min")],
+        ["max_upload_bandwidth", () => t("circuit.rates.up_max")],
     ].forEach(([key, label]) => {
         const row = document.createElement("div");
         row.classList.add("mb-2");
         const inputLabel = document.createElement("label");
         inputLabel.classList.add("form-label", "mb-0", "small");
-        inputLabel.textContent = label + " (Mbps)";
+        inputLabel.textContent = label();
         const input = document.createElement("input");
         input.type = "number";
         input.step = "any";
@@ -2974,6 +2994,7 @@ function openRateModal() {
 function saveRateModal() {
     const errorBox = document.getElementById("circuitRateError");
     const rates = {};
+    // translatable: false — "#circuitRateFields input[data-field]" is a DOM selector, not a label
     document.querySelectorAll("#circuitRateFields input[data-field]").forEach((input) => {
         rates[input.dataset.field] = input.value === "" ? null : Number(input.value);
     });
@@ -3007,7 +3028,7 @@ function initAdminActions() {
     clearDiv(root);
     adminBar = document.createElement("div");
     adminBar.classList.add("d-flex", "align-items-center", "flex-wrap");
-    adminBar.appendChild(makeAdminButton(["fa", "fa-pencil"], "Edit Rates", "btn-outline-primary", openRateModal));
+    adminBar.appendChild(makeAdminButton(["fa", "fa-pencil"], t("circuit.rates.edit"), "btn-outline-primary", openRateModal));
     root.appendChild(adminBar);
     document.getElementById("circuitRateSave").addEventListener("click", saveRateModal);
     document.getElementById("circuitRateRevert").addEventListener("click", revertRateOverride);
@@ -3035,10 +3056,10 @@ function loadInitial() {
         circuitSqmOverride = circuit.sqm_override || "";
         setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up);
         initialDevices(circuits);
-        speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
+        speedometer = new BitsPerSecondGauge("bitsGauge", t("common.table.plan"));
         qooGauge = new QooScoreGauge("qooGauge");
-        totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
-        totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
+        totalThroughput = new CircuitTotalGraph("throughputGraph", t("circuit.stats.throughput"));
+        totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", t("circuit.stats.retransmits"));
         initTabLifecycle(parentNode);
         updateQueuingActivityCards();
 
@@ -3048,7 +3069,7 @@ function loadInitial() {
         startCircuitRateRefresh();
         initAdminActions();
     }, () => {
-        alert("Circuit with id " + circuit_id + " not found");
+        alert(t("circuit.not_found", {id: circuit_id}));
     });
 }
 

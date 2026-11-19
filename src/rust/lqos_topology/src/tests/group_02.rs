@@ -1184,3 +1184,126 @@
             (None, None, None)
         );
     }
+
+    /// lqos-74t.162: flat mode is site-less BY DESIGN (the effective network is
+    /// the Generated_PN bucket world), so the canonical site-loss closure must
+    /// not reject it. Before this fix every flat world whose canonical state
+    /// named any site — Splynx always emits the synthetic "Unassigned / Root" —
+    /// was unpublishable ("Effective topology export dropped site ...").
+    #[test]
+    fn flat_mode_publishes_a_world_whose_canonical_state_names_sites() {
+        let lqos_directory = unique_temp_dir("lqos-topology-flat-site-loss-gate");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..test_config()
+        };
+        config.topology.compile_mode = "flat".to_string();
+        fs::write(
+            lqos_directory.join("network.json"),
+            serde_json::to_string_pretty(&json!({
+                "Globe": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                },
+                "Unassigned / Root": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                }
+            }))
+            .expect("network json should serialize"),
+        )
+        .expect("network.json should write");
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"globe-1\",\"Globe 1\",\"device-1\",\"Radio 1\",\"Globe\",\"\",\"\",\"aa:bb:cc:dd:ee:01\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        crate::materialize_manual_topology_import(&config)
+            .expect("the manual pair should materialize");
+        let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("the canonical state should load");
+        assert!(
+            canonical
+                .nodes
+                .iter()
+                .any(|node| node.node_kind.eq_ignore_ascii_case("site")),
+            "fixture precondition: the canonical state names at least one site"
+        );
+
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("flat mode must not be rejected by the canonical site-loss gate");
+
+        let network = artifacts
+            .effective_network
+            .expect("flat mode publishes the bucket network");
+        let root = network.as_object().expect("the flat network is an object");
+        assert!(!root.is_empty(), "the flat network must contain buckets");
+        assert!(
+            root.keys().all(|name| name.starts_with("Generated_PN_")),
+            "flat mode must export only Generated_PN buckets, got {:?}",
+            root.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// The flat-mode split: identity/attachment consistency and site-parent
+    /// cycles STILL run (only the site-presence closure is inapplicable to the
+    /// site-less Generated_PN world).
+    #[test]
+    fn flat_validation_split_keeps_identity_and_cycle_checks() {
+        let canonical = TopologyCanonicalStateFile::default();
+        let duplicate = |id: &str| TopologyEditorNode {
+            node_id: id.to_string(),
+            node_name: id.to_string(),
+            ..TopologyEditorNode::default()
+        };
+        let ui_state = TopologyEditorStateFile {
+            nodes: vec![duplicate("dup-node"), duplicate("dup-node")],
+            ..TopologyEditorStateFile::default()
+        };
+        let effective = TopologyEffectiveStateFile::default();
+        let err =
+            validate_effective_network_identity_and_cycles(&canonical, &ui_state, &effective)
+                .expect_err("duplicate node identity must still fail in flat mode");
+        assert!(
+            err.iter().any(|e| e.contains("duplicate node id")),
+            "got {err:?}"
+        );
+    }
+
+    /// The site-presence closure remains the ONE check flat mode skips — and
+    /// when it is run it still rejects a genuinely dropped canonical site.
+    #[test]
+    fn flat_validation_split_site_loss_still_rejects_dropped_sites() {
+        let canonical = TopologyCanonicalStateFile {
+            nodes: vec![TopologyCanonicalNode {
+                node_id: "site-1".to_string(),
+                node_name: "Site One".to_string(),
+                node_kind: "site".to_string(),
+                ..TopologyCanonicalNode::default()
+            }],
+            ..TopologyCanonicalStateFile::default()
+        };
+        let network = json!({
+            "Other": { "id": "other", "name": "Other", "children": {} }
+        });
+        let err = validate_effective_site_loss_from_canonical(&canonical, &network)
+            .expect_err("a dropped canonical site must still be detected by the closure");
+        assert!(
+            err.iter().any(|e| e.contains("dropped site 'Site One'")),
+            "got {err:?}"
+        );
+    }

@@ -8,6 +8,8 @@ import {
     setLocalApiKeyCreationPending,
     validateLocalApiKeyName,
 } from "./config/local_api_token";
+import {t, tHtml} from "./i18n/index.js";
+import {formatNumber} from "./i18n/format.js";
 
 const licenseKeyInput = document.getElementById("licenseKey");
 const toggleLicenseKeyButton = document.getElementById("toggleLicenseKey");
@@ -22,9 +24,21 @@ const saveButton = document.getElementById("saveButton");
 const retryButton = document.getElementById("retryLicenseCheck");
 let localApiManagementInFlight = false;
 
+// Three paragraphs wrap a literal header or token name in <code>, so a `data-i18n`
+// attribute cannot carry them (that applier writes text): the elements ship empty
+// and the messages supply both the prose and the literal.
+function renderTranslatedProse() {
+    const apiKeysSubtitle = document.getElementById("localApiKeysSubtitle");
+    if (apiKeysSubtitle) apiKeysSubtitle.innerHTML = tHtml("config.lts.api_keys.subtitle", {header: "x-bearer"});
+    const legacyHelp = document.getElementById("legacyLocalApiKeyHelp");
+    if (legacyHelp) legacyHelp.innerHTML = tHtml("config.lts.api_keys.legacy_help", {token: "bearer_token"});
+    const newKeyHelp = document.getElementById("newLocalApiKeyHelp");
+    if (newKeyHelp) newKeyHelp.innerHTML = tHtml("config.lts.modal.copy_help", {header: "x-bearer"});
+}
+
 function beginLocalApiManagement(message) {
     if (localApiManagementInFlight) {
-        document.getElementById("localApiKeysStatus").textContent = "Another local API key operation is still in progress.";
+        document.getElementById("localApiKeysStatus").textContent = t("config.lts.api_keys.busy");
         return false;
     }
     localApiManagementInFlight = true;
@@ -48,7 +62,7 @@ function refreshLocalApiKeys() {
     loadConfig(
         () => renderLocalApiKeys(),
         () => {
-            document.getElementById("localApiKeysStatus").textContent = "Unable to refresh the local API key list.";
+            document.getElementById("localApiKeysStatus").textContent = t("config.lts.api_keys.refresh_failed");
         },
     );
 }
@@ -56,7 +70,7 @@ function refreshLocalApiKeys() {
 function validateConfig() {
     const collationPeriod = parseInt(document.getElementById("collationPeriod").value, 10);
     if (Number.isNaN(collationPeriod) || collationPeriod < 1) {
-        alert("Collation Period must be a number greater than 0");
+        alert(t("config.lts.validation.period_invalid", {field: t("config.lts.collection.period")}));
         return false;
     }
 
@@ -65,7 +79,7 @@ function validateConfig() {
         try {
             new URL(ltsUrl);
         } catch {
-            alert("Insight Server URL must be a valid URL");
+            alert(t("config.lts.validation.server_url_invalid"));
             return false;
         }
     }
@@ -83,15 +97,12 @@ function updateConfig() {
     window.config.local_api = window.config.local_api || {};
 }
 
-function setSecretVisibility(input, button, revealed, label) {
+function setSecretVisibility(input, button, revealed, revealLabel, hideLabel) {
     input.type = revealed ? "text" : "password";
     button.innerHTML = revealed
         ? '<i class="fa fa-eye-slash"></i>'
         : '<i class="fa fa-eye"></i>';
-    button.setAttribute(
-        "aria-label",
-        revealed ? `Hide ${label}` : `Reveal ${label}`,
-    );
+    button.setAttribute("aria-label", revealed ? hideLabel : revealLabel);
 }
 
 function localApiKeys() {
@@ -105,7 +116,7 @@ function renderLocalApiKeys() {
     for (const key of keys) {
         const row = document.createElement("tr");
         const name = document.createElement("td");
-        name.textContent = key.name || "Unnamed key";
+        name.textContent = key.name || t("config.lts.api_keys.unnamed");
         const created = document.createElement("td");
         created.textContent = formatLocalApiKeyCreatedAt(key.created_at_unix);
         const id = document.createElement("td");
@@ -118,43 +129,47 @@ function renderLocalApiKeys() {
         const revoke = document.createElement("button");
         revoke.type = "button";
         revoke.className = "btn btn-sm btn-outline-danger";
-        revoke.innerHTML = '<i class="fa fa-trash me-1"></i> Revoke';
-        revoke.setAttribute("aria-label", `Revoke API key ${key.name || key.id}`);
+        revoke.innerHTML = `<i class="fa fa-trash me-1"></i> ${t("config.lts.api_keys.revoke")}`;
+        revoke.setAttribute("aria-label", t("config.lts.api_keys.revoke_aria", {name: key.name || key.id}));
         revoke.addEventListener("click", () => revokeLocalApiKey(key, revoke));
         action.append(revoke);
         row.append(name, created, id, action);
         body.append(row);
     }
     document.getElementById("localApiKeysEmpty").classList.toggle("d-none", keys.length > 0);
-    document.getElementById("localApiKeyCount").textContent = `${keys.length} of ${MAX_LOCAL_API_KEYS} keys`;
+    document.getElementById("localApiKeyCount").textContent = t("config.lts.api_keys.count", {
+        count: keys.length,
+        max: MAX_LOCAL_API_KEYS,
+    });
     document.getElementById("generateLocalApiKey").disabled = keys.length >= MAX_LOCAL_API_KEYS;
     const legacy = !!window.configSecretState?.local_api?.bearer_token;
     document.getElementById("legacyLocalApiKey").classList.toggle("d-none", !legacy);
 }
 
 function revokeLocalApiKey(key, button) {
-    if (!window.confirm(`Revoke the local API key “${key.name}”?`)) return;
-    if (!beginLocalApiManagement(`Revoking API key ${key.name}…`)) return;
+    const label = key.name || key.id;
+    if (!window.confirm(t("config.lts.api_keys.revoke_confirm", {name: key.name || t("config.lts.api_keys.unnamed")}))) return;
+    if (!beginLocalApiManagement(t("config.lts.api_keys.revoking", {name: label}))) return;
     button.disabled = true;
     sendWsRequest("RevokeLocalApiKeyResult", { RevokeLocalApiKey: { id: key.id } }, (msg) => {
         finishLocalApiManagement();
         if (!msg?.ok) {
             button.disabled = false;
-            alert(msg?.message || "Unable to revoke the API key.");
+            alert(msg?.message || t("config.lts.api_keys.revoke_failed"));
             return;
         }
         window.config.local_api.keys = localApiKeys().filter((entry) => entry.id !== key.id);
         renderLocalApiKeys();
-        document.getElementById("localApiKeysStatus").textContent = `API key ${key.name} revoked. It may take up to 30 seconds to stop working.`;
+        document.getElementById("localApiKeysStatus").textContent = t("config.lts.api_keys.revoked", {name: label});
         focusLocalApiKeySection();
     }, (msg) => {
         finishLocalApiManagement();
         button.disabled = false;
-        alert(msg?.message || "Unable to revoke the API key.");
+        alert(msg?.message || t("config.lts.api_keys.revoke_failed"));
         refreshLocalApiKeys();
     }, {
         timeoutMs: 15000,
-        timeoutMessage: "Timed out while revoking the API key. Refresh the key list before trying again.",
+        timeoutMessage: t("config.lts.api_keys.revoke_timeout"),
     });
 }
 
@@ -167,7 +182,7 @@ function resetLocalApiKeyModal() {
     const operationStatus = document.getElementById("localApiKeyOperationStatus");
     operationStatus.className = "small text-secondary mt-3";
     operationStatus.textContent = "";
-    copyNewLocalApiKeyButton.innerHTML = '<i class="fa fa-copy me-1"></i> Copy';
+    copyNewLocalApiKeyButton.innerHTML = `<i class="fa fa-copy me-1"></i> ${t("config.lts.api_key.copy")}`;
     document.getElementById("localApiKeyNameStep").classList.remove("d-none");
     document.getElementById("localApiKeyResultStep").classList.add("d-none");
     confirmGenerateLocalApiKeyButton.classList.remove("d-none");
@@ -177,7 +192,13 @@ function resetLocalApiKeyModal() {
         operationStatus,
         false,
     );
-    setSecretVisibility(newLocalApiKeyInput, toggleNewLocalApiKeyButton, false, "generated API key");
+    setSecretVisibility(
+        newLocalApiKeyInput,
+        toggleNewLocalApiKeyButton,
+        false,
+        t("config.lts.api_key.reveal"),
+        t("config.lts.api_key.hide"),
+    );
 }
 
 function showNameError(message) {
@@ -202,7 +223,7 @@ function createLocalApiKey() {
         showNameError(validation.message);
         return;
     }
-    if (!beginLocalApiManagement(`Creating API key ${validation.name}…`)) return;
+    if (!beginLocalApiManagement(t("config.lts.api_keys.creating", {name: validation.name}))) return;
     localApiKeyNameInput.classList.remove("is-invalid");
     const operationStatus = document.getElementById("localApiKeyOperationStatus");
     setLocalApiKeyCreationPending(
@@ -220,7 +241,7 @@ function createLocalApiKey() {
             false,
         );
         if (!msg?.ok || !msg.key?.api_key) {
-            showLocalApiOperationError(msg?.message || "Unable to generate the API key.");
+            showLocalApiOperationError(msg?.message || t("config.lts.api_keys.generate_failed"));
             return;
         }
         window.config.local_api.keys = [...localApiKeys(), {
@@ -230,7 +251,7 @@ function createLocalApiKey() {
             created_at_unix: msg.key.created_at_unix,
         }];
         renderLocalApiKeys();
-        document.getElementById("localApiKeysStatus").textContent = `API key ${msg.key.name} created.`;
+        document.getElementById("localApiKeysStatus").textContent = t("config.lts.api_keys.created", {name: msg.key.name});
         document.getElementById("localApiKeyNameStep").classList.add("d-none");
         document.getElementById("localApiKeyResultStep").classList.remove("d-none");
         confirmGenerateLocalApiKeyButton.classList.add("d-none");
@@ -244,46 +265,46 @@ function createLocalApiKey() {
             operationStatus,
             false,
         );
-        showLocalApiOperationError(msg?.message || "Unable to generate the API key.");
+        showLocalApiOperationError(msg?.message || t("config.lts.api_keys.generate_failed"));
         refreshLocalApiKeys();
     }, {
         timeoutMs: 15000,
-        timeoutMessage: "Timed out while creating the API key. It may have been created, but its raw value cannot be recovered. Refresh the key list and revoke it before trying again.",
+        timeoutMessage: t("config.lts.api_keys.create_timeout"),
     });
 }
 
 function removeLegacyLocalApiKey(button) {
-    if (!window.confirm("Remove the legacy local API key? Clients using it will stop authenticating.")) return;
-    if (!beginLocalApiManagement("Removing the legacy local API key…")) return;
+    if (!window.confirm(t("config.lts.api_keys.legacy_remove_confirm"))) return;
+    if (!beginLocalApiManagement(t("config.lts.api_keys.legacy_removing"))) return;
     button.disabled = true;
     sendWsRequest("RemoveLegacyLocalApiKeyResult", { RemoveLegacyLocalApiKey: {} }, (msg) => {
         finishLocalApiManagement();
         button.disabled = false;
         if (!msg?.ok) {
-            alert(msg?.message || "Unable to remove the legacy local API key.");
+            alert(msg?.message || t("config.lts.api_keys.legacy_remove_failed"));
             return;
         }
         window.configSecretState.local_api = window.configSecretState.local_api || {};
         window.configSecretState.local_api.bearer_token = false;
         renderLocalApiKeys();
-        document.getElementById("localApiKeysStatus").textContent = "Legacy local API key removed. It may take up to 30 seconds to stop working.";
+        document.getElementById("localApiKeysStatus").textContent = t("config.lts.api_keys.legacy_removed");
         focusLocalApiKeySection();
     }, (msg) => {
         finishLocalApiManagement();
         button.disabled = false;
-        alert(msg?.message || "Unable to remove the legacy local API key.");
+        alert(msg?.message || t("config.lts.api_keys.legacy_remove_failed"));
         refreshLocalApiKeys();
     }, {
         timeoutMs: 15000,
-        timeoutMessage: "Timed out while removing the legacy local API key. Refresh the key list before trying again.",
+        timeoutMessage: t("config.lts.api_keys.legacy_remove_timeout"),
     });
 }
 
 function formatMappedCircuitLimit(limit) {
     if (limit === null || limit === undefined) {
-        return "Unlimited";
+        return t("config.lts.status.unlimited");
     }
-    return Number(limit).toLocaleString();
+    return formatNumber(Number(limit));
 }
 
 function renderCapabilityBadges(capabilities) {
@@ -294,30 +315,31 @@ function renderCapabilityBadges(capabilities) {
 
     const apiDocsStatus = capabilities.can_use_api_link
         ? (window.apiServiceAvailable
-            ? { label: "API Docs: available", tone: "success" }
-            : { label: "API Docs: service unavailable", tone: "warning" })
-        : { label: "API Docs: license required", tone: "secondary" };
+            ? { label: t("config.lts.badge.api_docs_available"), tone: "success" }
+            : { label: t("config.lts.badge.api_docs_unavailable"), tone: "warning" })
+        : { label: t("config.lts.badge.api_docs_license"), tone: "secondary" };
     const badgeSpec = [
         {
             tone: capabilities.can_view_insight_ui ? "success" : "secondary",
-            label: "Insight UI",
+            label: t("config.lts.badge.insight_ui"),
         },
         apiDocsStatus,
         {
             tone: capabilities.can_use_support_tickets ? "success" : "secondary",
-            label: "Support",
+            label: t("config.lts.badge.support"),
         },
         {
             tone: capabilities.can_use_chatbot ? "success" : "secondary",
+            // translatable: false — "Libby" is the assistant's product name, kept literal (GLOSSARY §6)
             label: "Libby",
         },
         {
             tone: capabilities.can_receive_remote_commands ? "success" : "secondary",
-            label: "Remote Control",
+            label: t("config.lts.badge.remote_control"),
         },
         {
             tone: capabilities.can_submit_long_term_stats ? "success" : "secondary",
-            label: "Stats Submit",
+            label: t("config.lts.badge.stats_submit"),
         },
     ];
 
@@ -334,11 +356,11 @@ function renderCapabilityBadges(capabilities) {
 }
 
 function renderAvailability(capabilities) {
-    document.getElementById("licenseStateLabel").textContent = capabilities.license_state_label || "Unknown";
-    document.getElementById("licenseAuthorityBadge").textContent = capabilities.authority_label || "Unknown";
+    document.getElementById("licenseStateLabel").textContent = capabilities.license_state_label || t("config.lts.status.unknown");
+    document.getElementById("licenseAuthorityBadge").textContent = capabilities.authority_label || t("config.lts.status.unknown");
     document.getElementById("controlServiceStatus").textContent = capabilities.control_service_reachable
-        ? "Reachable"
-        : "Unavailable";
+        ? t("config.lts.status.reachable")
+        : t("config.lts.status.unavailable");
     document.getElementById("mappedCircuitLimit").textContent = formatMappedCircuitLimit(
         capabilities.mapped_circuit_limit,
     );
@@ -355,15 +377,16 @@ function renderAvailability(capabilities) {
         !capabilities.control_service_reachable
         && (capabilities.can_use_support_tickets || capabilities.can_use_chatbot)
     ) {
-        message = "license valid, control service unavailable";
+        message = t("config.lts.alert.control_unavailable");
     } else if (capabilities.bootstrap_suppressed) {
-        message = "Automatic bootstrap retries are currently suppressed for the configured key.";
+        message = t("config.lts.alert.bootstrap_suppressed");
     } else if (
         capabilities.bootstrap_intent
         && !capabilities.control_service_reachable
+        // translatable: false — "Bootstrap pending" is the authority token the server returns and this branch compares
         && capabilities.authority_label === "Bootstrap pending"
     ) {
-        message = "Bootstrap is pending. Save a corrected key or use Retry License Check to try again.";
+        message = t("config.lts.alert.bootstrap_pending");
     }
 
     if (message) {
@@ -387,22 +410,35 @@ function fetchCapabilities(request = { LtsCapabilities: {} }) {
             if (!alert) {
                 return;
             }
-            alert.textContent = msg?.message || "Unable to load license status.";
+            alert.textContent = msg?.message || t("config.lts.status.load_failed");
             alert.classList.remove("d-none");
         },
     );
 }
 
 function wireActions() {
-    setSecretVisibility(licenseKeyInput, toggleLicenseKeyButton, false, "license key");
-    setSecretVisibility(newLocalApiKeyInput, toggleNewLocalApiKeyButton, false, "generated API key");
+    setSecretVisibility(
+        licenseKeyInput,
+        toggleLicenseKeyButton,
+        false,
+        t("config.lts.license_key.reveal"),
+        t("config.lts.license_key.hide"),
+    );
+    setSecretVisibility(
+        newLocalApiKeyInput,
+        toggleNewLocalApiKeyButton,
+        false,
+        t("config.lts.api_key.reveal"),
+        t("config.lts.api_key.hide"),
+    );
 
     toggleLicenseKeyButton.addEventListener("click", () => {
         setSecretVisibility(
             licenseKeyInput,
             toggleLicenseKeyButton,
             licenseKeyInput.type === "password",
-            "license key",
+            t("config.lts.license_key.reveal"),
+            t("config.lts.license_key.hide"),
         );
     });
 
@@ -423,6 +459,7 @@ function wireActions() {
         localApiKeyNameInput.classList.remove("is-invalid");
         document.getElementById("localApiKeyNameError").textContent = "";
     });
+    // translatable: false — "Enter" is the KeyboardEvent.key token compared here, never rendered
     localApiKeyNameInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
             event.preventDefault();
@@ -435,21 +472,22 @@ function wireActions() {
             newLocalApiKeyInput,
             toggleNewLocalApiKeyButton,
             newLocalApiKeyInput.type === "password",
-            "generated API key",
+            t("config.lts.api_key.reveal"),
+            t("config.lts.api_key.hide"),
         );
     });
     copyNewLocalApiKeyButton.addEventListener("click", async () => {
         const copyStatus = document.getElementById("newLocalApiKeyCopyStatus");
         try {
             await copyLocalApiToken(newLocalApiKeyInput);
-            copyStatus.textContent = "Generated API key copied.";
-            copyNewLocalApiKeyButton.innerHTML = '<i class="fa fa-check me-1"></i> Copied';
+            copyStatus.textContent = t("config.lts.api_key.copied_status");
+            copyNewLocalApiKeyButton.innerHTML = `<i class="fa fa-check me-1"></i> ${t("config.lts.api_key.copied")}`;
             setTimeout(() => {
-                copyNewLocalApiKeyButton.innerHTML = '<i class="fa fa-copy me-1"></i> Copy';
+                copyNewLocalApiKeyButton.innerHTML = `<i class="fa fa-copy me-1"></i> ${t("config.lts.api_key.copy")}`;
             }, 1500);
         } catch (error) {
             copyStatus.textContent = "";
-            alert(error instanceof Error ? error.message : "Unable to copy the API key.");
+            alert(error instanceof Error ? error.message : t("config.lts.api_key.copy_failed"));
         }
     });
     const removeLegacyButton = document.getElementById("removeLegacyLocalApiKey");
@@ -466,7 +504,7 @@ function wireActions() {
             },
             (msg) => {
                 retryButton.disabled = false;
-                alert(msg?.message || "Unable to retry license check.");
+                alert(msg?.message || t("config.lts.status.retry_failed"));
             },
         );
     });
@@ -482,20 +520,22 @@ function wireActions() {
             () => {
                 saveButton.disabled = false;
                 fetchCapabilities();
-                alert("Configuration saved successfully!");
+                alert(t("config.lts.saved"));
             },
             (msg) => {
                 saveButton.disabled = false;
-                alert(msg?.message || "That didn't work");
+                alert(msg?.message || t("config.lts.save_failed"));
             },
         );
     });
 }
 
 renderConfigMenu("lts");
+renderTranslatedProse();
 
 loadConfig(() => {
     if (!window.config || !window.config.long_term_stats) {
+        // translatable: false — "Long-term stats configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Long-term stats configuration not found in window.config");
         return;
     }

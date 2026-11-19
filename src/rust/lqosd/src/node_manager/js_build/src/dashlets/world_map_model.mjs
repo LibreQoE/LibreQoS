@@ -1,3 +1,5 @@
+// translatable: false — "Feature" and "Point" are GeoJSON type names in the feature collection, not labels
+
 const MAX_SYMBOL_SIZE = 8;
 const MIN_SYMBOL_SIZE = 1;
 

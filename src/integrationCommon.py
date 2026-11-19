@@ -1,7 +1,8 @@
 # Optimized version of integrationCommon.py for better performance with large datasets
 # Provides common functionality shared between integrations.
 
-from typing import List, Any, Dict, Set, Tuple
+from typing import List, Any, Dict, Set, Tuple, Optional
+from dataclasses import dataclass
 from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
@@ -189,6 +190,57 @@ def syntheticNetworkJsonId(scope: str, nodeType: str, name: str) -> str:
 	slug = ''.join(parts).strip('-')
 	return f"libreqos:generated:{scope}:{nodeType}:{slug}"
 
+def _normalize_optional_text(value: Any) -> Optional[str]:
+	if value is None:
+		return None
+	text = str(value).strip()
+	return text or None
+
+
+def _normalize_optional_mgmt_ip(value: Any) -> Optional[str]:
+	if value is None:
+		return None
+	text = str(value).strip()
+	if not text:
+		return None
+	try:
+		ipaddress.ip_address(text)
+	except ValueError:
+		return None
+	return text
+
+
+@dataclass(frozen=True)
+class DeviceRef:
+	# Stable per-node reference used by the AP/OLT poller. node_id is the
+	# integration-minted stable id; mgmt_ip/model are optional hints.
+	node_id: str
+	mgmt_ip: Optional[str] = None
+	vendor_hint: Optional[str] = None
+	model: Optional[str] = None
+	family_hint: Optional[str] = None
+
+	def __post_init__(self):
+		# The wire boundary treats None, "", and whitespace-only as ABSENT.
+		# mgmt_ip must parse as an IP address or it is absent too.
+		object.__setattr__(self, "mgmt_ip", _normalize_optional_mgmt_ip(self.mgmt_ip))
+		object.__setattr__(self, "vendor_hint", _normalize_optional_text(self.vendor_hint))
+		object.__setattr__(self, "model", _normalize_optional_text(self.model))
+		object.__setattr__(self, "family_hint", _normalize_optional_text(self.family_hint))
+
+	def to_dict(self) -> Dict[str, Any]:
+		payload: Dict[str, Any] = {"node_id": self.node_id}
+		if self.mgmt_ip is not None:
+			payload["mgmt_ip"] = self.mgmt_ip
+		if self.vendor_hint is not None:
+			payload["vendor_hint"] = self.vendor_hint
+		if self.model is not None:
+			payload["model"] = self.model
+		if self.family_hint is not None:
+			payload["family_hint"] = self.family_hint
+		return payload
+
+
 class NetworkNode:
 	# Defines a node on a LibreQoS network graph.
 	# Nodes default to being disconnected, and
@@ -209,8 +261,9 @@ class NetworkNode:
 	networkJsonId: str
 	latitude: float
 	longitude: float
+	device_ref: Optional[DeviceRef]
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "", latitude = None, longitude = None) -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "", latitude = None, longitude = None, device_ref: Optional[DeviceRef] = None) -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -229,6 +282,7 @@ class NetworkNode:
 		self.networkJsonId = networkJsonId
 		self.latitude = latitude
 		self.longitude = longitude
+		self.device_ref = device_ref
 
 
 class NetworkGraph:
@@ -306,6 +360,21 @@ class NetworkGraph:
 			
 			# Invalidate cache
 			self._cache_valid = False
+
+	def attachDeviceRef(self, node: NetworkNode, *, mgmt_ip: Optional[str] = None, vendor_hint: Optional[str] = None, model: Optional[str] = None, family_hint: Optional[str] = None) -> DeviceRef:
+		# Attaches a DeviceRef to an infrastructure node. This is metadata-only:
+		# it does not change rates, parents, CSV output or graph shape.
+		if node.type not in (NodeType.site, NodeType.ap):
+			raise ValueError("DeviceRef is only valid on infrastructure (site/ap) nodes")
+		ref = DeviceRef(
+			node_id=node.networkJsonId or node.id,
+			mgmt_ip=mgmt_ip,
+			vendor_hint=vendor_hint,
+			model=model,
+			family_hint=family_hint,
+		)
+		node.device_ref = ref
+		return ref
 
 	def _ensure_root_site(self):
 		"""Attach root-attached clients to an explicit synthetic root site.
@@ -681,6 +750,9 @@ class NetworkGraph:
 		if self.nodes[idx].latitude is not None and self.nodes[idx].longitude is not None:
 			node["latitude"] = self.nodes[idx].latitude
 			node["longitude"] = self.nodes[idx].longitude
+		device_ref = getattr(self.nodes[idx], "device_ref", None)
+		if device_ref is not None:
+			node["device_ref"] = device_ref.to_dict()
 		children = {}
 		hasChildren = False
 		

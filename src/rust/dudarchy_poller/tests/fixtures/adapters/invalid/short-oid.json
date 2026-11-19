@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "id": "short-oid",
+  "detect": {
+    "sys_descr_contains": ["ExampleOS"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "sys_name", "oid": "1", "parser": "utf8" }
+        ]
+      }
+    }
+  ]
+}

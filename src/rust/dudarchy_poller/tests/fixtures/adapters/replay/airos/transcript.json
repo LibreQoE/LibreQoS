@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.1.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.1.1.0",
+          "value": {
+            "type": "octet_string",
+            "text": "Linux 2.6.32.68 #1 SMP Thu Jan 1 00:00:00 UTC 2026 mips"
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.5.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.1.5.0",
+          "value": {
+            "type": "octet_string",
+            "text": "sector-a"
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.2.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.1.2.0",
+          "value": {
+            "type": "oid",
+            "value": "1.3.6.1.4.1.10002.1"
+          }
+        }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.2.2.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.2.1",
+          "value": {
+            "type": "octet_string",
+            "text": "lo"
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.2.2",
+          "value": {
+            "type": "octet_string",
+            "text": "eth0"
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.2.3",
+          "value": {
+            "type": "octet_string",
+            "text": "ath0"
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.3.1",
+          "value": {
+            "type": "integer",
+            "value": 24
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.3.2",
+          "value": {
+            "type": "integer",
+            "value": 6
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.3.3",
+          "value": {
+            "type": "integer",
+            "value": 71
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.6.2",
+          "value": {
+            "type": "octet_string",
+            "hex": "00:15:6d:aa:bb:01"
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.6.3",
+          "value": {
+            "type": "octet_string",
+            "hex": "00:15:6d:aa:bb:02"
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.7.1",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.7.2",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.7.3",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.8.1",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.8.2",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.8.3",
+          "value": {
+            "type": "integer",
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.31.1.1.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.0.8802.1.1.2.1.4.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.4.22.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.4.35.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.4.1.41112.1.4.7.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.2.1.0.39.34.26.249.78",
+          "value": {
+            "type": "octet_string",
+            "text": "station-01"
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.3.1.0.39.34.26.249.78",
+          "value": {
+            "type": "integer",
+            "value": -47
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.4.1.0.39.34.26.249.78",
+          "value": {
+            "type": "integer",
+            "value": -92
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.10.1.0.39.34.26.249.78",
+          "value": {
+            "type": "ip_address",
+            "value": "172.30.1.98"
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.11.1.0.39.34.26.249.78",
+          "value": {
+            "type": "integer",
+            "value": 400000000
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.12.1.0.39.34.26.249.78",
+          "value": {
+            "type": "integer",
+            "value": 144400000
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.13.1.0.39.34.26.249.78",
+          "value": {
+            "type": "counter64",
+            "value": 4096
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.14.1.0.39.34.26.249.78",
+          "value": {
+            "type": "counter64",
+            "value": 2048
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.15.1.0.39.34.26.249.78",
+          "value": {
+            "type": "time_ticks",
+            "value": 123456
+          }
+        },
+        {
+          "oid": "1.3.6.1.4.1.41112.1.4.7.1.3.1.4.24.214.166.106.122",
+          "value": {
+            "type": "integer",
+            "value": -56
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,83 +1,116 @@
 # Upgrading from LibreQoS v2.0 to v3
 
-**Version: LibreQoS v3 (current).** This is the operator entry point for a
-v2.0 → v3 upgrade. The **consolidated, step-by-step guide** ships in the source
-tree at `packaging/UPGRADE.md`; this page is its summary.
+**Version: LibreQoS v3 beta.** Do not upgrade a production v2 host in place
+without a way back. Snapshot or back up the box first, have console access if
+management traffic crosses the bridge, and avoid doing this over a flaky remote
+link: the path includes a reboot.
 
-```{note}
-The canonical consolidated guide is `packaging/UPGRADE.md`. This page mirrors its
-shape; where they differ, the packaging guide is authoritative.
+v3 takes the two dataplane NICs for DPDK instead of putting them in a Linux
+bridge. The v2 bridge must therefore be removed from netplan ("adopted") before
+the ports are bound.
+
+## 1. Add the v3 repository, keep the v2 one
+
+The v2 repository (`repo.libreqos.com`) does not carry v3. Add the v3 repository:
+
+```bash
+curl -fsSL https://packages.libreqos.com/keys/libreqos-packages-keyring.gpg \
+  | sudo tee /usr/share/keyrings/libreqos-packages-keyring.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/libreqos-packages-keyring.gpg] https://packages.libreqos.com beta main" \
+  | sudo tee /etc/apt/sources.list.d/libreqos.list
+sudo apt-get update
 ```
 
-## The path, in order
+If `libreqos.list` pointed at the v2 repository, this replaces it. Other v2
+source files are disabled by the v3 package on install (renamed with a
+`.v2-disabled` suffix), not deleted. **Keep
+`/usr/share/keyrings/libreqos-archive-keyring.gpg`**: the rollback installs v2
+from the v2 archive and needs it.
 
-0. **Add the new apt repo, keep the legacy one** — you are on the **legacy**
-   `repo.libreqos.com` archive, which does not carry v3 (its `beta` is frozen
-   and its `stable` is absent). Add the v3 key + a **`beta`** sources entry for
-   `packages.libreqos.com` (see [Installing v3 §1](install.md)) **before**
-   installing. **Do not delete the legacy source or its key**: the rollback
-   (step 8) resolves from the legacy `archive` suite and needs both. Put the v3
-   entry in a separate `libreqos-v3.list` (or pin the v3 source above the
-   legacy archive) rather than replacing the v2 entry. Keep
-   `/usr/share/keyrings/libreqos-archive-keyring.gpg` and the v2 systemd-hotfix
-   entry until the rollback window closes.
-1. **Preflight — before installing the packages.** The v3 `libreqos` `preinst`
-   **stops the old daemons** and then runs the checker, refusing the install on
-   a **BLOCK**. Run the checker first: install only the static checker package
-   (`sudo apt install libreqos-preflight` — no daemons, no service actions),
-   then run `libreqos-v3-preflight`. Read PASS/WARN/BLOCK; a **BLOCK** means
-   stop here. Watch the netplan adoption line and any `OPERATOR-CONSOLE
-   REQUIRED`.
-2. **Install LibreQoS v3** — the three packages at **one version**
-   (`libreqos-preflight`, `libreqos`, `libreqos-dataplane`; see
-   [Installing v3](install.md)). The node API is served by `lqosd` at
-   `/api/v3`; there is no separate `libreqos-api` package or unit. `lqos_setup`
-   runs the `bridge.conf` migration and `lqosd` migrates the runtime state to
-   schema 3.
-3. **Adopt the Linux bridge** (netplan) — transactional; note the **backup id**;
-   verify management still answers; never proceed remotely without console access
-   when management rides the bridge.
-4. **Bind the dataplane ports** — the packaged bind
-   (`libreqos-bridge-bind.service`); refused while a NIC is still enslaved by a
-   netplan bridge.
-5. **Migrate the configuration** — the key facts are below.
-6. **LKG** — the last-known-good transaction survives the purge; confirm the
-   persistent path.
-7. **Verify** — the units active, the seam healthy (`lqosd --print-seam-state`),
-   the expected generation applied.
-8. **Roll back** if needed — restore the adoption backup first, then the
-   packaged `/usr/sbin/libreqos-v3-rollback` (also
-   `/usr/libexec/libreqos/libreqos-v3-rollback`). `--from-archive <v2>` resolves
-   the retained v2 package
-   from the **`archive` suite on the LEGACY `repo.libreqos.com`**
-   (`packages.libreqos.com` serves no `archive`), so keep the legacy source entry
-   and its `libreqos-archive-keyring.gpg` until the rollback window closes.
+## 2. Run the preflight check
 
-## Configuration-migration facts
+```bash
+sudo apt-get install -y libreqos-preflight && libreqos-v3-preflight
+```
 
-- **`bridge.conf`** is strict (`deny_unknown_fields`); setup removes the legacy
-  `circuit_capacity` key automatically. A hand-edited/unparsable file is left
-  alone and fails **loud**.
-- **Bandwidth** is single-sourced in `lqos.conf [dataplane] download_mbps` /
-  `upload_mbps` (f64, per direction). Resolution: `[dataplane]` → `[queues]
-  downlink/uplink_bandwidth_mbps` (the v2 transition fallback, so the v2 keys
-  carry over) → `LIBREQOS_DPDK_DOWNLOAD_MBPS`/`LIBREQOS_DPDK_UPLOAD_MBPS` →
-  default `1000`. The typed `bridge.conf bandwidth` source is **removed** — a
-  stale one now makes the bridge **fail loud** (`deny_unknown_fields`); it no
-  longer silently outranks `lqos.conf`. The `lqos_setup` activation **folds** the
-  rate into `[dataplane]`, retires the duplicate `bridge.env`
-  `DOWNLOAD/UPLOAD_MBPS` keys, and leaves a `.pre-s7.bak` backup.
-- **Retired v2.0 keys** (ignored, not fatal): `[queues] fast_queues_fq_codel`,
-  `queue_check_period_ms`, `[stormguard] circuit_fallback_persist`, and the dead
-  `[treeguard]` block. `[tuning]` is relabelled "Management NIC / Kernel Netdev
-  only".
-- **UISP interval** migrates `long_term_stats.uisp_reporting_interval_seconds` →
-  `integration_common.queue_refresh_interval_mins` (`seconds / 60`, rounded,
-  clamped `>= 1`; only when the python-derived poll is still the default).
-- **`do_not_track_subnets`** is restored: a per-subnet opt-out that suppresses
-  flows **and** RTT (and is honoured by hosted Insight).
+It reports PASS / WARN / BLOCK for the hardware, whether your existing
+`network.json` and `ShapedDevices.csv` compile under v3, the license count, and
+the current install. **A BLOCK means stop here**; the host stays on v2.
 
-> Source of truth: `docs/lqos_conf_single_source_card.md`; the control plane
-> `bandwidth_mbps()` in `src/src/rust/lqos_config/src/etc/v15/top_config.rs`,
-> the bridge `download_mbps()` in `rust/libreqos_dpdk/bridge_rs/src/config.rs`,
-> and the §7 fold in `src/src/rust/lqos_setup/src/config_migrate.rs`.
+Watch for these lines:
+
+- `netplan: bridge br0 over ... (adoption required)`: step 4 is needed.
+- `OPERATOR-CONSOLE REQUIRED`: management appears to use the bridge. Do not
+  continue without console access.
+
+## 3. Install v3
+
+```bash
+sudo apt-get install -y libreqos libreqos-dataplane
+```
+
+Installing `libreqos` stops the v2 daemons. If the install is refused on a
+BLOCK, restart the v2 daemons and fix the block before retrying. Your v2
+configs are read in place, never rewritten.
+
+## 4. Adopt the Linux bridge
+
+Run the network-mode adoption in `sudo lqos_setup tui` (or the WebUI). It
+removes the bridge from netplan as a reversible change. **Write down the backup
+id it prints**; the rollback needs it. If you lose it, list the stored backups
+(newest in `last_backup_id`, the others in `recent_backups`):
+
+```bash
+sudo /opt/libreqos/src/bin/lqos_netplan_helper status
+```
+
+Then check that management still answers before you go on.
+
+## 5. Finish setup
+
+Continue in `lqos_setup tui`: pick the NIC pair and activate. The services then
+start, and `libreqos-bridge-bind.service` binds the dataplane NICs to DPDK. The
+bind is refused while a NIC is still in a netplan bridge; if you see that error,
+the adoption did not take, or another netplan file still owns the NIC.
+
+## 6. Check the migrated configuration
+
+Most of this happens automatically:
+
+- **Rates** come from `lqos.conf [dataplane] download_mbps` / `upload_mbps`.
+  The v2 keys `[queues] downlink_bandwidth_mbps` / `uplink_bandwidth_mbps` still
+  work as a fallback, and setup copies them into `[dataplane]` (backup:
+  `.pre-s7.bak`).
+- **`bridge.conf`** is strict: an unknown key stops the bridge. Setup removes the
+  old `circuit_capacity` key. A hand-edited file is left alone; a `bandwidth`
+  block in it now stops the bridge, so remove it and set the rates in
+  `lqos.conf`.
+- **Retired v2 keys** are ignored; see [What's new](whats-new.md).
+- **The UISP interval** (`uisp_reporting_interval_seconds`) becomes
+  `integration_common.queue_refresh_interval_mins` unless you already set the
+  latter.
+
+## 7. Verify
+
+Use the {ref}`install checks <v3-verify>`. Also confirm `lqosd --print-seam-state`
+shows the bridge attached, and that traffic is shaped.
+
+## 8. Roll back if needed
+
+1. Restore the netplan adoption backup (its id is from step 4, or from
+   `lqos_netplan_helper status`) so the bridge is back. This restores the saved
+   netplan files and runs `netplan apply`, so use the console:
+
+   ```bash
+   sudo /opt/libreqos/src/bin/lqos_netplan_helper rollback <backup-id>
+   ```
+2. Run the rollback, using a saved v2 `.deb` or the v2 archive:
+
+   ```bash
+   sudo libreqos-v3-rollback --deb <path-to-v2.deb>
+   # or
+   sudo libreqos-v3-rollback --from-archive <v2-version>
+   ```
+
+   It stops and removes v3 and installs v2. Your v2 configs are untouched.
+3. Reboot.

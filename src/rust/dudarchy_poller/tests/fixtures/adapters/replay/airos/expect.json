@@ -1,0 +1,230 @@
+{
+  "supported": true,
+  "probes": [
+    {
+      "probe": "system",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    },
+    {
+      "probe": "if_table",
+      "outcome": "present",
+      "reason": null,
+      "rows": 3
+    },
+    {
+      "probe": "lldp",
+      "outcome": "empty",
+      "reason": null,
+      "rows": 0
+    },
+    {
+      "probe": "arp_media",
+      "outcome": "empty",
+      "reason": null,
+      "rows": 0
+    },
+    {
+      "probe": "arp_physical",
+      "outcome": "empty",
+      "reason": null,
+      "rows": 0
+    },
+    {
+      "probe": "stations",
+      "outcome": "present",
+      "reason": null,
+      "rows": 2
+    }
+  ],
+  "lldp": [],
+  "arp": [],
+  "fdb": null,
+  "stations": [
+    {
+      "mac": "00:27:22:1a:f9:4e",
+      "wlan_if": 1,
+      "hostname": "station-01",
+      "signal_dbm": -47,
+      "noise_dbm": -92,
+      "last_ip": "172.30.1.98",
+      "tx_bps": 400000000,
+      "rx_bps": 144400000,
+      "rx_bytes": 2048,
+      "tx_bytes": 4096,
+      "uptime": 123456,
+      "distance_ccq": null,
+      "quality": null
+    },
+    {
+      "mac": "04:18:d6:a6:6a:7a",
+      "wlan_if": 1,
+      "hostname": null,
+      "signal_dbm": -56,
+      "noise_dbm": null,
+      "last_ip": null,
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null
+    }
+  ],
+  "interfaces": [
+    {
+      "index": 1,
+      "name": null,
+      "descr": "lo",
+      "alias": null,
+      "raw_type": 24,
+      "phys_address": null,
+      "admin_status": 1,
+      "oper_status": 1
+    },
+    {
+      "index": 2,
+      "name": null,
+      "descr": "eth0",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:15:6d:aa:bb:01",
+      "admin_status": 1,
+      "oper_status": 1
+    },
+    {
+      "index": 3,
+      "name": null,
+      "descr": "ath0",
+      "alias": null,
+      "raw_type": 71,
+      "phys_address": "00:15:6d:aa:bb:02",
+      "admin_status": 1,
+      "oper_status": 1
+    }
+  ],
+  "claims": [
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "name",
+      "value": "sector-a",
+      "source": "snmp-system"
+    },
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "sysdescr",
+      "value": "Linux 2.6.32.68 #1 SMP Thu Jan 1 00:00:00 UTC 2026 mips",
+      "source": "snmp-system"
+    }
+  ],
+  "details": {
+    "nat": null,
+    "dhcp_leases": null,
+    "interfaces": [
+      {
+        "id": "1",
+        "name": "lo",
+        "description": "lo",
+        "alias": null,
+        "kind": "loopback",
+        "raw_type": "24",
+        "mac": null,
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": [
+          "snmp-interfaces"
+        ]
+      },
+      {
+        "id": "2",
+        "name": "eth0",
+        "description": "eth0",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:15:6d:aa:bb:01",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": [
+          "snmp-interfaces"
+        ]
+      },
+      {
+        "id": "3",
+        "name": "ath0",
+        "description": "ath0",
+        "alias": null,
+        "kind": "other",
+        "raw_type": "71",
+        "mac": "00:15:6d:aa:bb:02",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": [
+          "snmp-interfaces"
+        ]
+      }
+    ],
+    "system": null,
+    "temperatures": [],
+    "stations": [
+      {
+        "mac": "00:27:22:1a:f9:4e",
+        "wlan_if": 1,
+        "hostname": "station-01",
+        "signal_dbm": -47,
+        "noise_dbm": -92,
+        "last_ip": "172.30.1.98",
+        "tx_bps": 400000000,
+        "rx_bps": 144400000,
+        "rx_bytes": 2048,
+        "tx_bytes": 4096,
+        "uptime": 123456,
+        "distance_ccq": null,
+        "quality": null,
+        "provenance": [
+          "airos-stations"
+        ]
+      },
+      {
+        "mac": "04:18:d6:a6:6a:7a",
+        "wlan_if": 1,
+        "hostname": null,
+        "signal_dbm": -56,
+        "noise_dbm": null,
+        "last_ip": null,
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "provenance": [
+          "airos-stations"
+        ]
+      }
+    ],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": null
+  },
+  "residuals": [],
+  "capacity": {
+    "mbps": 400.0,
+    "source": "per_sm_rate"
+  }
+}

@@ -162,13 +162,26 @@ fn build_effective_topology_artifacts_from_prepared(
     };
 
     if let Some(effective_network) = effective_network.as_ref() {
-        validate_effective_topology_network_from_canonical(
-            config,
-            canonical,
-            &ui_state,
-            &effective,
-            effective_network,
-        )?;
+        // lqos-74t.162: flat mode REPLACES the effective hierarchy with the
+        // Generated_PN bucket network BY DESIGN (no sites). The canonical
+        // site-presence closure is inapplicable there — it would reject every
+        // flat world whose canonical state names any site (Splynx always emits
+        // the synthetic "Unassigned / Root"), which is what made flat mode
+        // unpublishable ("Refusing to publish invalid effective topology:
+        // Effective topology export dropped site ..."). Identity/attachment
+        // consistency and site-parent cycles STILL run: they do not depend on
+        // the exported tree.
+        if runtime_flat_mode(config) {
+            validate_effective_network_identity_and_cycles(canonical, &ui_state, &effective)?;
+        } else {
+            validate_effective_topology_network_from_canonical(
+                config,
+                canonical,
+                &ui_state,
+                &effective,
+                effective_network,
+            )?;
+        }
     }
 
     Ok(EffectiveTopologyArtifacts {

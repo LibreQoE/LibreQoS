@@ -129,7 +129,7 @@ fn test_config(dir: &Path) -> Config {
 /// `build_effective_topology_artifacts...` → `publish_effective_topology_
 /// artifacts` → `dataplane_transaction.json`. The seeded half (legacy pair vs
 /// authored canonical) is what the caller chooses.
-fn run_pipeline(config: &Config) -> DataplaneTransaction {
+pub(super) fn run_pipeline(config: &Config) -> DataplaneTransaction {
     let canonical = lqos_topology::load_canonical_topology_state(config);
     let artifacts =
         lqos_topology::build_effective_topology_artifacts_from_canonical_with_runtime_queue_context(

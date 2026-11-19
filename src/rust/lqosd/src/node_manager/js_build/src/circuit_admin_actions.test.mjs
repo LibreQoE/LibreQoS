@@ -11,6 +11,10 @@ import {
     setActionSettled,
     validateRateInputs,
 } from "./circuit_admin_actions.mjs";
+import {clearCatalogs, EN, ES, installCatalogs, installKeyEchoCatalogs} from "../i18n/test_catalogs.mjs";
+
+test.beforeEach(() => installCatalogs());
+test.afterEach(clearCatalogs);
 
 class FakeClassList {
     constructor() {
@@ -273,4 +277,68 @@ test("lifecycle DOM: a no-op dispatch settles immediately, never waits on a gene
     assert.equal(root.lifecycle.classList.values.includes("text-secondary"), true);
     assert.equal(root.lifecycle.classList.values.includes("text-danger"), false,
         "a no-op is not a failure");
+});
+
+test("every validation and lifecycle message maps to a key both locales define", () => {
+    // With an empty catalog each message renders as the key it asked for.
+    installKeyEchoCatalogs();
+    const defined = (text) => /^circuit\./.test(text)
+        && Object.prototype.hasOwnProperty.call(EN.messages, text)
+        && Object.prototype.hasOwnProperty.call(ES.messages, text);
+    const good = { download_min_mbps: 10, upload_min_mbps: 5, download_max_mbps: 100, upload_max_mbps: 50 };
+    const cases = [
+        { ...good, download_min_mbps: 0 },
+        { ...good, upload_max_mbps: "abc" },
+        { ...good, download_min_mbps: 200 },
+        { ...good, upload_min_mbps: 200 },
+        { ...good, download_min_mbps: "abc", upload_max_mbps: -1 },
+    ];
+    let fieldKeys = 0;
+    for (const inputs of cases) {
+        for (const message of validateRateInputs(inputs)) {
+            assert.ok(defined(message), `rate error "${message}"`);
+            fieldKeys += 1;
+        }
+    }
+    assert.ok(fieldKeys >= 5, `expected one key per failed field, saw ${fieldKeys}`);
+
+    for (const outcome of [
+        { status: "noop" },
+        { status: "pending", seqPos: 1, seqLen: 1 },
+        { status: "pending", seqPos: 2, seqLen: 3 },
+        { status: "pending", retrying: true, seqPos: 1, seqLen: 3 },
+        { status: "applied" },
+    ]) {
+        const text = describeOutcome(outcome);
+        assert.ok(defined(text), `outcome "${text}"`);
+    }
+});
+
+test("the rate fields name the field through the catalog", () => {
+    // The field label is a parameter, so the message is defined and the label
+    // rendered: an empty catalog keeps the parameter a key.
+    installCatalogs();
+    assert.ok(validateRateInputs({ download_min_mbps: 0 }).every((message) => !/mbps/.test(message)));
+    assert.equal(validateRateInputs({ download_min_mbps: 0 })[0], "Download Min must be greater than 0");
+    assert.equal(
+        validateRateInputs({ download_min_mbps: 200, upload_min_mbps: 5, download_max_mbps: 100, upload_max_mbps: 50 })[0],
+        "Download Min must not exceed Download Max",
+    );
+});
+
+test("rate errors and lifecycle text follow the served locale", () => {
+    installCatalogs(ES);
+    assert.equal(
+        validateRateInputs({ download_min_mbps: 10, upload_min_mbps: 5, download_max_mbps: 100, upload_max_mbps: 0 })[0],
+        "Subida máx. debe ser mayor que 0",
+    );
+    assert.equal(
+        validateRateInputs({ download_min_mbps: 10, upload_min_mbps: 200, download_max_mbps: 100, upload_max_mbps: 50 })[0],
+        "Subida mín. no puede superar Subida máx.",
+    );
+    assert.equal(describeOutcome({ status: "pending", seqPos: 2, seqLen: 3 }), "Aplicando en el puente (2/3)…");
+    assert.equal(describeOutcome({ status: "applied" }), "✓ Aplicado por el puente");
+    assert.equal(describeOutcome({ status: "noop" }), "Ya está en este estado");
+    // A typed bridge rejection is surfaced verbatim, never translated.
+    assert.equal(describeOutcome({ status: "rejected", reason: "REJECTED_OBSERVE_MODE" }), "✗ REJECTED_OBSERVE_MODE");
 });

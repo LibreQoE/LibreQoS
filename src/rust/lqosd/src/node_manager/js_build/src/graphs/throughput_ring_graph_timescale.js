@@ -4,6 +4,7 @@ import {periodNameToSeconds} from "../helpers/time_periods";
 import {MinMaxSeries} from "../lq_js_common/e_charts/min_max_median_series";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 const wsClient = get_ws_client();
@@ -23,7 +24,7 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withTimeAxis()
-            .withScaledAbsYAxis("Throughput (bps)", 40)
+            .withScaledAbsYAxis(t("graph.axis.throughput_bps"), 40)
             .withEmptySeries()
             .withEmptyLegend()
             .build();
@@ -31,12 +32,13 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
 
         let seconds = periodNameToSeconds(period);
+        // translatable: false — "Requesting Insight History Data" "Received Insight History Data" are console diagnostics for the Insight history request
         console.log("Requesting Insight History Data");
         listenOnceForSeconds("LtsThroughput", seconds, (msg) => {
             const data = msg && msg.data ? msg.data : [];
             console.log("Received Insight History Data", data);
-            let shaperDown = new MinMaxSeries("Down", 1);
-            let shaperUp = new MinMaxSeries(" Up", 1);
+            let shaperDown = new MinMaxSeries(t("graph.series.download"), 1);
+            let shaperUp = new MinMaxSeries(t("graph.series.upload"), 1);
             data.forEach((r) => {
                 this.option.xAxis.data.push(r.time);
                 shaperDown.pushPositive(

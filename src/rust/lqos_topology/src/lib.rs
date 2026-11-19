@@ -48,7 +48,7 @@ pub use lqos_dataplane_types::*;
 pub mod dataplane_compiler;
 pub use dataplane_compiler::{
     aqm_from_override, aqm_with_default, compile_dataplane_transaction,
-    compile_dataplane_transaction_with_ranges, compile_dataplane_transaction_with_ranges_and_sqm,
+    compile_dataplane_transaction_with_sqm,
 };
 include!("shaping_inputs.rs");
 include!("flat_mode.rs");

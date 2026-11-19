@@ -1,12 +1,21 @@
+import {applyDomTranslations, t} from "./i18n/index.js";
+import {initLanguageSwitcher} from "./i18n/switcher.mjs";
+
+// The standalone pages load no shell bundle, so this page builds its own
+// language control from the generated locale list and translates its own
+// `data-i18n` markup; English stays inline as the fallback.
+initLanguageSwitcher({containerId: "languageControl"});
+applyDomTranslations();
+
 $("#btnLogin").on('click', () => {
     let username = ($("#username").val() || "").trim();
     let password = $("#password").val();
     if (username === "") {
-        alert("You must enter a username");
+        alert(t("common.auth.username_required"));
         return;
     }
     if (password === "") {
-        alert("You must enter a password");
+        alert(t("common.auth.password_required"));
         return;
     }
 
@@ -21,7 +30,7 @@ $("#btnLogin").on('click', () => {
         data: JSON.stringify(login),
         contentType: 'application/json',
         beforeSend: () => {
-            $("#loginErrorText").html("Login failed. You can manage users via the <code>lqusers</code> CLI tool on the LibreQoS server.");
+            $("#loginErrorText").text(t("login.error_default"));
             $("#loginError").removeClass("show").addClass("d-none");
         },
         success: () => {
@@ -36,11 +45,11 @@ $("#btnLogin").on('click', () => {
             }
 
             if (reason === "auth_corrupt") {
-                $("#loginErrorText").text(response.message || "The auth file is corrupt and must be repaired before anyone can log in.");
+                $("#loginErrorText").text(response.message || t("login.error_corrupt"));
             } else if (reason === "invalid_credentials") {
-                $("#loginErrorText").text(response.message || "Invalid username or password.");
+                $("#loginErrorText").text(response.message || t("login.error_invalid_credentials"));
             } else {
-                $("#loginErrorText").html("Login failed. You can manage users via the <code>lqusers</code> CLI tool on the LibreQoS server.");
+                $("#loginErrorText").text(t("login.error_default"));
             }
             $("#loginError").removeClass("d-none").addClass("show");
         }
@@ -48,6 +57,7 @@ $("#btnLogin").on('click', () => {
 });
 
 // Add keypress handler for Enter key
+// translatable: false — "#username, #password" is the jQuery selector for the two login fields, not a label
 $('#username, #password').on('keypress', function(e) {
     if (e.which === 13) {
         e.preventDefault();

@@ -1,4 +1,5 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function isValidIPv4(ip) {
     if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;
@@ -60,14 +61,14 @@ function addSubnet(listId, inputId) {
     const cidr = normalizeSubnetInput(input.value);
 
     if (!isValidCIDR(cidr)) {
-        alert('Please enter a valid IP or CIDR notation (e.g. 192.168.1.0/24, 2803:16d0:40::/48, or 2001:db8::1)');
+        alert(t("config.iprange.validation.invalid_entry"));
         return;
     }
 
     const select = document.getElementById(listId);
     for (let i = 0; i < select.options.length; i++) {
         if (select.options[i].value.toLowerCase() === cidr.toLowerCase()) {
-            alert('This CIDR is already in the list');
+            alert(t("config.iprange.validation.duplicate"));
             return;
         }
     }
@@ -137,10 +138,11 @@ loadConfig(() => {
         document.getElementById('saveButton').addEventListener('click', () => {
             updateConfig();
             saveConfig(() => {
-                alert("Configuration saved successfully!");
+                alert(t("config.iprange.saved"));
             });
         });
     } else {
+        // translatable: false — "IP Ranges configuration not found in window.config" is a console diagnostic, never rendered
         console.error("IP Ranges configuration not found in window.config");
     }
 });

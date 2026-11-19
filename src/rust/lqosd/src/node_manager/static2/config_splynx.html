@@ -5,60 +5,60 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Splynx Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Connect LibreQoS to Splynx. Shared topology mode now lives under Integration - Common.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.splynx.title">Splynx Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.splynx.subtitle">Connect LibreQoS to Splynx. Shared topology mode now lives under Integration - Common.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableSplynx">
-                <label class="form-check-label" for="enableSplynx">Enable Splynx Integration</label>
-                <div class="form-text">Enable integration with Splynx billing system</div>
+                <label class="form-check-label" for="enableSplynx" data-i18n="config.splynx.enable">Enable Splynx Integration</label>
+                <div class="form-text" data-i18n="config.splynx.enable_help">Enable integration with Splynx billing system</div>
             </div>
 
             <div class="mb-3">
-                <label for="apiKey" class="form-label">API Key</label>
+                <label for="apiKey" class="form-label" data-i18n="config.splynx.api_key">API Key</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="apiKey" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearApiKey">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearApiKey" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="apiKeyStatus"></div>
-                <div class="form-text">Splynx API key for authentication</div>
+                <div class="form-text" data-i18n="config.splynx.api_key_help">Splynx API key for authentication</div>
             </div>
 
             <div class="mb-3">
-                <label for="apiSecret" class="form-label">API Secret</label>
+                <label for="apiSecret" class="form-label" data-i18n="config.splynx.api_secret">API Secret</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="apiSecret" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearApiSecret">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearApiSecret" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="apiSecretStatus"></div>
-                <div class="form-text">Splynx API secret for authentication</div>
+                <div class="form-text" data-i18n="config.splynx.api_secret_help">Splynx API secret for authentication</div>
             </div>
 
             <div class="mb-3">
-                <label for="splynxUrl" class="form-label">Splynx URL</label>
+                <label for="splynxUrl" class="form-label" data-i18n="config.splynx.url">Splynx URL</label>
                 <input type="text" class="form-control" id="splynxUrl" autocomplete="url">
-                <div class="form-text">Base URL for Splynx API (e.g. https://your-splynx.com)</div>
+                <div class="form-text" data-i18n="config.splynx.url_help">Base URL for Splynx API (e.g. https://your-splynx.com)</div>
             </div>
 
             <div class="mb-3">
-                <label for="topologyStrategy" class="form-label">Topology Compile Mode</label>
+                <label for="topologyStrategy" class="form-label" data-i18n="config.splynx.compile_mode">Topology Compile Mode</label>
                 <select class="form-select" id="topologyStrategy" disabled>
-                    <option value="flat">Flat - Only shapes subscribers, no hierarchy (Lowest CPU)</option>
-                    <option value="ap_only">AP Only - Single layer: AP → Clients (Low CPU)</option>
-                    <option value="ap_site">AP Site - Two layers: Site → AP → Clients (Default)</option>
-                    <option value="full">Full - Complete topology mapping (Highest CPU)</option>
+                    <option value="flat" data-i18n="config.splynx.mode.flat">Flat - Only shapes subscribers, no hierarchy (Lowest CPU)</option>
+                    <option value="ap_only" data-i18n="config.splynx.mode.ap_only">AP Only - Single layer: AP → Clients (Low CPU)</option>
+                    <option value="ap_site" data-i18n="config.splynx.mode.ap_site">AP Site - Two layers: Site → AP → Clients (Default)</option>
+                    <option value="full" data-i18n="config.splynx.mode.full">Full - Complete topology mapping (Highest CPU)</option>
                 </select>
-                <div class="form-text">Change this under <code>Integration - Common</code>. Splynx still keeps the legacy field for compatibility during upgrade.</div>
+                <div class="form-text" id="splynxCompileModeHelp"></div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.splynx.save">Save Changes</button>
         </div>
     </form>
 </div>

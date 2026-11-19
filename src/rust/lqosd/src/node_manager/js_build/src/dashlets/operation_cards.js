@@ -1,8 +1,9 @@
 import {mkBadge} from "./bakery_shared";
 import {redactCell} from "../helpers/redact";
+import {t} from "../i18n/index.js";
 
 export function renderOperationCards(host, groups, options = {}) {
-    const emptyText = options.emptyText || "No recent operations";
+    const emptyText = options.emptyText || t("common.state.no_recent_operations");
     host.innerHTML = "";
 
     if (!Array.isArray(groups) || groups.length === 0) {
@@ -23,7 +24,7 @@ export function renderOperationCards(host, groups, options = {}) {
         const titleWrap = document.createElement("div");
         const title = document.createElement("div");
         title.classList.add("fw-semibold");
-        title.textContent = group.label || "Operation";
+        title.textContent = group.label || t("config.dynamic_circuits.operation.title");
         redactCell(title);
         titleWrap.appendChild(title);
 
@@ -31,7 +32,7 @@ export function renderOperationCards(host, groups, options = {}) {
         right.classList.add("d-flex", "flex-wrap", "gap-2", "align-items-center");
         right.appendChild(
             mkBadge(
-                group.outcomeLabel || "Info",
+                group.outcomeLabel || t("common.severity.info"),
                 group.outcomeClass || "bg-light text-secondary border",
                 group.outcomeTitle || "",
             ),

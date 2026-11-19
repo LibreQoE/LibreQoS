@@ -1,6 +1,7 @@
 import {clearDashDiv, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class TreeCapacityDash extends DashletBaseInsight {
     constructor(slot) {
@@ -12,11 +13,11 @@ export class TreeCapacityDash extends DashletBaseInsight {
     }
 
     title() {
-        return "Tree Nodes At Capacity";
+        return t("dashlet.capacity.tree.title");
     }
 
     tooltip() {
-        return "<h5>Tree Nodes at Capacity</h5><p>Distribution Nodes approaching their maximum capacity, possibly in need of an upgrade or a better shaping policy.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.capacity.tree.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -43,9 +44,9 @@ export class TreeCapacityDash extends DashletBaseInsight {
             table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
             let thead = document.createElement("thead");
             thead.classList.add("small");
-            thead.appendChild(theading("Node"));
-            thead.appendChild(theading("% Utilization (DL)"));
-            thead.appendChild(theading("% Utilization (UL)"));
+            thead.appendChild(theading(t("tree.table.node")));
+            thead.appendChild(theading(t("common.table.utilization_dl")));
+            thead.appendChild(theading(t("common.table.utilization_ul")));
             thead.appendChild(theading("RTT"));
             table.appendChild(thead);
             let tbody = document.createElement("tbody");

@@ -94,6 +94,7 @@ export function lerpGreenToRedViaOrange(value, max) {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
+// translatable: false — "rgb( , , )" is the CSS colour function the channel triple builds
 export function formatThroughput(throughput, limitInMbps) {
     throughput = toNumber(throughput, 0);
     limitInMbps = toNumber(limitInMbps, 0);

@@ -148,6 +148,40 @@ fn effective_parent_is_exported(
         .is_some_and(|node_id| exported_effective_nodes.contains_key(&node_id))
         || optional_non_empty(parent_name)
             .is_some_and(|node_name| exported_effective_names.contains_key(&node_name))
+        // The dataplane root is IMPLICIT: no effective network can export a node
+        // object for it, yet the data plane always carries it (tree index 0). A
+        // row attached to it is exported by definition — its empty parent id is
+        // the wire's root sentinel.
+        || optional_non_empty(parent_name)
+            .as_deref()
+            .is_some_and(is_dataplane_root_name)
+}
+
+/// Whether a resolved parent NAME is the dataplane root.
+fn is_dataplane_root_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case(DATA_PLANE_ROOT_NAME)
+}
+
+/// Whether one store row carries the fold's OWN root convention: no parent id AND
+/// a blank or `Root` parent name (`u15` A2).
+///
+/// Blank and `Root` are ONE predicate by spec (driver ruling 2026-11-17): "if no
+/// `attach_to` is specified, you attach to the top of the tree", and the actor
+/// writes [`DATA_PLANE_ROOT_NAME`] for exactly that case, so a row with no parent
+/// information at all and a row naming the sentinel are the same instruction.
+///
+/// The id half is what keeps A2 from widening: a row that DOES carry an id keeps
+/// the existing pre-check and id-shaped resolution, so a stale id still defers
+/// instead of being read as the root. An id that is present but blank counts as
+/// absent, the same way the rest of the fold reads `parent_node_id`.
+fn is_root_sentinel_row(device: &lqos_config::ShapedDevice) -> bool {
+    let carries_id = device
+        .parent_node_id
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|id| !id.is_empty());
+    let name = device.parent_node.trim();
+    !carries_id && (name.is_empty() || is_dataplane_root_name(name))
 }
 
 fn resolve_legacy_parent_from_effective_tree(
@@ -185,7 +219,17 @@ fn resolve_legacy_parent_from_effective_tree(
     {
         return Some(resolved);
     }
-    trimmed_name.and_then(|alias| exported_effective_aliases.get(&alias).cloned())
+    if let Some(resolved) = trimmed_name
+        .as_deref()
+        .and_then(|alias| exported_effective_aliases.get(alias).cloned())
+    {
+        return Some(resolved);
+    }
+    // LAST, so a REAL node named `Root` still wins: the implicit root is the
+    // fallback every export-based lookup above has already declined.
+    trimmed_name
+        .filter(|name| is_dataplane_root_name(name))
+        .map(|name| (String::new(), name))
 }
 
 fn selected_attachment_name_for_node(
@@ -330,16 +374,11 @@ fn duplicate_circuit_shape_conflicts(
     conflicts
 }
 
-fn ipv4_with_prefix_to_string(entry: &(std::net::Ipv4Addr, u32)) -> String {
-    if entry.1 >= 32 {
-        entry.0.to_string()
-    } else {
-        format!("{}/{}", entry.0, entry.1)
-    }
-}
-
-fn ipv6_with_prefix_to_string(entry: &(std::net::Ipv6Addr, u32)) -> String {
-    if entry.1 >= 128 {
+/// One mapping as the artifact spells it: a bare address for a host prefix, CIDR
+/// otherwise (a v4 `/32` and a v6 `/128` both print bare).
+fn prefix_to_string(entry: &Prefix) -> String {
+    let width = if entry.0.is_ipv4() { 32 } else { 128 };
+    if entry.1 >= width {
         entry.0.to_string()
     } else {
         format!("{}/{}", entry.0, entry.1)
@@ -392,9 +431,21 @@ fn load_integration_shaping_artifacts(
     }))
 }
 
+/// What one dynamic-store fold contributed to the shaping rows.
+struct DynamicFoldOutcome {
+    /// LOUD warnings for rejected/deferred circuits.
+    warnings: Vec<String>,
+    /// The device ROWS the fold actually synthesized, keyed
+    /// `(normalized circuit id, device id)`. These are the row origins the
+    /// `dynamic` marker reports, and the rows the supersede rule must never
+    /// treat as provisioned devices.
+    origin_rows: lqos_utils::DynamicOriginRows,
+}
+
 /// K1 §1.1/§1.2: fold the RADIUS dynamic-circuit store into the base rows at
 /// the DEVICE-ROW level (pre-circuit-loop), so the compiler emits per-IP
-/// `Map` ops. Returns LOUD warnings for rejected/deferred rows:
+/// `Map` ops. Returns LOUD warnings for rejected/deferred rows, plus the device
+/// ROWS it synthesized (the `dynamic` marker's source of truth):
 /// - a `circuit_id` colliding with a provisioned circuit is REJECTED (a RADIUS
 ///   circuit never shadows a provisioned one);
 /// - an unresolvable parent is `shaping_deferred` (kept in the store for the
@@ -406,6 +457,16 @@ fn load_integration_shaping_artifacts(
 /// attachment owner, or queue alias) is `shaping_deferred` — an empty-parent
 /// emission is never legal (the bridge rejects it as "parent does not exist in
 /// the applied tree").
+///
+/// `u15` A2 (driver ruling 2026-11-17): a row with NO parent id whose parent
+/// name is blank or the fold's [`DATA_PLANE_ROOT_NAME`] sentinel is the root
+/// convention — "if no `attach_to` is specified, you attach to the top of the
+/// tree". It emits the WIRE ROOT exactly as a blank-`attach_to` range fallback
+/// does (name `Root`, no id, normalized to `root` at the boundary), so the
+/// promoted `/32` compiles a leaf in every topology — single-root, forest and
+/// flat-bucket alike — instead of deferring on every publish. A row that carries
+/// an id is not the sentinel and still defers loudly when that id cannot be
+/// proven.
 #[allow(clippy::too_many_arguments)]
 fn fold_dynamic_circuits_into_devices(
     config: &Config,
@@ -416,11 +477,15 @@ fn fold_dynamic_circuits_into_devices(
     attachment_owner_by_attachment_id: &HashMap<String, (String, String)>,
     queue_aliases_by_id: &HashMap<String, (String, String)>,
     queue_aliases_by_name: &HashMap<String, (String, String)>,
-) -> Vec<String> {
+) -> DynamicFoldOutcome {
     let mut warnings = Vec::new();
+    let mut origin_rows = lqos_utils::DynamicOriginRows::new();
     let store = lqos_config::DynamicCircuitsFile::load(config);
     if store.circuits.is_empty() {
-        return warnings;
+        return DynamicFoldOutcome {
+            warnings,
+            origin_rows,
+        };
     }
     let provisioned: HashSet<String> = shaped_devices
         .devices
@@ -466,35 +531,439 @@ fn fold_dynamic_circuits_into_devices(
             ));
             continue;
         }
-        match resolve_legacy_parent_from_effective_tree(
-            device.parent_node.trim(),
-            device.parent_node_id.as_deref(),
-            exported_effective_nodes,
-            exported_effective_names,
-            exported_effective_aliases,
-            queue_aliases_by_id,
-            queue_aliases_by_name,
-        ) {
-            Some((parent_id, parent_name)) if !parent_id.trim().is_empty() => {
-                device.parent_node = parent_name;
-                device.parent_node_id = Some(parent_id);
-            }
-            _ => {
-                warnings.push(format!(
-                    "dynamic circuit '{}' has an unresolvable parent '{}' \
-                     (shaping_deferred; the store keeps it for the audit surface)",
-                    device.circuit_id, device.parent_node
-                ));
-                continue;
+        // u15 A2 + driver ruling (2026-11-17): the fold's root sentinel IS the
+        // WIRE ROOT. The dataplane root is IMPLICIT — it never appears in the
+        // exported effective network, so there is no id to prove and no node to
+        // resolve — and the root attachment is therefore the SAME empty-parent
+        // emission a blank-`attach_to` range fallback already makes: name
+        // `Root`, no id, normalized to `root` at the wire boundary. That is
+        // topology-independent by construction (single-root, forest and
+        // flat-bucket worlds emit it identically) and makes the promoted `/32`
+        // the fallback prefix's SIBLING.
+        //
+        // A row that carries an id is NOT the sentinel: it keeps the id-shaped
+        // resolution below, so a stale id still defers loudly instead of being
+        // read as the root.
+        if is_root_sentinel_row(&device) {
+            device.parent_node = DATA_PLANE_ROOT_NAME.to_string();
+            device.parent_node_id = None;
+        } else {
+            match resolve_legacy_parent_from_effective_tree(
+                device.parent_node.trim(),
+                device.parent_node_id.as_deref(),
+                exported_effective_nodes,
+                exported_effective_names,
+                exported_effective_aliases,
+                queue_aliases_by_id,
+                queue_aliases_by_name,
+            ) {
+                Some((parent_id, parent_name)) if !parent_id.trim().is_empty() => {
+                    device.parent_node = parent_name;
+                    device.parent_node_id = Some(parent_id);
+                }
+                _ => {
+                    warnings.push(format!(
+                        "dynamic circuit '{}' has an unresolvable parent '{}' \
+                         (shaping_deferred; the store keeps it for the audit surface)",
+                        device.circuit_id, device.parent_node
+                    ));
+                    continue;
+                }
             }
         }
         device.circuit_hash = lqos_utils::hash_to_i64(&device.circuit_id);
         device.device_hash = lqos_utils::hash_to_i64(&device.device_id);
         device.parent_hash = lqos_utils::hash_to_i64(&device.parent_node);
+        origin_rows.insert_row(&device.circuit_id, &device.device_id);
         rows.push(device);
     }
     if !rows.is_empty() {
         let mut all = shaped_devices.devices.clone();
+        all.extend(rows);
+        shaped_devices.replace_with_new_data(all);
+    }
+    DynamicFoldOutcome {
+        warnings,
+        origin_rows,
+    }
+}
+
+/// The range rules that are LIVE: the dynamic feature AND unknown-IP promotion
+/// must both be on — the gate the retired compiler-only branch applied.
+fn live_range_rules(config: &Config) -> &[lqos_config::DynamicCircuitRangeRule] {
+    config
+        .dynamic_circuits
+        .as_ref()
+        .filter(|cfg| cfg.enabled && cfg.enable_unknown_ip_promotion)
+        .map(|cfg| cfg.ranges.as_slice())
+        .unwrap_or_default()
+}
+
+/// One CIDR block: a network address and its prefix length, the currency the
+/// ignore-subnet arithmetic works in.
+type Prefix = (IpAddr, u32);
+
+/// The address bits of `address` and the width of its family (32 or 128).
+fn address_space(address: IpAddr) -> (u128, u32) {
+    match address {
+        IpAddr::V4(address) => (u128::from(u32::from_be_bytes(address.octets())), 32),
+        IpAddr::V6(address) => (u128::from_be_bytes(address.octets()), 128),
+    }
+}
+
+/// Rebuilds an address of `width` bits from its numeric value.
+fn address_from_space(bits: u128, width: u32) -> IpAddr {
+    if width == 32 {
+        IpAddr::from((bits as u32).to_be_bytes())
+    } else {
+        IpAddr::from(bits.to_be_bytes())
+    }
+}
+
+/// `prefix` with its host bits cleared. `None` when its length exceeds its
+/// family width: that is not a prefix, so it never becomes coverage.
+fn normalize_prefix((address, prefix_len): Prefix) -> Option<Prefix> {
+    let (bits, width) = address_space(address);
+    let host_bits = width.checked_sub(prefix_len)?;
+    let network_bits = if host_bits == width {
+        0
+    } else {
+        bits >> host_bits << host_bits
+    };
+    Some((address_from_space(network_bits, width), prefix_len))
+}
+
+/// Whether `outer` covers every address of `inner`. Both are normalized, and a
+/// cross-family prefix never contains another (`0.0.0.0/0` is not all of IPv6).
+fn prefix_contains(outer: Prefix, inner: Prefix) -> bool {
+    let (outer_bits, width) = address_space(outer.0);
+    let (inner_bits, inner_width) = address_space(inner.0);
+    if width != inner_width || inner.1 > inner_width || inner.1 < outer.1 {
+        return false;
+    }
+    let Some(host_bits) = width.checked_sub(outer.1) else {
+        return false;
+    };
+    host_bits == width || outer_bits >> host_bits == inner_bits >> host_bits
+}
+
+/// The two halves of `prefix`, one bit longer. `None` for a host prefix (a /32
+/// or /128 has no halves) or a length its family cannot hold.
+fn split_prefix((address, prefix_len): Prefix) -> Option<[Prefix; 2]> {
+    let (bits, width) = address_space(address);
+    let host_bits = width.checked_sub(prefix_len)?;
+    let step = 1u128 << host_bits.checked_sub(1)?;
+    Some([
+        (address_from_space(bits, width), prefix_len + 1),
+        (address_from_space(bits + step, width), prefix_len + 1),
+    ])
+}
+
+/// `rule` minus `ignored`: the disjoint fragments covering exactly the rule's
+/// addresses that no same-family ignore covers, sorted and deduplicated.
+///
+/// Prefix arithmetic, never per-address enumeration. Two prefixes of one family
+/// are either disjoint or nested, so there are only three cases per fragment: it
+/// avoids every ignore and survives whole, it is contained by one and is
+/// dropped, or it contains one and is bisected until each half avoids or is
+/// contained. Inputs are normalized first, so `10.1.2.3/16` means its network.
+///
+/// `None` when an input length exceeds its family width: the caller must refuse
+/// the fallback rather than publish unfiltered or partial coverage. An EMPTY
+/// vector is a real answer — the rule is entirely ignored.
+fn subtract_ignored_prefixes(rule: Prefix, ignored: &[Prefix]) -> Option<Vec<Prefix>> {
+    let rule = normalize_prefix(rule)?;
+    let ignored = ignored
+        .iter()
+        .copied()
+        .map(normalize_prefix)
+        .collect::<Option<Vec<_>>>()?;
+    let mut fragments = Vec::new();
+    let mut pending = vec![rule];
+    while let Some(fragment) = pending.pop() {
+        let intersecting = ignored
+            .iter()
+            .copied()
+            .find(|ignore| prefix_contains(*ignore, fragment) || prefix_contains(fragment, *ignore));
+        match intersecting {
+            None => fragments.push(fragment),
+            Some(ignore) if prefix_contains(ignore, fragment) => {}
+            Some(_) => pending.extend(split_prefix(fragment)?),
+        }
+    }
+    fragments.sort();
+    fragments.dedup();
+    Some(fragments)
+}
+
+/// One device row's permitted mappings: each mapping is a PREFIX, so the ignored
+/// subnets are subtracted from it instead of being compared with its network
+/// address. A mapping longer than its family width is kept as configured; it was
+/// never resolvable coverage. The first occurrence of a fragment wins, so two
+/// overlapping mappings cannot emit one Map identity twice.
+fn permitted_mappings(mappings: impl Iterator<Item = Prefix>, ignored: &[Prefix]) -> Vec<Prefix> {
+    let mut permitted = Vec::new();
+    let mut seen = HashSet::new();
+    for mapping in mappings {
+        let fragments =
+            subtract_ignored_prefixes(mapping, ignored).unwrap_or_else(|| vec![mapping]);
+        permitted.extend(fragments.into_iter().filter(|fragment| seen.insert(*fragment)));
+    }
+    permitted
+}
+
+/// What `ip_ranges.ignore_subnets` means to the folds (u8 REV-C1).
+///
+/// `prefixes` is the LENIENT parse — every entry that parsed, in configured
+/// order — and it is empty for two worlds the slice alone cannot tell apart:
+///
+/// - the operator configured NO ignores: a catch-all fallback publishes its
+///   whole rule, which is the documented contract, and
+/// - the operator configured ignores and every one of them was unreadable: a
+///   catch-all fallback that published its whole rule would expose exactly the
+///   subnets the operator tried to exclude.
+///
+/// `configured` is that distinction, and [`Self::unusable`] is the one place it
+/// is decided.
+#[derive(Debug, Clone, Copy)]
+struct IgnorePrefixes<'a> {
+    /// The entries that parsed; the malformed ones were each reported once by
+    /// `lqos_config` while it built this list.
+    prefixes: &'a [Prefix],
+    /// The operator configured at least one entry.
+    configured: bool,
+}
+
+impl IgnorePrefixes<'_> {
+    /// A list that was configured and yielded no usable prefix.
+    ///
+    /// Range fallback synthesis must DEFER here — no fallback row, no prefix
+    /// `Map` — because the computed complement of a catch-all would be the
+    /// catch-all itself: an unreadable exclusion must never become unfiltered
+    /// `0.0.0.0/0` coverage. The ordinary device prune stays LENIENT: it
+    /// subtracts what parsed, and a device row is never catch-all coverage, so
+    /// the same typo only narrows that prune.
+    fn unusable(&self) -> bool {
+        self.configured && self.prefixes.is_empty()
+    }
+}
+
+/// u5 A1 (REV-D1): fold each configured `[[dynamic_circuits.ranges]]` rule
+/// into ONE ordinary DEVICE row over the rule's prefix, at the same seam the
+/// RADIUS store fold uses — after the base import, before the operator override
+/// fold and before the device loop's `ip_ranges.ignore_subnets` prune.
+///
+/// Packet-one coverage used to be a compiler-only leaf plus a prefix `Map`
+/// injected at the transaction stage (`range_leaf` / `RangeRow`, retired in u5).
+/// It is now an ordinary row, compiled by the normal leaf + `Map` path, so the
+/// compiler, the broker diff and the data plane cannot tell a range fallback
+/// from any other circuit. The prefix `Map` is still a longest-prefix entry, so
+/// a promoted `/32` (and a provisioned more-specific row) shadows it.
+///
+/// IGNORE SUBTRACTION (u7, second Oracle consult): the row's mapping prefixes are
+/// the rule MINUS `ip_ranges.ignore_subnets`, because explicit management
+/// exclusions outrank catch-all coverage — a `/0` fallback must never classify
+/// management traffic, and a promotion cap or warning cannot protect it. The rule
+/// stays ONE circuit with ONE device carrying the computed prefix list at the
+/// rule's rates; a rule whose complement is empty creates no row at all.
+///
+/// DEFERRAL (u8 REV-C1): the ignore list arrives here ALREADY PARSED and
+/// lenient — `lqos_config` skips a malformed entry with its own once-per-entry
+/// warning, and what parsed is subtracted, so one typo narrows the subtraction
+/// instead of disabling it. Two cases still defer LOUDLY rather than publish
+/// coverage: a prefix that cannot be represented after subtraction, and a
+/// configured ignore list that yielded NO usable prefix at all (see
+/// [`IgnorePrefixes::unusable`]). A list that was never configured is not a
+/// deferral: with nothing to exclude, the rule's whole prefix is the intended
+/// coverage.
+///
+/// WHY THE DEVICE SEAM: a circuit row appended after the ordinary passes
+/// answered to none of them — `CircuitAdjustment::RemoveCircuit` and
+/// `CircuitAdjustSpeed` for its id were silent no-ops, and the
+/// `ip_ranges.ignore_subnets` prune never saw its prefix. A device row at the
+/// RADIUS fold's seam inherits the whole operator control surface: persistent
+/// overrides
+/// (replace/append), the circuit/device adjustment fold, `ReparentCircuit`,
+/// flat-bucket assignment, the ignored-subnet prune, the circuit-AQM post-pass
+/// and the ordinary parent resolution. The prune below the seam re-subtracts the
+/// same ignores from the fragments this fold already computed, which is a no-op
+/// and keeps one ignore semantics for both rows.
+///
+/// Identity: `dynamic-range:<rule name>` for both the circuit and its single
+/// device, the id the retired compiler emitted and the namespace the promotion
+/// rows (`dynamic-range:<rule name>:<ip>`) extend, so a rule keeps its circuit
+/// across publishes. A rule whose id collides with an assembled circuit is
+/// REJECTED like a colliding RADIUS row.
+///
+/// Parent: blank `attach_to` is the dataplane root — the resolved parent id is
+/// the empty sentinel the wire normalizes to `root`, and the store's synthetic
+/// root node ("Root") is the row's display parent, so the circuit is attributed
+/// to root instead of counting as an unmapped/missing-parent circuit. Non-blank
+/// `attach_to` must resolve to an effective node; anything else DEFERS the rule
+/// LOUDLY with no row at all, exactly the retired branch's behaviour.
+///
+/// Rates are the rule's four configured values; the leaf's AQM is pinned to an
+/// explicit `none` because the retired unconfirmed leaf carried no AQM (Oracle
+/// ruling 1: an ordinary leaf must not silently change intended rates/AQM). The
+/// pin is an ordinary SQM token, so it stays subject to the ordinary
+/// `DeviceAdjustSqm` / `CircuitAdjustAqm` passes. The gate is the retired
+/// branch's: this fold is inert unless the dynamic feature AND unknown-IP
+/// promotion are enabled.
+///
+/// Side effects: appends device rows to `shaped_devices` and records their
+/// origin rows. Returns the LOUD warnings for rejected/deferred/ignored rules.
+#[allow(clippy::too_many_arguments)]
+fn fold_range_rules_into_devices(
+    config: &Config,
+    shaped_devices: &mut ConfigShapedDevices,
+    exported_effective_nodes: &HashMap<String, String>,
+    exported_effective_names: &HashMap<String, Option<String>>,
+    exported_effective_aliases: &HashMap<String, (String, String)>,
+    queue_aliases_by_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_name: &HashMap<String, (String, String)>,
+    ignored: IgnorePrefixes<'_>,
+    origin_rows: &mut lqos_utils::DynamicOriginRows,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let rules = live_range_rules(config);
+    if rules.is_empty() {
+        return warnings;
+    }
+    // u8 A1 kept the LENIENT subtraction: a malformed entry is skipped by
+    // `lqos_config` with its own warning, so the surviving prefixes are what
+    // this fold subtracts and a typo narrows the prune.
+    // u8 REV-C1 (repair 2) restores the ONE fail-closed case the lenient parse
+    // cannot cover: a list that was configured and produced no usable prefix at
+    // all. Subtracting nothing there would publish the rule whole — an unfiltered
+    // `0.0.0.0/0` over the subnets the operator asked to exclude — so every
+    // rule defers instead, loudly, exactly like the pre-u8 gate but without
+    // its all-or-nothing trigger on a single bad line.
+    let ignores_unusable = ignored.unusable();
+    // REV-C1: an id is held only by a row that EXISTS (the assembled rows) or by
+    // an ACCEPTED earlier rule. Nothing is reserved before the row is pushed, so a
+    // rule that defers does not deny its id to a later valid rule — and the two
+    // causes keep their own message.
+    let assembled: HashSet<String> = shaped_devices
+        .devices
+        .iter()
+        .map(|device| lqos_utils::normalize_circuit_id_key(&device.circuit_id))
+        .collect();
+    let mut claimed: HashSet<String> = HashSet::new();
+    let mut rows: Vec<lqos_config::ShapedDevice> = Vec::new();
+    for rule in rules {
+        let rule_name = rule.name.trim();
+        if rule_name.is_empty() {
+            warnings.push(
+                "a [[dynamic_circuits.ranges]] rule with an empty name was ignored".to_string(),
+            );
+            continue;
+        }
+        if ignores_unusable {
+            warnings.push(format!(
+                "dynamic_range_ignored_subnets_unusable: range '{rule_name}' is DEFERRED — \
+                 ip_ranges.ignore_subnets is configured but no entry parses, so the rule's \
+                 permitted coverage cannot be computed (no fallback row, no prefix Map)"
+            ));
+            continue;
+        }
+        let circuit_id = format!("dynamic-range:{rule_name}");
+        let circuit_key = lqos_utils::normalize_circuit_id_key(&circuit_id);
+        if assembled.contains(&circuit_key) {
+            warnings.push(format!(
+                "range '{rule_name}' collides with an assembled circuit id ('{circuit_id}'); \
+                 rejected (a range fallback never shadows a provisioned or store circuit)"
+            ));
+            continue;
+        }
+        if claimed.contains(&circuit_key) {
+            warnings.push(format!(
+                "range '{rule_name}' is claimed by an earlier range rule (normalized id \
+                 '{circuit_key}'); rejected (one fallback per rule identity)"
+            ));
+            continue;
+        }
+        // U4 parity: an ignored subnet never reaches `mapping_ops`. The rule's
+        // mapping is its prefix MINUS every ignore, so a catch-all keeps only the
+        // permitted fragments; an empty complement is a real answer (the rule is
+        // entirely ignored) and it must be named rather than vanish.
+        let Some(prefixes) = subtract_ignored_prefixes(
+            (rule.ip_range.network_address(), u32::from(rule.ip_range.netmask())),
+            ignored.prefixes,
+        ) else {
+            warnings.push(format!(
+                "dynamic_range_ignored_subnet: range '{rule_name}' prefix {} cannot be represented \
+                 after ip_ranges.ignore_subnets subtraction — the fallback is DEFERRED (no fallback \
+                 row, no prefix Map)",
+                rule.ip_range
+            ));
+            continue;
+        };
+        if prefixes.is_empty() {
+            warnings.push(format!(
+                "dynamic_range_ignored_subnet: range '{rule_name}' prefix {} is entirely inside \
+                 ip_ranges.ignore_subnets — no fallback row is created (an ignored subnet never \
+                 reaches mapping_ops)",
+                rule.ip_range
+            ));
+            continue;
+        }
+        let attach = rule.attach_to.trim();
+        let (parent_node_id, parent_node_name) = if attach.is_empty() {
+            (String::new(), DATA_PLANE_ROOT_NAME.to_string())
+        } else {
+            match resolve_legacy_parent_from_effective_tree(
+                attach,
+                None,
+                exported_effective_nodes,
+                exported_effective_names,
+                exported_effective_aliases,
+                queue_aliases_by_id,
+                queue_aliases_by_name,
+            ) {
+                Some((parent_node_id, parent_node_name)) if !parent_node_id.trim().is_empty() => {
+                    (parent_node_id, parent_node_name)
+                }
+                _ => {
+                    warnings.push(format!(
+                        "dynamic_range_parent_unresolved: range '{rule_name}' attach_to {attach:?} \
+                         matches no effective node — the range is DEFERRED (no fallback circuit, \
+                         no prefix Map)"
+                    ));
+                    continue;
+                }
+            }
+        };
+        // The rule's permitted prefixes as the device row's mappings: each one is
+        // a network address plus its own mask, so a v4 rule can never carry a
+        // prefix above /32 (the bridge encodes v4 as 96 + prefix_len).
+        let mut device = lqos_config::ShapedDevice {
+            circuit_id: circuit_id.clone(),
+            circuit_name: circuit_id.clone(),
+            device_id: circuit_id.clone(),
+            device_name: circuit_id.clone(),
+            parent_node: parent_node_name,
+            parent_node_id: optional_non_empty(&parent_node_id),
+            sqm_override: Some("none".to_string()),
+            download_min_mbps: rule.download_min_mbps,
+            upload_min_mbps: rule.upload_min_mbps,
+            download_max_mbps: rule.download_max_mbps,
+            upload_max_mbps: rule.upload_max_mbps,
+            ..lqos_config::ShapedDevice::default()
+        };
+        for (address, prefix_len) in prefixes {
+            match address {
+                IpAddr::V4(address) => device.ipv4.push((address, prefix_len)),
+                IpAddr::V6(address) => device.ipv6.push((address, prefix_len)),
+            }
+        }
+        // The origin marker is what keeps the fallback OUT of provisioned
+        // coverage; the u3 supersede rule and the u4 promotion gate both read it.
+        origin_rows.insert_row(&device.circuit_id, &device.device_id);
+        claimed.insert(circuit_key);
+        rows.push(device);
+    }
+    if !rows.is_empty() {
+        let mut all = std::mem::take(&mut shaped_devices.devices);
         all.extend(rows);
         shaped_devices.replace_with_new_data(all);
     }
@@ -567,6 +1036,9 @@ fn build_shaping_inputs_with(
     // K1: a non-empty dynamic store is a live shaping source on its own.
     let dynamic_store_present =
         !lqos_config::DynamicCircuitsFile::load(config).circuits.is_empty();
+    // u5: a configured range rule is live coverage on its own — a box with only
+    // `[[dynamic_circuits.ranges]]` must still publish a fallback transaction.
+    let range_rules_present = !live_range_rules(config).is_empty();
 
     // Phase C S4 (producer unification): ONE ingest contract. The runtime
     // materializes the compiled artifacts from the permanent manual pair when
@@ -583,7 +1055,11 @@ fn build_shaping_inputs_with(
         Some((shaped_devices, circuit_anchors, circuit_matches)) => {
             (shaped_devices, circuit_anchors, circuit_matches)
         }
-        None if !tunnel_snapshot_present && !dynamic_store_present => return Ok(None),
+        None
+            if !tunnel_snapshot_present && !dynamic_store_present && !range_rules_present =>
+        {
+            return Ok(None);
+        }
         None => (ConfigShapedDevices::default(), Vec::new(), Default::default()),
     };
     let effective_by_node = artifacts
@@ -621,7 +1097,10 @@ fn build_shaping_inputs_with(
     // K1 §1.1/§1.2: fold the RADIUS dynamic store at the DEVICE-ROW level,
     // AFTER the base import and BEFORE the operator override fold (so an
     // operator override on a dynamic circuit wins by existing precedence).
-    let dynamic_fold_warnings = fold_dynamic_circuits_into_devices(
+    let DynamicFoldOutcome {
+        warnings: dynamic_fold_warnings,
+        origin_rows,
+    } = fold_dynamic_circuits_into_devices(
         config,
         &mut shaped_devices,
         &exported_effective_nodes,
@@ -630,6 +1109,55 @@ fn build_shaping_inputs_with(
         &attachment_owner_by_attachment_id,
         &queue_aliases_by_id,
         &queue_aliases_by_name,
+    );
+
+    // U4 (v2-parity Ignored Subnets; `src/src/configMigrator.py:39` defaults
+    // `ignoreSubnets = ["192.168.0.0/16"]`): a device IP inside
+    // `ip_ranges.ignore_subnets` must never reach the compiler's `mapping_ops`.
+    // A3 (u7): the ignore list is a set of PREFIXES, so both consumers SUBTRACT
+    // it — address containment is not prefix containment.
+    // A1 (u8): the parse is LENIENT. `lqos_config` skips a malformed entry with
+    // its own once-per-entry warning, so one typo narrows the prune instead of
+    // disabling it (the pre-u8 all-or-nothing gate deferred every range rule when
+    // a single line carried no `/<prefix length>`), and the publish thread can no
+    // longer be taken down by a config line.
+    // REV-C1: leniency is right for the DEVICE prune, which can only under-ignore
+    // one device, and wrong for a CATCH-ALL fallback: with no usable prefix the
+    // subtraction is a no-op and the fallback would publish `0.0.0.0/0` over the
+    // subnets the operator excluded. `IgnorePrefixes` carries the two empty cases
+    // apart (nothing configured vs configured-but-unreadable) so the range fold
+    // can defer on the second while this prune stays lenient on both.
+    //
+    // The `Result` shape survives only for the lqosd consumers; there is no error
+    // arm, and this publish path must NOT fail open if one ever appears. `expect`
+    // keeps that posture (loud) until the follow-up drops the `Result` altogether.
+    let ignored_prefixes = config
+        .ip_ranges
+        .ignored_network_table()
+        .expect("the lenient ip_ranges parse has no error arm")
+        .iter()
+        .map(|(network, _)| (network.network_address(), u32::from(network.netmask())))
+        .collect::<Vec<Prefix>>();
+    let ignored = IgnorePrefixes {
+        prefixes: &ignored_prefixes,
+        configured: !config.ip_ranges.ignore_subnets.is_empty(),
+    };
+
+    // u5 A1 (REV-D1): the range fallback is a DEVICE row at the SAME seam, so the
+    // ordinary passes below govern it exactly like every other circuit: the
+    // override fold (removal / rate / reparent / SQM), the ignored-subnet prune,
+    // flat-bucket assignment, parent resolution, and the circuit-AQM post-pass.
+    let mut origin_rows = origin_rows;
+    let range_fold_warnings = fold_range_rules_into_devices(
+        config,
+        &mut shaped_devices,
+        &exported_effective_nodes,
+        &exported_effective_names,
+        &exported_effective_aliases,
+        &queue_aliases_by_id,
+        &queue_aliases_by_name,
+        ignored,
+        &mut origin_rows,
     );
 
     // Operator overrides fold into the shaped devices. Phase C S4: the ingest
@@ -641,11 +1169,25 @@ fn build_shaping_inputs_with(
     let effective_overrides = load_runtime_shaping_overrides(config, read_only).with_context(
         || "Unable to load effective overrides while building shaping_inputs.json",
     )?;
-    let runtime_devices = apply_runtime_shaped_device_overrides(
-        shaped_devices.devices.clone(),
-        &effective_overrides,
-    );
+    let (runtime_devices, replaced_origin_rows) =
+        apply_runtime_shaped_device_overrides(shaped_devices.devices.clone(), &effective_overrides);
     shaped_devices.replace_with_new_data(runtime_devices);
+    // A persistent override PROVISIONS the rows it supplies: an override row
+    // REPLACES the row carrying its `device_id`, so that fold row is no longer
+    // synthesized and leaves the origin record. A row the override APPENDS under
+    // the same `circuit_id` keeps its own device id, so the fold's row stays
+    // dynamic-origin — the marker is per ROW, exactly like the override fold.
+    // Without this, an operator who pins a live dynamic circuit as a persistent
+    // device would inherit the dynamic origin and lose the supersede rule.
+    let dynamic_origin_rows = {
+        let mut origins = origin_rows;
+        origins.remove_replaced_rows(
+            replaced_origin_rows
+                .iter()
+                .map(|(circuit_id, device_id)| (circuit_id.as_str(), device_id.as_str())),
+        );
+        origins
+    };
     let flat_bucket_assignments = if runtime_flat_mode(config) {
         Some(build_flat_bucket_assignments(
             config,
@@ -662,47 +1204,38 @@ fn build_shaping_inputs_with(
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     warnings.extend(dynamic_fold_warnings);
+    warnings.extend(range_fold_warnings);
     let mut fallback_warning_summary = TopologyFallbackWarningSummary::default();
     let mut circuits = Vec::<TopologyShapingCircuitInput>::new();
     let mut circuits_by_id = HashMap::<String, usize>::new();
 
-    // U4 (v2-parity Ignored Subnets; `src/src/configMigrator.py:39` defaults
-    // `ignoreSubnets = ["192.168.0.0/16"]`): a device IP inside
-    // `ip_ranges.ignore_subnets` must never reach the compiler's `mapping_ops`.
-    // Build the ignored LPM once. A parse failure disables pruning with a
-    // warning rather than failing the publish (matches the unknown-IPs
-    // consumer). This prunes SHAPED-DEVICE circuits only — the device-less
-    // tunnel fold below is deliberately untouched.
-    let ignored_ips = match config.ip_ranges.ignored_network_table() {
-        Ok(table) => table,
-        Err(error) => {
-            warnings.push(format!(
-                "ip_ranges.ignore_subnets could not be parsed; ignored-subnet pruning is disabled: {error}"
-            ));
-            ip_network_table::IpNetworkTable::new()
-        }
-    };
-
+    // The ignored prefixes find no home in the device-less tunnel fold below; the
+    // shaped-device rows are pruned here.
     for device in &shaped_devices.devices {
         // v2 `__pruneIgnoredCircuits` parity: keep only permitted addresses
         // (`isIntegrationOutputIpAllowed` = NOT ignored; the allow list is not
-        // consulted). A device that HAD addresses and loses them all is dropped,
-        // and a circuit that never gains a permitted device is never created
-        // below. A device with no addresses to begin with (v3's model allows a
-        // mapping-less device) is left as-is — there is no ignored IP to remove.
+        // consulted). A3 (u7): the mapping is a PREFIX, so the ignores are
+        // subtracted from it exactly like a range fallback's rule — an ignored
+        // subnet no longer swallows a broader mapping whose network address it
+        // happens to contain. A device that HAD addresses and loses them all is
+        // dropped, and a circuit that never gains a permitted device is never
+        // created below. A device with no addresses to begin with (v3's model
+        // allows a mapping-less device) is left as-is.
         let had_addresses = !device.ipv4.is_empty() || !device.ipv6.is_empty();
-        let filtered_ipv4: Vec<(std::net::Ipv4Addr, u32)> = device
-            .ipv4
-            .iter()
-            .copied()
-            .filter(|(ip, _)| ignored_ips.longest_match(*ip).is_none())
-            .collect();
-        let filtered_ipv6: Vec<(std::net::Ipv6Addr, u32)> = device
-            .ipv6
-            .iter()
-            .copied()
-            .filter(|(ip, _)| ignored_ips.longest_match(*ip).is_none())
-            .collect();
+        let filtered_ipv4 = permitted_mappings(
+            device
+                .ipv4
+                .iter()
+                .map(|(address, prefix_len)| (IpAddr::V4(*address), *prefix_len)),
+            &ignored_prefixes,
+        );
+        let filtered_ipv6 = permitted_mappings(
+            device
+                .ipv6
+                .iter()
+                .map(|(address, prefix_len)| (IpAddr::V6(*address), *prefix_len)),
+            &ignored_prefixes,
+        );
         if had_addresses && filtered_ipv4.is_empty() && filtered_ipv6.is_empty() {
             continue;
         }
@@ -934,9 +1467,10 @@ fn build_shaping_inputs_with(
                 device_id: device.device_id.clone(),
                 device_name: device.device_name.clone(),
                 mac: device.mac.clone(),
-                ipv4: filtered_ipv4.iter().map(ipv4_with_prefix_to_string).collect(),
-                ipv6: filtered_ipv6.iter().map(ipv6_with_prefix_to_string).collect(),
+                ipv4: filtered_ipv4.iter().map(prefix_to_string).collect(),
+                ipv6: filtered_ipv6.iter().map(prefix_to_string).collect(),
                 comment: device.comment.clone(),
+                dynamic: dynamic_origin_rows.contains_row(&device.circuit_id, &device.device_id),
             });
     }
 
@@ -1066,16 +1600,24 @@ pub(crate) fn apply_circuit_aqm_overrides(
 /// CircuitAdjustSpeed / DeviceAdjustSpeed replace rates in place.
 /// Persistent devices and removals are deliberately NOT folded here —
 /// see the fold-site comment in `build_shaping_inputs`.
+///
+/// Returns the folded devices plus the `(circuit_id, device_id)` of every row a
+/// persistent override REPLACED (the row identity the origin record subtracts;
+/// a device id alone cannot identify it, since two dynamic circuits may share
+/// one).
 fn apply_runtime_shaped_device_overrides(
     base_devices: Vec<lqos_config::ShapedDevice>,
     overrides: &lqos_overrides::OverrideFile,
-) -> Vec<lqos_config::ShapedDevice> {
+) -> (Vec<lqos_config::ShapedDevice>, Vec<(String, String)>) {
     let mut devices = base_devices;
+    let mut replaced_rows: Vec<(String, String)> = Vec::new();
     for override_device in overrides.persistent_devices() {
         if let Some(existing_index) = devices
             .iter()
             .position(|device| device.device_id == override_device.device_id)
         {
+            let replaced = &devices[existing_index];
+            replaced_rows.push((replaced.circuit_id.clone(), replaced.device_id.clone()));
             devices[existing_index] = override_device.clone();
         } else {
             devices.push(override_device.clone());
@@ -1174,5 +1716,5 @@ fn apply_runtime_shaped_device_overrides(
         }
     }
 
-    devices
+    (devices, replaced_rows)
 }

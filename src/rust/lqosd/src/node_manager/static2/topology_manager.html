@@ -436,7 +436,7 @@
 <div class="topology-manager-shell d-flex flex-column gap-3">
     <div class="lqos-tree-hero">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <div class="lqos-tree-kicker mb-0"><i class="fa fa-diagram-project"></i> Topology Manager</div>
+            <div class="lqos-tree-kicker mb-0" data-i18n="topology_manager.title"><i class="fa fa-diagram-project"></i> Topology Manager</div>
             <div class="topology-manager-header-meta">
                 <div id="topologyManagerSummary" class="small text-body-secondary lqos-tree-hero-status"></div>
                 <div id="topologyManagerSource" class="small text-body-secondary lqos-tree-context-meta"></div>
@@ -447,21 +447,21 @@
     <div class="topology-manager-panel p-2 p-lg-3">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
             <div>
-                <h6 class="mb-0"><i class="fa fa-sitemap"></i> Hierarchy Summary
-                    <span class="topology-manager-help" title="Canonical = the desired topology (latest integration snapshot). Live = the runtime-effective path used for shaping. Saved = the operator override (shown as the state chip, not a path).">?</span>
+                <h6 class="mb-0" data-i18n="topology_manager.hierarchy.title"><i class="fa fa-sitemap"></i> Hierarchy Summary
+                    <span class="topology-manager-help" title="Canonical = the desired topology (latest integration snapshot). Live = the runtime-effective path used for shaping. Saved = the operator override (shown as the state chip, not a path)." data-i18n-title="topology_manager.hierarchy.help">?</span>
                 </h6>
             </div>
-            <span id="topologyManagerPendingBadge" class="badge rounded-pill text-bg-warning d-none">Pending</span>
+            <span id="topologyManagerPendingBadge" class="badge rounded-pill text-bg-warning d-none" data-i18n="topology_manager.pending">Pending</span>
         </div>
 
         <div class="topology-manager-summary-strip">
             <div class="topology-manager-summary-row">
-                <div id="topologyManagerCanonicalHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Canonical</div>
+                <div id="topologyManagerCanonicalHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label" data-i18n="topology_manager.hierarchy.canonical">Canonical</div>
                 <div id="topologyManagerCanonicalHierarchy" class="topology-manager-path"></div>
             </div>
 
             <div id="topologyManagerLiveHierarchyRow" class="topology-manager-summary-row d-none">
-                <div id="topologyManagerLiveHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Live</div>
+                <div id="topologyManagerLiveHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label" data-i18n="topology_manager.badge.live">Live</div>
                 <div id="topologyManagerLiveHierarchy" class="topology-manager-path"></div>
             </div>
         </div>
@@ -469,7 +469,7 @@
         <div id="topologyManagerHierarchyMeta" class="d-none"></div>
 
         <div id="topologyManagerSavedOverride" class="d-none mt-2">
-            <div class="small text-uppercase text-body-secondary topology-manager-summary-label">Saved override</div>
+            <div class="small text-uppercase text-body-secondary topology-manager-summary-label" data-i18n="topology_manager.hierarchy.saved_override">Saved override</div>
             <div id="topologyManagerSavedOverridePath" class="topology-manager-path"></div>
         </div>
     </div>
@@ -479,23 +479,23 @@
             <div class="topology-manager-panel topology-manager-map-shell p-2 p-lg-3 h-100">
                 <div class="topology-manager-map-toolbar mb-2">
                     <div class="topology-manager-map-toolbar-title">
-                        <h6 class="mb-0"><i class="fa fa-share-alt"></i> Move Preview</h6>
-                        <div class="topology-manager-map-toolbar-subtitle">Focused branch context, live parentage, and move preview.</div>
+                        <h6 class="mb-0" data-i18n="topology_manager.map.title"><i class="fa fa-share-alt"></i> Move Preview</h6>
+                        <div class="topology-manager-map-toolbar-subtitle" data-i18n="topology_manager.map.subtitle">Focused branch context, live parentage, and move preview.</div>
                     </div>
                     <div class="topology-manager-map-toolbar-actions">
                         <div class="topology-manager-search-shell">
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text"><i class="fa fa-search"></i></span>
-                                <input class="form-control" id="topologyManagerNodeSearch" type="search" placeholder="Find a branch or parent..." autocomplete="off">
+                                <input class="form-control" id="topologyManagerNodeSearch" type="search" placeholder="Find a branch or parent..." data-i18n-placeholder="topology_manager.search.placeholder" autocomplete="off">
                             </div>
                             <div id="topologyManagerSearchSuggestions" class="topology-manager-search-suggestions d-none"></div>
                         </div>
                         <div id="topologyManagerModeBanner" class="topology-manager-mode-inline"></div>
                         <div class="topology-manager-map-toolbar-button-group">
-                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerFitMap" type="button">
+                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerFitMap" type="button" data-i18n="topology_manager.map.fit_view">
                                 <i class="fa fa-expand"></i> Fit View
                             </button>
-                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetProposal" type="button">
+                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetProposal" type="button" data-i18n="topology_manager.map.reset_proposal">
                                 <i class="fa fa-rotate-left"></i> Reset Proposal
                             </button>
                         </div>
@@ -503,17 +503,17 @@
                 </div>
 
                 <div class="topology-manager-map mb-2">
-                    <svg id="topologyManagerMap" width="100%" height="100%" viewBox="0 0 1200 820" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Topology map"></svg>
+                    <svg id="topologyManagerMap" width="100%" height="100%" viewBox="0 0 1200 820" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Topology map" data-i18n-aria-label="topology_manager.map.aria"></svg>
                 </div>
 
                 <div class="topology-manager-legend">
-                    <span><span class="topology-manager-legend-dot" style="background:#93c5fd;"></span>Selected branch</span>
-                    <span><span class="topology-manager-legend-line" style="color:#94a3b8;"></span>Canonical parentage</span>
-                    <span><span class="topology-manager-legend-line" style="color:#3b82f6;"></span>Live parentage</span>
-                    <span><span class="topology-manager-legend-line is-saved" style="color:#f59e0b;"></span>Saved intent</span>
-                    <span><span class="topology-manager-legend-dot" style="background:#16a34a;"></span>Valid parent target</span>
-                    <span><span class="topology-manager-legend-dot" style="background:#f59e0b;"></span>Proposed rehome target</span>
-                    <span><span class="topology-manager-legend-dot" style="background:#f97316;"></span>Saved override</span>
+                    <span><span class="topology-manager-legend-dot" style="background:#93c5fd;"></span><span data-i18n="topology_manager.legend.selected_branch">Selected branch</span></span>
+                    <span><span class="topology-manager-legend-line" style="color:#94a3b8;"></span><span data-i18n="topology_manager.legend.canonical_parentage">Canonical parentage</span></span>
+                    <span><span class="topology-manager-legend-line" style="color:#3b82f6;"></span><span data-i18n="topology_manager.legend.live_parentage">Live parentage</span></span>
+                    <span><span class="topology-manager-legend-line is-saved" style="color:#f59e0b;"></span><span data-i18n="topology_manager.legend.saved_intent">Saved intent</span></span>
+                    <span><span class="topology-manager-legend-dot" style="background:#16a34a;"></span><span data-i18n="topology_manager.legend.valid_parent_target">Valid parent target</span></span>
+                    <span><span class="topology-manager-legend-dot" style="background:#f59e0b;"></span><span data-i18n="topology_manager.legend.proposed_target">Proposed rehome target</span></span>
+                    <span><span class="topology-manager-legend-dot" style="background:#f97316;"></span><span data-i18n="topology_manager.hierarchy.saved_override">Saved override</span></span>
                 </div>
             </div>
         </div>
@@ -522,18 +522,18 @@
             <div class="topology-manager-panel p-2 p-lg-3 h-100">
                 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
                     <div>
-                        <h6 class="mb-0"><i class="fa fa-sliders"></i> Details</h6>
-                        <div class="small text-body-secondary">Current branch summary and attachment controls.</div>
+                        <h6 class="mb-0" data-i18n="topology_manager.details.title"><i class="fa fa-sliders"></i> Details</h6>
+                        <div class="small text-body-secondary" data-i18n="topology_manager.details.subtitle">Current branch summary and attachment controls.</div>
                     </div>
                     <div class="topology-manager-details-header-actions">
                         <div id="topologyManagerPrimaryActions" class="topology-manager-primary-actions"></div>
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary" type="button" id="topologyManagerDetailsOverflow" data-bs-toggle="dropdown" aria-expanded="false" title="More actions">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" id="topologyManagerDetailsOverflow" data-bs-toggle="dropdown" aria-expanded="false" title="More actions" data-i18n-title="topology_manager.details.more_actions">
                                 <i class="fa fa-ellipsis"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="topologyManagerDetailsOverflow">
                                 <li>
-                                    <button class="dropdown-item" id="topologyManagerClearSaved" type="button" disabled>
+                                    <button class="dropdown-item" id="topologyManagerClearSaved" type="button" disabled data-i18n="topology_manager.action.clear_saved">
                                         <i class="fa fa-eraser"></i> Clear Saved
                                     </button>
                                 </li>

@@ -3,6 +3,7 @@ import {clearDashDiv, simpleRowTrustedHtml, theading} from "../helpers/builders"
 import {formatRtt, formatPercent} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
+import {t} from "../i18n/index.js";
 
 export class CircuitCapacityDash extends BaseDashlet {
     constructor(slot) {
@@ -15,11 +16,11 @@ export class CircuitCapacityDash extends BaseDashlet {
     }
 
     title() {
-        return "Circuits At Capacity";
+        return t("dashlet.capacity.circuits.title");
     }
 
     tooltip() {
-        return "<h5>Circuits at Capacity</h5><p>Customer circuits using close to their maximum capacities, and possibly in need of an upsell.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.capacity.circuits.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -59,9 +60,9 @@ export class CircuitCapacityDash extends BaseDashlet {
             table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
             let thead = document.createElement("thead");
             thead.classList.add("small");
-            thead.appendChild(theading("Circuit"));
-            thead.appendChild(theading("% Utilization (DL)"));
-            thead.appendChild(theading("% Utilization (UL)"));
+            thead.appendChild(theading(t("common.table.circuit")));
+            thead.appendChild(theading(t("common.table.utilization_dl")));
+            thead.appendChild(theading(t("common.table.utilization_ul")));
             thead.appendChild(theading("RTT"));
             table.appendChild(thead);
             let tbody = document.createElement("tbody");

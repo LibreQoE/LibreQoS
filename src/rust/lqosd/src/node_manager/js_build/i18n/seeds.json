@@ -1,0 +1,4 @@
+{
+  "common.help.docs_link": "Seed for the page migration: the only message with allowlisted markup. tHtml() renders it and no page calls it yet; the Help page brings the first caller.",
+  "tree.limit.excess_devices": "Seed for the page migration: the catalog's only plural message. tn() renders it; the Tree page's device list has no truncation notice yet, and adding one brings the first caller."
+}

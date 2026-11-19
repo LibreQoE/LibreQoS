@@ -1,4 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {t} from "../i18n/index.js";
 
 export class ShapedUnshapedPie extends DashboardGraph {
     constructor(id) {
@@ -9,8 +10,8 @@ export class ShapedUnshapedPie extends DashboardGraph {
                     type: 'pie',
                     radius: '50%',
                     data: [
-                        { name: 'Unmapped', value: 0 },
-                        { name: 'Mapped', value: 0 },
+                        { name: t("graph.pie.unmapped"), value: 0 },
+                        { name: t("graph.pie.mapped"), value: 0 },
                     ],
                 }
             ],

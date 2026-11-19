@@ -10,6 +10,8 @@ import { localBboxCenter } from "./site_map_bbox.mjs";
 import { insightTileUrls } from "./site_map_config.mjs";
 import { buildFieldGrid, glowRadiusKm } from "./site_map_field.mjs";
 import { planarHaloHexbin } from "./site_map_hexbin.mjs";
+import { t, tn } from "./i18n/index.js";
+import { relativeTimeText } from "./i18n/relative_time.mjs";
 
 const wsClient = get_ws_client();
 
@@ -32,8 +34,9 @@ const INSIGHT_TILE_PROTOCOL = "insight";
 // Insight OSM cache tiles: `z/y/x.png` (Cloudflare cache-friendly). See `src/lts2/rust/osm_cache/src/http.rs`.
 // The Insight tile server returns `503 + Retry-After` while it fetches missing tiles, so we route
 // requests through a custom MapLibre protocol handler that retries before surfacing errors.
+// translatable: false — ":// ?key=" an Insight tile URL the MapLibre handler parses, not text
 const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://${INSIGHT_TILES.tileHost}${INSIGHT_TILES.tilePath}?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
-const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
+const TILE_ATTRIBUTION = t("site_map.attribution.osm");
 const TILE_MAX_ZOOM = 17;
 
 const INITIAL_FIT_PADDING = 70;
@@ -43,8 +46,10 @@ const SITE_LABEL_MIN_ZOOM = 6;
 const SELECTED_SITE_LABEL_MIN_ZOOM = 4;
 const MAX_SITE_LABELS = 24;
 
+// translatable: false — "Accept" "Bearer" "tile request failed:" "tile request retries exhausted" — HTTP header names and tile-fetch diagnostics for the Insight tile protocol
 const urlParams = new URLSearchParams(window.location.search);
 const FIXTURE_MODE = urlParams.get("fixture") === "1";
+// translatable: false — "Site" "CENTRAL" "NORTH" "EAST" "RURAL" "UNMAPPED" "NORTH AP 1" "NORTH AP 2" "EAST AP" — a canned `?fixture=1` network tree: node kinds the server owns and the site names of that fixture, not interface copy
 const FIXTURE_NETWORK_TREE = [
     [0, {
         id: "site-central",
@@ -273,7 +278,7 @@ function formatBitsPerSecond(bitsPerSecond) {
 function formatPercent(value, digits = 0) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
-        return "No data";
+        return t("common.state.no_data");
     }
     return `${numeric.toFixed(digits)}%`;
 }
@@ -281,7 +286,7 @@ function formatPercent(value, digits = 0) {
 function formatMs(value, digits = 1) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
-        return "No data";
+        return t("common.state.no_data");
     }
     return `${numeric.toFixed(digits)} ms`;
 }
@@ -294,10 +299,8 @@ function rectsOverlap(left, right) {
 }
 
 function nowText(ts) {
-    if (!ts) return "Not updated yet";
-    const elapsed = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (elapsed < 2) return "Updated just now";
-    return `Updated ${elapsed}s ago`;
+    if (!ts) return t("site_map.updated.not_yet");
+    return t("common.state.updated", {time: relativeTimeText(ts / 1000)});
 }
 
 function throughputRadiusPx(bitsPerSecond, maxBitsPerSecond) {
@@ -420,7 +423,7 @@ function displayNodeName(name, nodeType) {
         return "";
     }
     return isRedacted() && String(nodeType || "").toLowerCase() === "site"
-        ? "[redacted]"
+        ? t("site_map.redacted")
         : name;
 }
 
@@ -429,7 +432,7 @@ function displayParentName(name, parentType) {
         return "";
     }
     return isRedacted() && String(parentType || "").toLowerCase() === "site"
-        ? "[redacted]"
+        ? t("site_map.redacted")
         : name;
 }
 
@@ -472,6 +475,7 @@ function findNearestAncestorSiteIndex(indexMap, startIndex) {
     return null;
 }
 
+// translatable: false — "rgba(2, 6, 23, 0.72)" "rgba(244, 248, 255, 0.54)" "rgba(15, 23, 42, 0.35)" "rgba(15, 23, 42, 0.58)" "rgba(15, 23, 42, 0.28)" "rgba(76, 164, 255, 0.40)" "rgba(245, 184, 79, 0.52)" "rgba(217, 75, 91, 0.62)" "rgba(76, 164, 255, 0.32)" "rgba(245, 184, 79, 0.44)" "rgba(217, 75, 91, 0.54)" "rgba(248, 250, 252, 0.46)" "rgba(15, 23, 42, 0.34)" "rgb( , , )" — map paint colours and a channel-built CSS colour, not labels
 function markerPalette() {
     // `.67.4` Lever 2: the site ring is DARK (match the mockup), not white — a
     // thin dark outline around a small bright dot. AP/fanout keep their ring in
@@ -716,6 +720,7 @@ function normalizeBboxResponse(data) {
     return null;
 }
 
+// translatable: false — "No site coordinates supplied" "No valid site coordinates supplied" "bbox request failed:" "bbox returned invalid center" "Invalid map center/zoom" "Site map bbox request failed; using local site bounds." — thrown and console diagnostics of the tile-centre lookup and its local fallback
 async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
     if (!Array.isArray(siteLatLonPairs) || siteLatLonPairs.length === 0) {
         throw new Error("No site coordinates supplied");
@@ -922,7 +927,7 @@ class SiteMapPage {
             zoom,
             maxZoom: TILE_MAX_ZOOM,
             attributionControl: false,
-            customAttribution: "LibreQoS Insight tile cache",
+            customAttribution: t("site_map.attribution.tile_cache"),
         });
         this.map.addControl(new window.maplibregl.NavigationControl({ visualizePitch: false }), "bottom-left");
         this.map.addControl(new window.maplibregl.AttributionControl({ compact: true }), "bottom-left");
@@ -1397,7 +1402,7 @@ class SiteMapPage {
     }
 
     requestInitialTree() {
-        this.setStatus("Waiting for data", "spinner");
+        this.setStatus(t("common.state.waiting"), "spinner");
         if (!this.subscription) {
             this.subscription = subscribeWS(["NetworkTreeLite"], (liveMsg) => {
                 if (liveMsg.event === "NetworkTreeLite") {
@@ -1408,7 +1413,7 @@ class SiteMapPage {
         listenOnceWithTimeout("NetworkTreeLite", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
             this.processTreeMessage(msg);
         }, () => {
-            this.setStatus("No data received yet", "warning");
+            this.setStatus(t("site_map.status.no_data_yet"), "warning");
         });
         wsClient.send({ NetworkTreeLite: {} });
     }
@@ -1421,7 +1426,7 @@ class SiteMapPage {
         this.history = this.history.filter((entry) => entry.timestamp >= cutoff);
         this.latestSnapshot = data;
         this.lastUpdateAt = Date.now();
-        this.setStatus(fixture ? "Fixture" : "Live", "success");
+        this.setStatus(fixture ? t("site_map.status.fixture") : t("site_map.status.live"), "success");
         this.ensureMapInitialized();
         this.renderFromHistory();
     }
@@ -1447,7 +1452,7 @@ class SiteMapPage {
             .filter((pair) => Array.isArray(pair));
 
         if (siteLatLonPairs.length === 0) {
-            this.setStatus("No mapped sites", "warning");
+            this.setStatus(t("site_map.status.no_mapped_sites"), "warning");
             return;
         }
 
@@ -1473,7 +1478,7 @@ class SiteMapPage {
                 // blank (the plain background is unchanged).
                 console.error("Site map bbox request failed; using local site bounds.", err);
                 const fallback = localBboxCenter(siteLatLonPairs);
-                this.setStatus("Map tiles unavailable", "warning");
+                this.setStatus(t("site_map.status.tiles_unavailable"), "warning");
                 this.initMap([fallback.lon, fallback.lat], fallback.zoom);
             } finally {
                 this.mapInitPromise = null;
@@ -1481,6 +1486,7 @@ class SiteMapPage {
         })();
     }
 
+// translatable: false — "Feature" "Point" "cluster:" — GeoJSON type names and a marker-cache key prefix, not labels
     buildAggregates() {
         if (!this.history.length) {
             return null;
@@ -2479,13 +2485,18 @@ class SiteMapPage {
     pointPopupHtml(props) {
         const attachedApCount = toNumber(props.attachedInheritedApCount, 0);
         const displayName = displayNodeName(props.name, props.nodeType);
+        const metricText = this.mode === "throughput"
+            ? ""
+            : this.mode === "qoo"
+                ? t("site_map.popup.qoo", {value: formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN)))})
+                : t("site_map.popup.rtt", {value: formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN)))});
         return `
             <div class="small">
                 <div class="fw-semibold">${escapeHtml(displayName)}</div>
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
-                <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
-                ${attachedApCount > 0 ? `<div><strong>Attached APs:</strong> ${escapeHtml(String(attachedApCount))}</div>` : ""}
-                ${this.mode === "throughput" ? "" : `<div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>`}
+                <div>${escapeHtml(t("site_map.popup.throughput", {value: formatBitsPerSecond(props.throughputCombined)}))}</div>
+                ${attachedApCount > 0 ? `<div>${escapeHtml(tn("site_map.popup.attached_aps", attachedApCount))}</div>` : ""}
+                ${metricText ? `<div>${escapeHtml(metricText)}</div>` : ""}
             </div>`;
     }
 
@@ -2547,8 +2558,10 @@ class SiteMapPage {
         const parentName = displayParentName(props.parentName, props.parentType);
         const subtitleBits = [
             escapeHtml(String(props.nodeType || "").toUpperCase()),
-            parentName ? ` · parent ${redactableHtml(parentName)}` : "",
-            props.inheritedCoords ? " · using parent site coordinates" : "",
+            // The parent name is the sensitive value here, so the whole fragment
+            // carries the redaction class (an AP parent is not name-substituted).
+            parentName ? ` · <span class="redactable">${escapeHtml(t("site_map.details.parent", {name: parentName}))}</span>` : "",
+            props.inheritedCoords ? ` · ${escapeHtml(t("site_map.details.inherited_coords"))}` : "",
         ];
         this.detailsSubtitle.innerHTML = subtitleBits.join("");
         const attachedAps = props.nodeType === "site" ? this.attachedApsForSite(props.key) : [];
@@ -2561,25 +2574,29 @@ class SiteMapPage {
                     .map((node) => `<div class="site-map-list-item">${redactableHtml(displayNodeName(node.name, node.type))}</div>`)
                     .join("");
                 const more = attachedAps.length > 6
-                    ? `<div class="site-map-empty">+${attachedAps.length - 6} more APs attached to this site</div>`
+                    ? `<div class="site-map-empty">${escapeHtml(tn("site_map.details.more_aps", attachedAps.length - 6))}</div>`
                     : "";
                 const fanoutHint = this.fanoutSiteKey === props.key
-                    ? "Click the selected site again or zoom the map to collapse them."
-                    : "Click the selected site marker again to fan them out on the map.";
-                this.attachedList.innerHTML = `<div class="site-map-empty">${attachedAps.length} AP${attachedAps.length === 1 ? "" : "s"} inherit this site's coordinates. ${fanoutHint}</div>${preview}${more}`;
+                    ? t("site_map.details.fanout_collapse")
+                    : t("site_map.details.fanout_expand");
+                const inheritHint = tn("site_map.details.inherit_hint", attachedAps.length, {
+                    count: attachedAps.length,
+                    hint: fanoutHint,
+                });
+                this.attachedList.innerHTML = `<div class="site-map-empty">${escapeHtml(inheritHint)}</div>${preview}${more}`;
             }
         }
         this.detailsGrid.innerHTML = [
-            this.metricCard("Combined throughput", formatBitsPerSecond(props.throughputCombined)),
-            this.metricCard("Download throughput", formatBitsPerSecond(props.throughputDown)),
-            this.metricCard("Upload throughput", formatBitsPerSecond(props.throughputUp)),
+            this.metricCard(t("site_map.metric.combined"), formatBitsPerSecond(props.throughputCombined)),
+            this.metricCard(t("site_map.metric.download"), formatBitsPerSecond(props.throughputDown)),
+            this.metricCard(t("site_map.metric.upload"), formatBitsPerSecond(props.throughputUp)),
             props.nodeType === "site"
-                ? this.metricCard("Attached APs", String(attachedAps.length))
-                : this.metricCard("Coordinate source", props.inheritedCoords ? "Inherited from site" : "Explicit"),
-            this.metricCard("QoO download", formatPercent(props.qooDown)),
-            this.metricCard("QoO upload", formatPercent(props.qooUp)),
-            this.metricCard("RTT download", formatMs(props.rttDownMs)),
-            this.metricCard("RTT upload", formatMs(props.rttUpMs)),
+                ? this.metricCard(t("site_map.metric.attached_aps"), String(attachedAps.length))
+                : this.metricCard(t("site_map.metric.coordinate_source"), props.inheritedCoords ? t("site_map.metric.coords_inherited") : t("site_map.metric.coords_explicit")),
+            this.metricCard(t("site_map.metric.qoo_down"), formatPercent(props.qooDown)),
+            this.metricCard(t("site_map.metric.qoo_up"), formatPercent(props.qooUp)),
+            this.metricCard(t("site_map.metric.rtt_down"), formatMs(props.rttDownMs)),
+            this.metricCard(t("site_map.metric.rtt_up"), formatMs(props.rttUpMs)),
         ].join("");
     }
 
@@ -2591,18 +2608,18 @@ class SiteMapPage {
         const total = unmappedSites.length + unmappedAps.length;
         this.unmappedBadge.textContent = String(total);
         if (total === 0) {
-            this.unmappedSummary.textContent = "All mapped nodes have display coordinates.";
+            this.unmappedSummary.textContent = t("site_map.unmapped.all_mapped");
             this.unmappedList.innerHTML = "";
             this.syncUnmappedPanel();
             return;
         }
-        this.unmappedSummary.textContent = `${total} nodes cannot be placed on the map yet.`;
+        this.unmappedSummary.textContent = tn("site_map.unmapped.count", total);
         const groups = [];
         if (unmappedSites.length) {
-            groups.push(this.renderUnmappedGroup("Sites", unmappedSites));
+            groups.push(this.renderUnmappedGroup(t("site_map.unmapped.sites"), unmappedSites));
         }
         if (unmappedAps.length) {
-            groups.push(this.renderUnmappedGroup("APs", unmappedAps));
+            groups.push(this.renderUnmappedGroup(t("site_map.unmapped.aps"), unmappedAps));
         }
         this.unmappedList.innerHTML = groups.join("");
         this.syncUnmappedPanel();
@@ -2651,12 +2668,17 @@ class SiteMapPage {
         // `defaultHeatRange()` (which returns `{green,yellow,red}` and printed
         // "undefined ms").
         const thresholds = resolveRttThresholds();
-        const metricLabel = this.mode === "qoo" ? "QoO" : this.mode === "throughput" ? "Throughput" : "RTT";
+        // `QoO` and `RTT` are the metric's own names (GLOSSARY §2 keeps them
+        // literal); the throughput label is prose, so it comes from the catalog.
+        const metricLabel = this.mode === "qoo" ? "QoO" : this.mode === "throughput" ? t("common.table.throughput") : "RTT";
         if (this.legendTitle) {
             this.legendTitle.textContent = heat
-                ? (value ? `${metricLabel} field (estimated · interpolated)` : `${metricLabel} hexbin`)
-                : `${metricLabel} markers`;
+                ? (value
+                    ? t("site_map.legend.title_field", {metric: metricLabel})
+                    : t("site_map.legend.title_hexbin", {metric: metricLabel}))
+                : t("site_map.legend.title_markers", {metric: metricLabel});
         }
+        // translatable: false — "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)" "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)" "linear-gradient(90deg, #61d26f 0%, #d7d86b 35%, #f0a44d 62%, #d94b5b 100%)" — CSS colour ramps for the legend bar, not text
         if (heat) {
             // `.67.15`: the hexbin fill uses the CALLER's CONFIG scale — the SAME
             // ramp + thresholds the markers use (ONE scale), so the legend gradient
@@ -2667,11 +2689,11 @@ class SiteMapPage {
                     ? "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)"
                     : "linear-gradient(90deg, #61d26f 0%, #d7d86b 35%, #f0a44d 62%, #d94b5b 100%)");
             if (this.mode === "qoo") {
-                this.legendLow.textContent = "Bad (0)";
-                this.legendHigh.textContent = "Good (100)";
+                this.legendLow.textContent = t("site_map.legend.scale.bad_zero");
+                this.legendHigh.textContent = t("site_map.legend.scale.good_hundred");
             } else if (this.mode === "throughput") {
                 this.legendLow.textContent = "0";
-                this.legendHigh.textContent = "max";
+                this.legendHigh.textContent = t("site_map.legend.scale.max");
             } else {
                 this.legendLow.textContent = `${thresholds.greenMs} ms`;
                 this.legendHigh.textContent = `${thresholds.redMs} ms`;
@@ -2680,14 +2702,14 @@ class SiteMapPage {
             this.legendGradient.style.background = cvd
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
                 : "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)";
-            this.legendLow.textContent = "Poor QoO";
-            this.legendHigh.textContent = "Healthy QoO";
+            this.legendLow.textContent = t("site_map.legend.scale.poor_qoo");
+            this.legendHigh.textContent = t("site_map.legend.scale.healthy_qoo");
         } else {
             this.legendGradient.style.background = cvd
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
                 : "linear-gradient(90deg, #61d26f 0%, #d7d86b 35%, #f0a44d 62%, #d94b5b 100%)";
-            this.legendLow.textContent = this.mode === "throughput" ? "Low traffic" : "Low RTT";
-            this.legendHigh.textContent = this.mode === "throughput" ? "High traffic" : "High RTT";
+            this.legendLow.textContent = this.mode === "throughput" ? t("site_map.legend.scale.low_traffic") : t("site_map.legend.scale.low_rtt");
+            this.legendHigh.textContent = this.mode === "throughput" ? t("site_map.legend.scale.high_traffic") : t("site_map.legend.scale.high_rtt");
         }
         if (this.legendCaveat) {
             this.legendCaveat.style.display = heat && !value ? "" : "none";
@@ -2697,7 +2719,10 @@ class SiteMapPage {
             if (value) {
                 // IDW is a weighted MEAN, so the label is "estimated
                 // (interpolated)", never "median".
-                this.fieldCaveat.textContent = `Estimated (interpolated) ${metricLabel} field — an IDW weighted MEAN of the ${FIELD_IDW_K} nearest sites (a model, not measured between them; not a median). Smoothed to a continuous surface (a length-scale damps the per-site peaks); coarse when sites are sparse. Each site's glow radius scales with its live throughput; the RTT color follows resolveRttThresholds(). Mercator-aligned to the markers (within one cell).`;
+                this.fieldCaveat.textContent = t("site_map.legend.field_caveat", {
+                    metric: metricLabel,
+                    nearest: FIELD_IDW_K,
+                });
             }
         }
         if (this.legendStops) {
@@ -2707,17 +2732,21 @@ class SiteMapPage {
                 this.legendStops.style.display = "";
                 if (value) {
                     this.legendStops.textContent = this.mode === "qoo"
-                        ? "interpolated QoO (0 bad · 100 good)"
+                        ? t("site_map.legend.stops.qoo_field")
                         : this.mode === "throughput"
-                            ? "interpolated throughput (0 · max)"
-                            : `interpolated RTT: green ${thresholds.greenMs} · yellow ${thresholds.yellowMs} · red ${thresholds.redMs} ms`;
+                            ? t("site_map.legend.stops.throughput_field")
+                            : t("site_map.legend.stops.rtt_field", {
+                                green: thresholds.greenMs,
+                                yellow: thresholds.yellowMs,
+                                red: thresholds.redMs,
+                            });
                 } else {
                     // `.67.12`: the hexbin — color = metric, size = throughput.
                     this.legendStops.textContent = this.mode === "qoo"
-                        ? "fill = QoO · halo radius = site throughput"
+                        ? t("site_map.legend.stops.qoo_hexbin")
                         : this.mode === "throughput"
-                            ? "fill = throughput · halo radius = site throughput"
-                            : "fill = RTT at the configured thresholds · halo radius = site throughput";
+                            ? t("site_map.legend.stops.throughput_hexbin")
+                            : t("site_map.legend.stops.rtt_hexbin");
                 }
             }
         }

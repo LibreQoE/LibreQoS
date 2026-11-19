@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "id": "procurve-switch",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.11.2.3.7.11"],
+    "sys_descr_contains": ["ProCurve"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "fdb",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "port", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2", "parser": "u32" },
+            { "name": "status", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3", "parser": "u32" }
+          ],
+          "index": { "kind": "dot1q_vlan_mac" },
+          "bridge_port_resolution": "identity"
+        }
+      }
+    }
+  ],
+  "maps": {
+    "residuals": [
+      {
+        "name": "no-mac-value",
+        "source": "host/tests/fixtures/switch-fdb/README.md: ProCurve returns no address value column; the MAC is index-decoded"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 4096,
+    "max_rows": 4096
+  }
+}

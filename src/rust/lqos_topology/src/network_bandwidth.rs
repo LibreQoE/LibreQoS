@@ -517,6 +517,89 @@ fn clamp_node_commit(commit: f64, ceil: f64, parent_commit: f64) -> f64 {
 
 /// Writes a commit value as a whole-Mbps integer when possible, otherwise as a
 /// two-decimal fraction (sub-Mbps guarantees).
+/// Seeds each effective-tree node's guaranteed commit from the operator
+/// `*BandwidthMbpsMin` in the canonical compatibility network.
+///
+/// Native-ingress canonical trees (UISP insight exports) carry ceil only, so
+/// the commit recompile would otherwise see `existing = 0` and write the raw
+/// circuit sum. Seeding first makes `write_node_commits`' `max(existing, raw)`
+/// honour the operator floor (lqos-74t190: node min 8 with circuit mins 1
+/// must stay 8, not collapse to the sum).
+pub fn seed_effective_commits_from_canonical(
+    root: &mut Map<String, Value>,
+    compatibility_network: &Value,
+) {
+    let Some(canonical_root) = compatibility_network.as_object() else {
+        return;
+    };
+    let mut mins: HashMap<String, (u64, u64)> = HashMap::new();
+    collect_canonical_commit_mins(canonical_root, &mut mins);
+    if mins.is_empty() {
+        return;
+    }
+    apply_canonical_commit_mins(root, &mins);
+}
+
+fn collect_canonical_commit_mins(
+    nodes: &Map<String, Value>,
+    out: &mut HashMap<String, (u64, u64)>,
+) {
+    for (key, value) in nodes {
+        if key == "children" {
+            continue;
+        }
+        let Some(node) = value.as_object() else {
+            continue;
+        };
+        let dl = read_node_rate_mbps(node, "downloadBandwidthMbpsMin");
+        let ul = read_node_rate_mbps(node, "uploadBandwidthMbpsMin");
+        if let (Some(dl), Some(ul)) = (dl, ul) {
+            if let Some(id) = node.get("id").and_then(Value::as_str) {
+                out.insert(id.to_string(), (dl, ul));
+            }
+            out.insert(key.clone(), (dl, ul));
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_object) {
+            collect_canonical_commit_mins(children, out);
+        }
+    }
+}
+
+fn apply_canonical_commit_mins(
+    nodes: &mut Map<String, Value>,
+    mins: &HashMap<String, (u64, u64)>,
+) {
+    for (key, value) in nodes.iter_mut() {
+        if key == "children" {
+            continue;
+        }
+        let Some(node) = value.as_object_mut() else {
+            continue;
+        };
+        let id = node.get("id").and_then(Value::as_str).map(str::to_string);
+        let found = id
+            .as_deref()
+            .and_then(|id| mins.get(id))
+            .or_else(|| mins.get(key))
+            .copied();
+        if let Some((dl, ul)) = found {
+            let existing_dl =
+                read_node_rate_mbps(node, "downloadBandwidthMbpsMin").unwrap_or(0);
+            let existing_ul =
+                read_node_rate_mbps(node, "uploadBandwidthMbpsMin").unwrap_or(0);
+            if dl > existing_dl {
+                write_rate_min(node, "downloadBandwidthMbpsMin", dl as f64);
+            }
+            if ul > existing_ul {
+                write_rate_min(node, "uploadBandwidthMbpsMin", ul as f64);
+            }
+        }
+        if let Some(children) = node.get_mut("children").and_then(Value::as_object_mut) {
+            apply_canonical_commit_mins(children, mins);
+        }
+    }
+}
+
 fn write_rate_min(node: &mut Map<String, Value>, key: &str, commit: f64) {
     let number = if commit.fract().abs() < f64::EPSILON {
         serde_json::Number::from(commit as u64)

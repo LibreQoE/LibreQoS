@@ -5,8 +5,8 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Topology Source</h5>
-                    <div class="lqos-config-panel-subtitle">One active source produces the topology. The selector is authoritative; the per-integration enable checkboxes are read-only displays.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.integration.topology_source.title">Topology Source</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.integration.topology_source.subtitle">One active source produces the topology. The selector is authoritative; the per-integration enable checkboxes are read-only displays.</div>
                 </div>
             </div>
 
@@ -14,7 +14,7 @@
                 <div class="col-12">
                     <div class="lqos-config-section">
                         <div class="mb-3">
-                            <label for="topologySource" class="form-label">Active Topology Source</label>
+                            <label for="topologySource" class="form-label" data-i18n="config.integration.active_source">Active Topology Source</label>
                             <select class="form-select" id="topologySource"></select>
                             <div class="form-text" id="topologySourceHelp"></div>
                         </div>
@@ -28,75 +28,157 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Integration Defaults</h5>
-                    <div class="lqos-config-panel-subtitle">Set behavior shared across integrations, including topology compile mode, naming, DIY overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.integration.defaults.title">Integration Defaults</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.integration.defaults.subtitle">Set behavior shared across integrations, including topology compile mode, naming, DIY overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Import Behavior</h6>
-                        <div class="lqos-config-section-subtitle">Control how imported topology and subscriber metadata are turned into runtime shaping state.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.integration.import.title">Import Behavior</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.integration.import.subtitle">Control how imported topology and subscriber metadata are turned into runtime shaping state.</div>
 
                         <div class="mb-3">
-                            <label for="topologyCompileMode" class="form-label">Topology Compile Mode</label>
+                            <label for="topologyCompileMode" class="form-label" data-i18n="config.integration.compile_mode">Topology Compile Mode</label>
                             <select class="form-select" id="topologyCompileMode">
-                                <option value="flat">Flat - Only shapes subscribers, no hierarchy</option>
-                                <option value="ap_only">AP Only - AP to clients</option>
-                                <option value="ap_site">AP Site - Site to AP to clients</option>
-                                <option value="full">Full - Preserve the richest hierarchy</option>
+                                <option value="flat" data-i18n="config.integration.mode.flat">Flat - Only shapes subscribers, no hierarchy</option>
+                                <option value="ap_only" data-i18n="config.integration.mode.ap_only">AP Only - AP to clients</option>
+                                <option value="ap_site" data-i18n="config.integration.mode.ap_site">AP Site - Site to AP to clients</option>
+                                <option value="full" data-i18n="config.integration.mode.full">Full - Preserve the richest hierarchy</option>
                             </select>
-                            <div class="form-text">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>
+                            <div class="form-text" data-i18n="config.integration.compile_mode_help">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
-                            <label class="form-check-label" for="circuitNameAsAddress">Use Address for Circuit Name</label>
-                            <div class="form-text">For Python-based integrations, write the circuit address into the generated <code>Circuit Name</code> in <code>ShapedDevices.csv</code> and <code>circuit_anchors.json</code> instead of the customer or display name. Some integrations do not provide a real address.</div>
+                            <label class="form-check-label" for="circuitNameAsAddress" data-i18n="config.integration.circuit_name_as_address">Use Address for Circuit Name</label>
+                            <div class="form-text" id="circuitNameAsAddressHelp"></div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="useMikrotikIpv6">
-                            <label class="form-check-label" for="useMikrotikIpv6">Enrich IPv6 via Mikrotik</label>
-                            <div class="form-text">Use <code>/etc/libreqos/mikrotik_ipv6.toml</code> to map IPv4 subscribers to Mikrotik-advertised IPv6 prefixes. Legacy CSV credentials are auto-migrated on upgrade.</div>
+                            <label class="form-check-label" for="useMikrotikIpv6" data-i18n="config.integration.mikrotik_ipv6">Enrich IPv6 via Mikrotik</label>
+                            <div class="form-text" id="mikrotikIpv6Help"></div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="queueRefreshInterval" class="form-label">Queue Refresh Interval (minutes)</label>
+                            <label for="queueRefreshInterval" class="form-label" data-i18n="config.integration.queue_refresh">Queue Refresh Interval (minutes)</label>
                             <input type="number" class="form-control" id="queueRefreshInterval" min="1">
-                            <div class="form-text">How frequently to refresh queue data from the integration.</div>
+                            <div class="form-text" data-i18n="config.integration.queue_refresh_help">How frequently to refresh queue data from the integration.</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Promotion and Scaling</h6>
-                        <div class="lqos-config-section-subtitle">Promote selected circuits to the root, adjust imported subscriber bandwidth values, and apply shared Ethernet-port headroom policy before shaping.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.integration.scaling.title">Promotion and Scaling</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.integration.scaling.subtitle">Promote selected circuits to the root, adjust imported subscriber bandwidth values, and apply shared Ethernet-port headroom policy before shaping.</div>
 
                         <div class="mb-3">
-                            <label for="promoteToRoot" class="form-label">Promote to Root Nodes</label>
+                            <label for="promoteToRoot" class="form-label" data-i18n="config.integration.promote_to_root">Promote to Root Nodes</label>
                             <textarea class="form-control" id="promoteToRoot" rows="5"></textarea>
-                            <div class="form-text">Enter one circuit ID per line to promote to root nodes.</div>
+                            <div class="form-text" data-i18n="config.integration.promote_to_root_help">Enter one circuit ID per line to promote to root nodes.</div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="clientBandwidthMultiplier" class="form-label">Client Bandwidth Multiplier</label>
+                            <label for="clientBandwidthMultiplier" class="form-label" data-i18n="config.integration.client_multiplier">Client Bandwidth Multiplier</label>
                             <input type="number" class="form-control" id="clientBandwidthMultiplier" step="0.1" min="0.1" value="1.0">
-                            <div class="form-text">Multiplier applied to client bandwidth values. <code>1.0</code> means no adjustment.</div>
+                            <div class="form-text" id="clientMultiplierHelp"></div>
                         </div>
 
                         <div class="mt-3 mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="ethernetPortLimitsEnabled">
-                            <label class="form-check-label" for="ethernetPortLimitsEnabled">Enable Ethernet Port Limits</label>
-                            <div class="form-text">Apply negotiated Ethernet port headroom when an integration can detect subscriber-facing port speed.</div>
+                            <label class="form-check-label" for="ethernetPortLimitsEnabled" data-i18n="config.integration.ethernet_limits">Enable Ethernet Port Limits</label>
+                            <div class="form-text" data-i18n="config.integration.ethernet_limits_help">Apply negotiated Ethernet port headroom when an integration can detect subscriber-facing port speed.</div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="ethernetPortLimitMultiplier" class="form-label">Ethernet Port Limit Multiplier</label>
+                            <label for="ethernetPortLimitMultiplier" class="form-label" data-i18n="config.integration.ethernet_multiplier">Ethernet Port Limit Multiplier</label>
                             <input type="number" class="form-control" id="ethernetPortLimitMultiplier" step="0.01" min="0.01" max="1.0" value="0.94">
-                            <div class="form-text">Shared headroom multiplier applied to negotiated Ethernet rates. Leave at <code>0.94</code> for the default conservative payload-safe cap.</div>
+                            <div class="form-text" id="ethernetMultiplierHelp"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.integration.ap_polling.title">AP Polling</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.integration.ap_polling.subtitle">Poll access points over SNMP for station inventory and capacity. Polling is diagnostic: it never changes shaping by itself.</div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title" data-i18n="config.integration.ap_polling.settings.title">Polling Schedule</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.integration.ap_polling.settings.subtitle">Disabled by default. Each sweep reads the compiled device list and writes one observation record per device.</div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="apPollingEnabled">
+                            <label class="form-check-label" for="apPollingEnabled" data-i18n="config.integration.ap_polling.enabled">Enable AP Polling</label>
+                            <div class="form-text" data-i18n="config.integration.ap_polling.enabled_help">A failed poll raises an alert after the configured number of consecutive failures.</div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="apPollingInterval" class="form-label" data-i18n="config.integration.ap_polling.interval">Poll Interval (seconds)</label>
+                            <input type="number" class="form-control" id="apPollingInterval" min="30" step="1">
+                            <div class="form-text" data-i18n="config.integration.ap_polling.interval_help">Minimum 30 seconds.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title" data-i18n="config.integration.ap_polling.factors.title">Per-Model Capacity Factors</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.integration.ap_polling.factors.subtitle">Scale polled capacity per model. 1.0 uses the reported value as-is; higher values are rejected.</div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-2">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.factors.model">Model</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.factors.factor">Factor</th>
+                                        <th scope="col"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="apPollingFactorBody"></tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="apPollingAddFactor" data-i18n="config.integration.ap_polling.factors.add">
+                            <i class="fa fa-plus"></i> Add Model Factor
+                        </button>
+                        <div class="form-text" data-i18n="config.integration.ap_polling.factors.help">An empty list uses the default factor of 1.0 for every model.</div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <h6 class="lqos-config-section-title mb-0" data-i18n="config.integration.ap_polling.status.title">Observed Devices</h6>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="apPollingRefresh" data-i18n="config.integration.ap_polling.status.refresh">Refresh</button>
+                        </div>
+                        <div class="alert alert-warning d-none" id="apPollingUnavailable" role="alert"></div>
+                        <div class="form-text mb-2" id="apPollingStatusLine"></div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle" id="apPollingTable">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.device">Device</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.adapter">Adapter</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.capacity">Capacity (Mbps)</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.stations">Stations Observed</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.pinned">CRM-Pinned</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.drift">Drift</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.last_poll">Last Poll</th>
+                                        <th scope="col" data-i18n="config.integration.ap_polling.status.state">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="apPollingRows"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -104,7 +186,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.integration.save">Save Changes</button>
         </div>
     </form>
 </div>

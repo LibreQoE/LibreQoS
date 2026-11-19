@@ -1,6 +1,13 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "_empty" is the DOM id suffix this dashlet appends
+
+function shaperRootName() {
+    return t("common.label.shaper");
+}
 
 class TopAsnSankeyGraph extends DashboardGraph {
     constructor(id, direction) {
@@ -24,16 +31,16 @@ class TopAsnSankeyGraph extends DashboardGraph {
     update(items) {
         const nodes = [];
         const links = [];
-        const shaperNode = { name: 'Shaper' };
+        const shaperNode = { name: shaperRootName() };
         nodes.push(shaperNode);
 
         items.forEach((row, idx) => {
             const color = colorByRetransmitPct(row.rxmit ?? 0);
             nodes.push({ name: row.name, itemStyle: { color } });
             if (this.direction === 'down') {
-                links.push({ source: row.name, target: 'Shaper', value: row.value });
+                links.push({ source: row.name, target: shaperRootName(), value: row.value });
             } else {
-                links.push({ source: 'Shaper', target: row.name, value: row.value });
+                links.push({ source: shaperRootName(), target: row.name, value: row.value });
             }
         });
 
@@ -57,8 +64,8 @@ export class ShaperTopAsnDownload extends BaseDashlet {
         this._LINGER = 3;        // keep absent items for a few ticks
     }
     canBeSlowedDown() { return true; }
-    title() { return "Shaper Top ASN (Download)"; }
-    tooltip() { return "<h5>Top Download ASNs</h5><p>Aggregated from live top flows by rate (bps)."; }
+    title() { return t("dashlet.name.shaper_top_asn_download"); }
+    tooltip() { return `<h5>${t("dashlet.asn.top_download.heading")}</h5><p>${t("dashlet.asn.top_download.tooltip")}</p>`; }
     subscribeTo() { return ["AsnTopDownload", "TopFlowsRate"]; }
     buildContainer() { let b = super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
     setup() {
@@ -67,7 +74,7 @@ export class ShaperTopAsnDownload extends BaseDashlet {
         this.traceRender("setup-complete", { graphId: this.graphDivId() });
         if (this.last) this.graph.update(this.last);
     }
-    _showEmpty(show, msg = "No recent data") {
+    _showEmpty(show, msg = t("common.state.no_recent_data")) {
         const card = document.getElementById(this.id);
         if (!card) return;
         let empty = document.getElementById(this._emptyId);
@@ -137,7 +144,7 @@ export class ShaperTopAsnDownload extends BaseDashlet {
         if (msg.event !== "TopFlowsRate") return;
         const map = new Map();
         (msg.data || []).forEach(f => {
-            const key = f.remote_asn_name && f.remote_asn_name.length > 0 ? f.remote_asn_name : (f.remote_ip || "Unknown");
+            const key = f.remote_asn_name && f.remote_asn_name.length > 0 ? f.remote_asn_name : (f.remote_ip || t("circuit.queue_tree.unknown_node"));
             const val = Number(f.rate_estimate_bps?.down || 0);
             const rxmitD = (f.tcp_retransmits?.down || 0) / Math.max(1, f.packets_sent?.down || 0) * 100.0; // %
             const cur = map.get(key) || { name: key, value: 0, rxmit: 0, samples: 0 };

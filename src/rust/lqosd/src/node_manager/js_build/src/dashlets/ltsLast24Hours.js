@@ -1,6 +1,9 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {LtsLast24Hours_graph} from "../graphs/ltsLast24Hours_graph";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Cadence" is the websocket event name the dashlet filters on, not a label
 
 const wsClient = get_ws_client();
 const listenOnceForSeconds = (eventName, seconds, handler) => {
@@ -18,7 +21,7 @@ export class LtsLast24Hours extends BaseDashlet {
     }
 
     title() {
-        return "Last 24 Hours Throughput (Insight)";
+        return t("dashlet.name.insight_last_24_hours");
     }
 
     canBeSlowedDown() {
@@ -26,7 +29,7 @@ export class LtsLast24Hours extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>24 Hour Throughput</h5><p>Throughput for the last 24 hours. The error bars indicate minimum and maximum within a time range, while the points indicate median. Many other systems will inadvertently give incorrect data by averaging across large periods of time, and not sampling frequently enough (1 second for Mb/s).</p>";
+        return `<h5>${t("dashlet.lts_24h.heading")}</h5><p>${t("dashlet.lts_24h.tooltip")}</p>`;
     }
 
     subscribeTo() {

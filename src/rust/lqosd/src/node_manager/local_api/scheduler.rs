@@ -1,3 +1,4 @@
+use analytics_ipc::TopologyTier;
 use serde::Serialize;
 
 use lqos_bus::{IntegrationErrorClass, SchedulerProgressReport, SchedulerRun};
@@ -326,15 +327,15 @@ fn derive_topology_source(last_import_ok: Option<bool>) -> Option<TopologySource
 }
 
 /// AVAIL (CARD `v3_availability_hardening_card` §7 b4): map the bridge's boot
-/// topology-tier string onto [`BootWorldTier`]. `None` = unknown/empty — the
-/// caller reports "unknown", NEVER an import-axis fallback.
-fn boot_world_tier_from_str(tier: &str) -> Option<BootWorldTier> {
+/// topology tier onto [`BootWorldTier`]. `None` = unknown/absent — the caller
+/// reports "unknown", NEVER an import-axis fallback.
+fn boot_world_tier(tier: &TopologyTier) -> Option<BootWorldTier> {
     match tier {
-        "fresh" => Some(BootWorldTier::Fresh),
-        "last_known_good" => Some(BootWorldTier::LastKnownGood),
-        "bootstrap_trunk" => Some(BootWorldTier::BootstrapTrunk),
-        "pass_through" => Some(BootWorldTier::PassThrough),
-        _ => None,
+        TopologyTier::Fresh => Some(BootWorldTier::Fresh),
+        TopologyTier::LastKnownGood => Some(BootWorldTier::LastKnownGood),
+        TopologyTier::BootstrapTrunk => Some(BootWorldTier::BootstrapTrunk),
+        TopologyTier::PassThrough => Some(BootWorldTier::PassThrough),
+        TopologyTier::Unknown(_) => None,
     }
 }
 
@@ -346,7 +347,7 @@ fn bridge_boot_world_tier() -> Option<BootWorldTier> {
     let report = (*status)
         .as_ref()
         .and_then(|status| status.report.as_ref())?;
-    boot_world_tier_from_str(&report.topology_tier)
+    boot_world_tier(&report.topology_tier)
 }
 
 /// HOLD(2) (§0a): the bridge-reported per-tier boot record (boots total,
@@ -663,9 +664,9 @@ pub fn scheduler_details_data() -> SchedulerDetails {
 #[cfg(test)]
 mod tests {
     use super::{
-        BootWorldTier, SummaryReason, SystemHealthSeverity, TopologySource,
-        boot_world_tier_from_str, compute_summary_severity, derive_topology_source,
-        scheduler_details_data, scheduler_status_data,
+        BootWorldTier, SummaryReason, SystemHealthSeverity, TopologySource, TopologyTier,
+        boot_world_tier, compute_summary_severity, derive_topology_source, scheduler_details_data,
+        scheduler_status_data,
     };
     use crate::test_support::runtime_config_test_lock;
     use crate::tool_status::{
@@ -982,28 +983,27 @@ mod tests {
     }
 
     /// AVAIL (CARD `v3_availability_hardening_card` §7 b4): the bridge's boot
-    /// tier strings map 1:1 onto the SEPARATE `BootWorldTier`; unknown/empty
-    /// names return `None` ("unknown"), never an import-axis fallback.
+    /// tiers map 1:1 onto the SEPARATE `BootWorldTier`; an unknown or absent
+    /// tier returns `None` ("unknown"), never an import-axis fallback. The
+    /// last two cases convert from the empty and an unrecognized spelling.
     #[test]
     fn bridge_boot_world_tier_maps_1_to_1() {
-        assert_eq!(
-            boot_world_tier_from_str("fresh"),
-            Some(BootWorldTier::Fresh)
-        );
-        assert_eq!(
-            boot_world_tier_from_str("last_known_good"),
-            Some(BootWorldTier::LastKnownGood)
-        );
-        assert_eq!(
-            boot_world_tier_from_str("bootstrap_trunk"),
-            Some(BootWorldTier::BootstrapTrunk)
-        );
-        assert_eq!(
-            boot_world_tier_from_str("pass_through"),
-            Some(BootWorldTier::PassThrough)
-        );
-        assert_eq!(boot_world_tier_from_str(""), None);
-        assert_eq!(boot_world_tier_from_str("bogus"), None);
+        for (tier, expected) in [
+            (TopologyTier::Fresh, Some(BootWorldTier::Fresh)),
+            (
+                TopologyTier::LastKnownGood,
+                Some(BootWorldTier::LastKnownGood),
+            ),
+            (
+                TopologyTier::BootstrapTrunk,
+                Some(BootWorldTier::BootstrapTrunk),
+            ),
+            (TopologyTier::PassThrough, Some(BootWorldTier::PassThrough)),
+            (TopologyTier::from(String::new()), None),
+            (TopologyTier::from("bogus".to_string()), None),
+        ] {
+            assert_eq!(boot_world_tier(&tier), expected, "{tier:?}");
+        }
     }
 
     #[test]

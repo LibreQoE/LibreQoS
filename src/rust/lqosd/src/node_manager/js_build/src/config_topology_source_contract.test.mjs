@@ -8,21 +8,28 @@ const helperPath = fileURLToPath(new URL("config/config_helper.js", sourceDirect
 const topologyPath = fileURLToPath(new URL("config/topology_source.js", sourceDirectory));
 const pagePath = fileURLToPath(new URL("../../static2/config_integration.html", sourceDirectory));
 const scriptPath = fileURLToPath(new URL("config_integration.js", sourceDirectory));
+const catalogPath = fileURLToPath(new URL("../../static2/i18n/en.json", sourceDirectory));
 
 test("topology source selector is the one authority", async () => {
-    const [helper, topology, page, script] = await Promise.all([
+    const [helper, topology, page, script, catalogText] = await Promise.all([
         readFile(helperPath, "utf8"),
         readFile(topologyPath, "utf8"),
         readFile(pagePath, "utf8"),
         readFile(scriptPath, "utf8"),
+        readFile(catalogPath, "utf8"),
     ]);
+    const catalog = JSON.parse(catalogText).messages;
 
     assert.match(topology, /export const TOPOLOGY_SOURCES/);
     assert.match(topology, /export function topologyEditorsLocked/);
     assert.match(topology, /!== "shaped_devices"|=== "shaped_devices"/);
     assert.match(topology, /export function topologyEditorsLockMessage/);
-    assert.match(topology, /No topology source is selected/);
-    assert.match(topology, /libreqos_network\.json drop/);
+    // The wording moved to the catalog, so the module must name the key and the
+    // English catalog must still say what the lock means.
+    assert.match(topology, /config\.common\.topology_source\.none_selected/);
+    assert.match(catalog["config.common.topology_source.none_selected"], /No topology source is selected/);
+    assert.match(topology, /config\.common\.topology_source\.from_drop/);
+    assert.match(catalog["config.common.topology_source.from_drop"], /libreqos_network\.json drop/);
     assert.match(helper, /export function applyTopologySourceCheckboxState/);
     assert.match(helper, /from "\.\/topology_source"/);
     assert.match(page, /id="topologySource"/);

@@ -1,0 +1,88 @@
+{
+  "schema_version": 2,
+  "id": "airos-ap",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.10002"],
+    "sys_descr_contains": ["airOS"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v1", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "sys_descr", "oid": "1.3.6.1.2.1.1.1.0", "parser": "utf8" },
+          { "name": "sys_name", "oid": "1.3.6.1.2.1.1.5.0", "parser": "utf8" },
+          { "name": "sys_object_id", "oid": "1.3.6.1.2.1.1.2.0", "parser": "oid" }
+        ]
+      }
+    },
+    {
+      "id": "lldp",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "local_port", "oid": "1.0.8802.1.1.2.1.4.1.1.2", "parser": "u32" },
+            { "name": "chassis_id", "oid": "1.0.8802.1.1.2.1.4.1.1.5", "parser": "octet_mac" },
+            { "name": "port_id", "oid": "1.0.8802.1.1.2.1.4.1.1.7", "parser": "utf8" },
+            { "name": "sys_name", "oid": "1.0.8802.1.1.2.1.4.1.1.9", "parser": "utf8" },
+            { "name": "sys_descr", "oid": "1.0.8802.1.1.2.1.4.1.1.10", "parser": "utf8" }
+          ],
+          "index": { "kind": "lldp_rem" }
+        }
+      }
+    },
+    {
+      "id": "stations",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "hostname", "oid": "1.3.6.1.4.1.41112.1.4.7.1.2", "parser": "utf8" },
+            { "name": "signal_dbm", "oid": "1.3.6.1.4.1.41112.1.4.7.1.3", "parser": "i64" },
+            { "name": "noise_dbm", "oid": "1.3.6.1.4.1.41112.1.4.7.1.4", "parser": "i64" },
+            { "name": "last_ip", "oid": "1.3.6.1.4.1.41112.1.4.7.1.10", "parser": "ip_address" },
+            { "name": "tx_bps", "oid": "1.3.6.1.4.1.41112.1.4.7.1.11", "parser": "i64" },
+            { "name": "rx_bps", "oid": "1.3.6.1.4.1.41112.1.4.7.1.12", "parser": "i64" },
+            { "name": "tx_bytes", "oid": "1.3.6.1.4.1.41112.1.4.7.1.13", "parser": "u64" },
+            { "name": "rx_bytes", "oid": "1.3.6.1.4.1.41112.1.4.7.1.14", "parser": "u64" },
+            { "name": "uptime", "oid": "1.3.6.1.4.1.41112.1.4.7.1.15", "parser": "u64" }
+          ],
+          "index": { "kind": "ubnt_station" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["system.sys_name", "lldp.sys_name"] },
+      { "kind": "sysdescr", "fields": ["system.sys_descr", "lldp.sys_descr"] },
+      { "kind": "portid", "fields": ["lldp.port_id"] },
+      { "kind": "localport", "fields": ["lldp.local_port"] }
+    ],
+    "details": {
+      "stations": "stations"
+    },
+    "residuals": [
+      {
+        "name": "station-counters",
+        "source": "docs/recon/airos.md: UBNT-AirMAX-MIB names station columns 5-9 and 16-21 (distance, CCQ, airMAX priority/quality/capacity, CINR, capacity, airtime, latency); the airos document reads none of them. The model has raw slots for column 5 (`distance_ccq`, distance) and column 6 (`quality`, CCQ), and no slot for columns 7-9 and 16-21, so they stay unreported"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 512,
+    "max_rows": 1024,
+    "max_bytes": 262144,
+    "deadline_ms": 8000
+  }
+}

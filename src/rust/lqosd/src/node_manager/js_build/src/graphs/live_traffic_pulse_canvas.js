@@ -1,6 +1,7 @@
 import {isColorBlindMode} from "../helpers/colorblind";
 import {isDarkMode} from "../helpers/dark_mode";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 // `.66.7`: the Live Traffic Pulse canvas renderer. Replaces the ECharts graph:
 // a plain <canvas> + requestAnimationFrame at display rate (~60 fps), DPR-aware,
@@ -24,6 +25,7 @@ function withAlpha(hex, alpha) {
     const r = parseInt(h.slice(0, 2), 16);
     const g = parseInt(h.slice(2, 4), 16);
     const b = parseInt(h.slice(4, 6), 16);
+    // translatable: false — "rgba( , , , )" is the CSS colour function the hex triple builds
     return `rgba(${r},${g},${b},${alpha})`;
 }
 
@@ -179,12 +181,13 @@ export class LiveTrafficPulseCanvas {
         const t0 = renderNow - WINDOW_MS;
 
         // x-axis anchors (crisp text, always drawn).
+        // translatable: false — "9px system-ui, -apple-system, Segoe UI, sans-serif" is the canvas label font stack
         ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
         ctx.fillStyle = muted;
         ctx.textAlign = "left";
-        ctx.fillText("30s ago", axisW, h - 2);
+        ctx.fillText(t("graph.pulse.window_start"), axisW, h - 2);
         ctx.textAlign = "right";
-        ctx.fillText("Now", w - 2, h - 2);
+        ctx.fillText(t("graph.axis.now"), w - 2, h - 2);
         ctx.textAlign = "center";
         for (let k = 1; k <= 5; k += 1) {
             const x = axisW + (k * 5 / 30) * plotW;
@@ -246,6 +249,7 @@ export class LiveTrafficPulseCanvas {
         ctx.textAlign = "right";
         const yLabel = (v) => {
             const abs = Math.abs(v);
+            // translatable: false — "$1bps" is a regex replacement template that appends the unit, not copy
             const text = abs < 1 ? "0" : scaleNumber(abs, 1).replace(/([TGMK])$/, " $1bps");
             return v < 0 ? `-${text}` : text;
         };

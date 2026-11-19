@@ -3,14 +3,14 @@
   <div class="card-body d-flex align-items-center justify-content-between py-2">
     <div>
       <i class="fa fa-code me-2 text-secondary"></i>
-      <strong>Local API Docs</strong>
-      <span class="text-secondary">— served by this node at /api/v3/docs</span>
+      <strong data-i18n="api_docs.title">Local API Docs</strong>
+      <span class="text-secondary" data-i18n="api_docs.subtitle">— served by this node at /api/v3/docs</span>
     </div>
-    <a id="openNew" class="btn btn-outline-secondary btn-sm" href="/api/v3/docs/" target="_blank" rel="noopener">
+    <a id="openNew" class="btn btn-outline-secondary btn-sm" href="/api/v3/docs/" target="_blank" rel="noopener" data-i18n="api_docs.open">
       <i class="fa fa-up-right-from-square me-1"></i>Open in new tab
     </a>
   </div>
   <div class="ratio ratio-16x9" style="min-height: 70vh;">
-    <iframe id="apiFrame" src="/api/v3/docs/" style="width:100%; height:100%; border:0;" title="LibreQoS API Docs"></iframe>
+    <iframe id="apiFrame" src="/api/v3/docs/" style="width:100%; height:100%; border:0;" title="LibreQoS API Docs" data-i18n-title="api_docs.frame_title"></iframe>
   </div>
 </div>

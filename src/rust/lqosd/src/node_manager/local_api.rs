@@ -1,3 +1,4 @@
+pub(crate) mod ap_polling;
 pub(crate) mod api_key_auth;
 pub(crate) mod circuit;
 pub(crate) mod circuit_activity;
@@ -51,6 +52,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             get(throughput_attribution_debug::throughput_attribution_debug),
         )
         .route("/cpu-workers", get(cpu_workers::get_cpu_workers))
+        .route("/ap-polling", get(ap_polling::get_ap_polling))
         .route("/network-mode/status", get(network_mode::status))
         .route("/network-mode/inspect", post(network_mode::inspect))
         .route("/network-mode/apply", post(network_mode::apply))

@@ -15,5 +15,12 @@ echo "Copying static"
 rm -rf "${STATIC_TARGET_DIR:?}"
 mkdir -p "${STATIC_TARGET_DIR}"
 cp -v -R "${STATIC_SOURCE_DIR}/." "${STATIC_TARGET_DIR}/"
+# `static2/i18n/*.json` are build inputs, not served assets: esbuild.sh compiles
+# them into `i18n/<tag>.js` (and the Rust side includes `locales.json` at build
+# time). Copying them put ~0.5 MB of catalog source under the ServeDir root,
+# where editing one changes nothing the browser runs.
+if [[ -d "${STATIC_TARGET_DIR}/i18n" ]]; then
+  find "${STATIC_TARGET_DIR}/i18n" -maxdepth 1 -name '*.json' -delete
+fi
 cp -R "${JS_BUILD_DIR}/out/." "${STATIC_TARGET_DIR}/"
 echo "Done"

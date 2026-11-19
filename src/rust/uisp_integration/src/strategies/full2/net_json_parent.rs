@@ -1,5 +1,99 @@
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
+use uisp::Device;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceRef {
+    pub node_id: String,
+    pub mgmt_ip: Option<String>,
+    pub vendor_hint: Option<String>,
+    pub model: Option<String>,
+    pub family_hint: Option<String>,
+}
+
+impl DeviceRef {
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut map = serde_json::Map::new();
+        map.insert("node_id".into(), self.node_id.clone().into());
+        if let Some(value) = &self.mgmt_ip {
+            map.insert("mgmt_ip".into(), value.clone().into());
+        }
+        if let Some(value) = &self.vendor_hint {
+            map.insert("vendor_hint".into(), value.clone().into());
+        }
+        if let Some(value) = &self.model {
+            map.insert("model".into(), value.clone().into());
+        }
+        if let Some(value) = &self.family_hint {
+            map.insert("family_hint".into(), value.clone().into());
+        }
+        serde_json::Value::Object(map)
+    }
+}
+
+fn trimmed(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn first_trimmed(primary: Option<&str>, fallback: Option<&str>) -> Option<String> {
+    trimmed(primary).or_else(|| trimmed(fallback))
+}
+
+fn normalize_mgmt_ip(value: Option<&str>) -> Option<String> {
+    let text = value?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    // UISP's ipAddress is typically CIDR; the DeviceRef contract carries a bare IP.
+    let bare = text.split('/').next().unwrap_or(text).trim();
+    bare.parse::<IpAddr>().ok().map(|ip| ip.to_string())
+}
+
+fn is_ubiquiti(device: &Device) -> bool {
+    let identification = &device.identification;
+    [
+        identification.vendor.as_deref(),
+        identification.vendorName.as_deref(),
+        identification.model.as_deref(),
+        identification.modelName.as_deref(),
+        identification.r#type.as_deref(),
+        device.mode.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| {
+        let normalized = value.trim().to_ascii_lowercase();
+        normalized.contains("ubiquiti")
+            || normalized.contains("ubnt")
+            || normalized.contains("airmax")
+    })
+}
+
+/// Returns the DeviceRef for an infrastructure node, or None when UISP already
+/// models the gear (Ubiquiti). Non-Ubiquiti/blackbox APs are the only emitters.
+pub fn device_ref_for_node(node_id: &str, device: &Device) -> Option<DeviceRef> {
+    if is_ubiquiti(device) {
+        return None;
+    }
+    let identification = &device.identification;
+    Some(DeviceRef {
+        node_id: node_id.to_string(),
+        mgmt_ip: normalize_mgmt_ip(device.ipAddress.as_deref()),
+        vendor_hint: first_trimmed(
+            identification.vendor.as_deref(),
+            identification.vendorName.as_deref(),
+        ),
+        model: first_trimmed(
+            identification.model.as_deref(),
+            identification.modelName.as_deref(),
+        ),
+        family_hint: trimmed(identification.r#type.as_deref()),
+    })
+}
 
 #[derive(Debug)]
 pub struct NetJsonParent<'a> {
@@ -87,6 +181,7 @@ where
 
 pub fn walk_parents(
     parents: &HashMap<String, NetJsonParent>,
+    device_refs: &HashMap<String, DeviceRef>,
     node_id: &str,
     visited: &mut HashSet<String>,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -141,6 +236,10 @@ pub fn walk_parents(
         }
     }
 
+    if let Some(device_ref) = device_refs.get(node_id) {
+        map.insert("device_ref".into(), device_ref.to_json());
+    }
+
     let mut children = serde_json::Map::new();
     let mut child_ids: Vec<&str> = parents
         .iter()
@@ -166,7 +265,7 @@ pub fn walk_parents(
             continue;
         }
         visited.insert(child_id.to_string());
-        let child = walk_parents(parents, child_id, visited);
+        let child = walk_parents(parents, device_refs, child_id, visited);
         children.insert(child_info.export_name.clone(), child.into());
     }
 
@@ -177,7 +276,9 @@ pub fn walk_parents(
 
 #[cfg(test)]
 mod tests {
-    use super::{NetJsonParent, assign_export_names, walk_parents};
+    use super::{
+        DeviceRef, NetJsonParent, assign_export_names, device_ref_for_node, walk_parents,
+    };
     use crate::strategies::full2::graph_mapping::GraphMapping;
     use std::collections::{HashMap, HashSet};
 
@@ -251,11 +352,23 @@ mod tests {
         };
         parents.insert(root_id.clone(), root_node);
 
-        let tree = walk_parents(&parents, &root_id, &mut HashSet::new());
+        let mut device_refs = HashMap::new();
+        device_refs.insert(
+            ap_id.clone(),
+            DeviceRef {
+                node_id: ap_id.clone(),
+                mgmt_ip: Some("10.0.0.5".to_string()),
+                vendor_hint: Some("Cambium".to_string()),
+                model: Some("ePMP 3000".to_string()),
+                family_hint: Some("blackBox".to_string()),
+            },
+        );
+        let tree = walk_parents(&parents, &device_refs, &root_id, &mut HashSet::new());
         assert_eq!(
             tree.get("parent_site").and_then(|value| value.as_str()),
             Some("WestRedd")
         );
+        assert!(tree.get("device_ref").is_none());
 
         let site = tree
             .get("children")
@@ -277,6 +390,12 @@ mod tests {
         assert_eq!(
             ap.get("parent_site").and_then(|value| value.as_str()),
             Some("MDC El Paso")
+        );
+        assert_eq!(
+            ap.get("device_ref")
+                .and_then(|value| value.get("mgmt_ip"))
+                .and_then(|value| value.as_str()),
+            Some("10.0.0.5")
         );
     }
 
@@ -386,7 +505,7 @@ mod tests {
             },
         );
 
-        let tree = walk_parents(&parents, &root_id, &mut HashSet::new());
+        let tree = walk_parents(&parents, &HashMap::new(), &root_id, &mut HashSet::new());
         let site = tree
             .get("children")
             .and_then(|value| value.as_object())
@@ -399,5 +518,87 @@ mod tests {
             .expect("site children should exist");
         assert!(children.contains_key("TrailerCity [AP]"));
         assert!(children.contains_key("JR_AP_TC_A"));
+    }
+
+    #[test]
+    fn selective_device_refs_are_normalized() {
+        let device = |value: serde_json::Value| -> uisp::Device {
+            serde_json::from_value(value).expect("device JSON should deserialize")
+        };
+
+        let ubiquiti_vendor = device(serde_json::json!({
+            "identification": {
+                "id": "u1",
+                "vendor": "Ubiquiti Networks",
+                "model": "Rocket 5AC",
+                "type": "airMax",
+                "role": "ap"
+            },
+            "ipAddress": "10.0.0.1/24"
+        }));
+        assert!(device_ref_for_node("uisp:device:u1", &ubiquiti_vendor).is_none());
+
+        // Vendor absent: identification.type=airMax is the UISP AirMax marker
+        // (uisp_device.rs is_airmax_ap), so this is still Ubiquiti.
+        let ubiquiti_by_type = device(serde_json::json!({
+            "identification": {
+                "id": "u2",
+                "model": "RP-5AC-Gen2",
+                "type": "airMax",
+                "role": "ap"
+            }
+        }));
+        assert!(device_ref_for_node("uisp:device:u2", &ubiquiti_by_type).is_none());
+
+        let non_ubiquiti = device(serde_json::json!({
+            "identification": {
+                "id": "c1",
+                "vendor": "Cambium",
+                "model": "ePMP 3000",
+                "type": "blackBox",
+                "role": "ap"
+            },
+            "ipAddress": " 10.0.0.5/24 "
+        }));
+        let reference = device_ref_for_node("uisp:device:c1", &non_ubiquiti)
+            .expect("non-Ubiquiti AP should emit a ref");
+        assert_eq!(reference.mgmt_ip.as_deref(), Some("10.0.0.5"));
+        assert_eq!(reference.vendor_hint.as_deref(), Some("Cambium"));
+        assert_eq!(reference.model.as_deref(), Some("ePMP 3000"));
+        assert_eq!(reference.family_hint.as_deref(), Some("blackBox"));
+        assert_eq!(
+            reference
+                .to_json()
+                .get("mgmt_ip")
+                .and_then(|value| value.as_str()),
+            Some("10.0.0.5")
+        );
+
+        let missing_ip = device(serde_json::json!({
+            "identification": {
+                "id": "c2",
+                "vendor": "MikroTik",
+                "model": "NetMetal",
+                "type": "blackBox",
+                "role": "ap"
+            }
+        }));
+        let reference = device_ref_for_node("uisp:device:c2", &missing_ip).expect("ref");
+        assert_eq!(reference.mgmt_ip, None);
+        assert!(reference.to_json().get("mgmt_ip").is_none());
+
+        let malformed_ip = device(serde_json::json!({
+            "identification": {
+                "id": "c3",
+                "vendor": "MikroTik",
+                "model": "NetMetal",
+                "type": "blackBox",
+                "role": "ap"
+            },
+            "ipAddress": "not-an-ip"
+        }));
+        let reference = device_ref_for_node("uisp:device:c3", &malformed_ip).expect("ref");
+        assert_eq!(reference.mgmt_ip, None);
+        assert!(reference.to_json().get("mgmt_ip").is_none());
     }
 }

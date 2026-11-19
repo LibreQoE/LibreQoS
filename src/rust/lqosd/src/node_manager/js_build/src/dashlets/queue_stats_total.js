@@ -3,6 +3,11 @@ import {LtsCakeGraph} from "../graphs/lts_cake_stats_graph";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Error" is the websocket error event this helper unsubscribes from, not a label
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+// translatable: false — "_history_graph" is the DOM id suffix this dashlet appends
 
 const wsClient = get_ws_client();
 
@@ -32,11 +37,11 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
     }
 
     title() {
-        return "Cake Stats (Total)";
+        return t("dashlet.name.total_cake_stats");
     }
 
     tooltip() {
-        return "<h5>Cake Stats (Total)</h5><p>Total number of fair queueing interventions per second. ECN Marks label packets as having possible congestion, signalling the flow to slow down. Drops discard selected packets to \"pace\" the queue for efficient, fair, low-latency throughput.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.cake_stats.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -96,7 +101,7 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
         }
 
         if (!window.hasLts) {
-            historyGraph.innerHTML = "<p class='text-secondary small'>You need an entitled license with history access to view this data.</p>";
+            historyGraph.innerHTML = `<p class="text-secondary small">${t("common.insight.entitled_history")}</p>`;
             return;
         }
 
@@ -124,7 +129,7 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
                 }
                 this.historyGraph.update(data);
                 if (data.length === 0) {
-                    this.historyGraph.chart.showLoading("No historical data available.");
+                    this.historyGraph.chart.showLoading(t("common.state.no_history"));
                 } else {
                     this.historyGraph.chart.hideLoading();
                 }
@@ -132,9 +137,9 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
             () => {
                 if (this.historyPeriod === periodName) {
                     if (this.historyGraph !== null && this.historyGraph.chart) {
-                        this.historyGraph.chart.showLoading("Failed to load cake stats.");
+                        this.historyGraph.chart.showLoading(t("dashlet.cake_stats.load_failed"));
                     } else {
-                        historyGraph.innerHTML = "<p class='text-danger small'>Failed to load cake stats.</p>";
+                        historyGraph.innerHTML = `<p class="text-danger small">${t("dashlet.cake_stats.load_failed")}</p>`;
                     }
                 }
             },

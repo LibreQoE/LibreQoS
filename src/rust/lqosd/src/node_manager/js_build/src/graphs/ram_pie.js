@@ -1,4 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {t} from "../i18n/index.js";
 
 export class RamPie extends DashboardGraph {
     constructor(id) {
@@ -9,8 +10,8 @@ export class RamPie extends DashboardGraph {
                     type: 'pie',
                     radius: '50%',
                     data: [
-                        { name: 'Free', value: 0 },
-                        { name: 'Used', value: 0 }
+                        { name: t("graph.pie.free"), value: 0 },
+                        { name: t("graph.pie.used"), value: 0 }
                     ],
                     label: {
                         color: '#aaa'

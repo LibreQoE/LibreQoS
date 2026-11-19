@@ -1,0 +1,260 @@
+{
+  "supported": true,
+  "probes": [
+    {
+      "probe": "identity",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    },
+    {
+      "probe": "stations",
+      "outcome": "present",
+      "reason": null,
+      "rows": 3
+    },
+    {
+      "probe": "bridge",
+      "outcome": "present",
+      "reason": null,
+      "rows": 3
+    }
+  ],
+  "lldp": [],
+  "arp": [],
+  "fdb": null,
+  "stations": [
+    {
+      "mac": "00:11:22:33:44:55",
+      "wlan_if": 0,
+      "hostname": null,
+      "signal_dbm": null,
+      "noise_dbm": null,
+      "last_ip": "172.30.1.50",
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null,
+      "channel": 5875,
+      "ul_rssi": -72,
+      "dl_rssi": -74,
+      "ul_snr": 25,
+      "dl_snr": 22,
+      "tx_capacity": 48,
+      "tx_quality": 95,
+      "dl_rate_mbps": 275,
+      "model": "5 GHz Force 4525 (FCC)",
+      "software_version": "5.10.3"
+    },
+    {
+      "mac": "00:11:22:33:44:66",
+      "wlan_if": 0,
+      "hostname": null,
+      "signal_dbm": null,
+      "noise_dbm": null,
+      "last_ip": "172.30.1.51",
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null,
+      "channel": 5875,
+      "ul_rssi": -70,
+      "dl_rssi": -71,
+      "ul_snr": 25,
+      "dl_snr": 21,
+      "tx_capacity": 36,
+      "tx_quality": 100,
+      "dl_rate_mbps": 206,
+      "model": "5 GHz Force 4525 (FCC)",
+      "software_version": "5.10.3"
+    },
+    {
+      "mac": "00:11:22:33:44:77",
+      "wlan_if": 0,
+      "hostname": null,
+      "signal_dbm": null,
+      "noise_dbm": null,
+      "last_ip": "172.30.1.52",
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null,
+      "channel": 5875,
+      "ul_rssi": -55,
+      "dl_rssi": -58,
+      "ul_snr": 40,
+      "dl_snr": 38,
+      "tx_capacity": 54,
+      "tx_quality": 84,
+      "dl_rate_mbps": 103,
+      "model": "5 GHz Force 4525 (FCC)",
+      "software_version": "5.10.3"
+    }
+  ],
+  "interfaces": [],
+  "claims": [
+    {
+      "probe": "identity",
+      "row": null,
+      "kind": "name",
+      "value": "epmp-ap-1",
+      "source": "snmp-system"
+    }
+  ],
+  "details": {
+    "interfaces": [],
+    "system": null,
+    "temperatures": [],
+    "stations": [
+      {
+        "mac": "00:11:22:33:44:55",
+        "wlan_if": 0,
+        "hostname": null,
+        "signal_dbm": null,
+        "noise_dbm": null,
+        "last_ip": "172.30.1.50",
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "channel": 5875,
+        "ul_rssi": -72,
+        "dl_rssi": -74,
+        "ul_snr": 25,
+        "dl_snr": 22,
+        "tx_capacity": 48,
+        "tx_quality": 95,
+        "dl_rate_mbps": 275,
+        "model": "5 GHz Force 4525 (FCC)",
+        "software_version": "5.10.3",
+        "provenance": [
+          "snmp-vendor"
+        ]
+      },
+      {
+        "mac": "00:11:22:33:44:66",
+        "wlan_if": 0,
+        "hostname": null,
+        "signal_dbm": null,
+        "noise_dbm": null,
+        "last_ip": "172.30.1.51",
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "channel": 5875,
+        "ul_rssi": -70,
+        "dl_rssi": -71,
+        "ul_snr": 25,
+        "dl_snr": 21,
+        "tx_capacity": 36,
+        "tx_quality": 100,
+        "dl_rate_mbps": 206,
+        "model": "5 GHz Force 4525 (FCC)",
+        "software_version": "5.10.3",
+        "provenance": [
+          "snmp-vendor"
+        ]
+      },
+      {
+        "mac": "00:11:22:33:44:77",
+        "wlan_if": 0,
+        "hostname": null,
+        "signal_dbm": null,
+        "noise_dbm": null,
+        "last_ip": "172.30.1.52",
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "channel": 5875,
+        "ul_rssi": -55,
+        "dl_rssi": -58,
+        "ul_snr": 40,
+        "dl_snr": 38,
+        "tx_capacity": 54,
+        "tx_quality": 84,
+        "dl_rate_mbps": 103,
+        "model": "5 GHz Force 4525 (FCC)",
+        "software_version": "5.10.3",
+        "provenance": [
+          "snmp-vendor"
+        ]
+      }
+    ],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": {
+      "provenance": [
+        "snmp-vendor"
+      ],
+      "rows": [
+        {
+          "bridge": "br-lan",
+          "on_interface": "N/A",
+          "mac_address": "00:aa:bb:cc:dd:01",
+          "age": null,
+          "dynamic": null,
+          "local": null,
+          "external": null
+        },
+        {
+          "bridge": "br-lan",
+          "on_interface": "00:11:22:33:44:55",
+          "mac_address": "00:aa:bb:cc:dd:02",
+          "age": null,
+          "dynamic": null,
+          "local": null,
+          "external": null
+        },
+        {
+          "bridge": "br-lan",
+          "on_interface": "00:11:22:33:44:66",
+          "mac_address": "00:aa:bb:cc:dd:03",
+          "age": null,
+          "dynamic": null,
+          "local": null,
+          "external": null
+        }
+      ]
+    },
+    "nat": null,
+    "dhcp_leases": null,
+    "radio": {
+      "model": "1.3.6.1.4.1.17713.21.9.53352",
+      "frequency_mhz": 5875,
+      "channel_width_mhz": 40,
+      "sm_count": 3,
+      "tx_power_dbm": 27,
+      "lan_speed_mbps": 1000,
+      "phy_mbps": null,
+      "provenance": [
+        "snmp-vendor"
+      ]
+    }
+  },
+  "capacity": {
+    "mbps": 275.0,
+    "source": "per_sm_rate"
+  },
+  "residuals": []
+}

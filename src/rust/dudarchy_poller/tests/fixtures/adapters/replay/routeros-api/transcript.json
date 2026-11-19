@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "op": "command",
+      "command": "system_identity",
+      "outcome": "present",
+      "rows": [{ "name": "cr1" }]
+    },
+    {
+      "op": "command",
+      "command": "system_routerboard",
+      "outcome": "present",
+      "rows": [{ "serial-number": "HGC123" }]
+    },
+    {
+      "op": "command",
+      "command": "ip_neighbor",
+      "outcome": "present",
+      "rows": [
+        {
+          "mac-address": "6C:3B:6B:70:96:3F",
+          "address": "192.168.100.13",
+          "identity": "FSW-West",
+          "interface": "ether2"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "interfaces",
+      "outcome": "present",
+      "rows": [
+        {
+          ".id": "*1",
+          "name": "sfp-sfpplus1",
+          "type": "ether",
+          "mac-address": "00:0c:42:00:00:10",
+          "running": "true",
+          "disabled": "false"
+        },
+        {
+          ".id": "*2",
+          "name": "ether2",
+          "type": "ether",
+          "mac-address": "00:0c:42:00:00:11",
+          "running": "true",
+          "disabled": "false"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "ip_address",
+      "outcome": "present",
+      "rows": [{ "address": "192.168.88.1/24", "interface": "sfp-sfpplus1" }]
+    },
+    {
+      "op": "command",
+      "command": "ip_arp",
+      "outcome": "present",
+      "rows": [
+        {
+          "address": "192.168.88.9",
+          "mac-address": "00:11:22:33:44:55",
+          "interface": "sfp-sfpplus1",
+          "dynamic": "true",
+          "complete": "true",
+          "disabled": "false"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "bridge_port",
+      "outcome": "present",
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "interface": "ether2",
+          "pvid": "92",
+          "status": "in-bridge",
+          "inactive": "false",
+          "disabled": "false",
+          "dynamic": "false"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "bridge_vlan",
+      "outcome": "present",
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "vlan-ids": "92",
+          "tagged": "ether2",
+          "untagged": "sfp-sfpplus1"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "bridge_host",
+      "outcome": "present",
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "on-interface": "ether2",
+          "mac-address": "4C:5E:0C:67:35:12",
+          "age": "3m",
+          "dynamic": "true"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "system_resource",
+      "outcome": "present",
+      "rows": [
+        {
+          "version": "6.49.18",
+          "board-name": "CCR1009-8G-1S",
+          "platform": "routeros",
+          "uptime": "6w1d2h3m4s"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "system_health",
+      "outcome": "present",
+      "rows": [{ "temperature": "41" }]
+    },
+    {
+      "op": "command",
+      "command": "ip_firewall_nat",
+      "outcome": "present",
+      "rows": [
+        {
+          "chain": "srcnat",
+          "action": "masquerade",
+          "in-interface": "ether2",
+          "out-interface": "ether1",
+          "src-address": "192.168.100.0/24",
+          "disabled": "false",
+          "dynamic": "false",
+          "comment": "NOC NAT"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "src-address": "10.20.0.0/16",
+          "to-addresses": "192.168.100.10",
+          "disabled": "false",
+          "comment": "NAT for 192.168.100.0/24"
+        },
+        {
+          "chain": "dstnat",
+          "action": "dst-nat",
+          "dst-address": "203.0.113.10",
+          "dst-address-list": "forwarded",
+          "protocol": "tcp",
+          "dst-port": "443",
+          "to-addresses": "192.168.100.20",
+          "to-ports": "8443",
+          "disabled": "false",
+          "invalid": "false",
+          "comment": "NAT for 192.168.100.20"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "src-address": "192.168.50.0/24",
+          "to-addresses": "192.168.100.30",
+          "disabled": "true",
+          "comment": "NAT for 192.168.50.0/24 (disabled)"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "src-address": "192.168.60.0/24",
+          "to-addresses": "192.168.100.40",
+          "comment": "NAT for 192.168.60.0/24 (flag omitted)"
+        }
+      ]
+    },
+    {
+      "op": "command",
+      "command": "ip_dhcp_server_lease",
+      "outcome": "present",
+      "rows": [
+        {
+          "address": "192.168.88.20",
+          "mac-address": "AA:BB:CC:DD:EE:20",
+          "host-name": "printer",
+          "status": "bound",
+          "dynamic": "true",
+          "disabled": "false"
+        },
+        {
+          "address": "192.168.88.21",
+          "mac-address": "AA:BB:CC:DD:EE:21",
+          "host-name": "tv",
+          "status": "bound",
+          "dynamic": "true",
+          "disabled": "false"
+        },
+        {
+          "address": "192.168.88.22",
+          "mac-address": "AA:BB:CC:DD:EE:22",
+          "host-name": "stale",
+          "status": "bound",
+          "dynamic": "false",
+          "disabled": "true"
+        },
+        {
+          "mac-address": "AA:BB:CC:DD:EE:23",
+          "host-name": "reserved",
+          "status": "bound",
+          "dynamic": "false",
+          "disabled": "false"
+        }
+      ]
+    }
+  ]
+}

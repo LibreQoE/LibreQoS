@@ -1,10 +1,11 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function validateConfig() {
     // Validate optional fields if provided
     const netflowPort = document.getElementById("netflowPort").value;
     if (netflowPort && (isNaN(netflowPort) || netflowPort < 1 || netflowPort > 65535)) {
-        alert("Netflow Port must be a number between 1 and 65535");
+        alert(t("config.flows.validation.port_range"));
         return false;
     }
 
@@ -13,7 +14,7 @@ function validateConfig() {
         try {
             new URL(`http://${netflowIp}`);
         } catch {
-            alert("Netflow IP must be a valid IP address");
+            alert(t("config.flows.validation.ip_invalid"));
             return false;
         }
     }
@@ -83,11 +84,12 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.flows.saved"));
                 });
             }
         });
     } else {
+        // translatable: false — "Flows configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Flows configuration not found in window.config");
     }
 });

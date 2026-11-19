@@ -8,6 +8,7 @@ use sha2::Digest;
 use sha2::digest::Update;
 use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
+use tracing::warn;
 use uuid::Uuid;
 
 fn default_true() -> bool {
@@ -221,6 +222,14 @@ pub struct Config {
     #[serde(default)]
     pub maintenance_window: super::maintenance_window::MaintenanceWindowConfig,
 
+    /// AP polling configuration (`[ap_polling]`). Optional; a config without
+    /// the section is the disabled default and is not serialized.
+    #[serde(
+        default,
+        skip_serializing_if = "super::ap_polling::ApPollingConfig::is_default"
+    )]
+    pub ap_polling: super::ap_polling::ApPollingConfig,
+
     /// Dedicated Mikrotik IPv6 enrichment secrets/config path.
     #[serde(default)]
     pub mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config,
@@ -269,6 +278,13 @@ pub struct Config {
     /// Controls whether an operator-provided cobrand image should be shown in the WebUI.
     #[serde(default)]
     pub display_cobrand: bool,
+
+    /// Node-wide default UI language for the web UI, as a locale tag (`"es"`,
+    /// `"es-MX"`). Absent means "no operator default": each browser falls back
+    /// to its `Accept-Language`, then to English. The language a browser has
+    /// chosen (the `lqos_lang` cookie) always wins over this value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_language: Option<String>,
 
     /// Support for Tornado/Auto-rate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -327,6 +343,13 @@ impl Config {
         } else {
             self.topology.source
         }
+    }
+
+    /// Resolves the AP polling SNMP community, falling back to the existing
+    /// global `[sonar_integration].snmp_community` when `community` is empty.
+    pub fn ap_polling_community(&self) -> &str {
+        self.ap_polling
+            .effective_community(&self.sonar_integration.snmp_community)
     }
 
     /// Display name for the selected source (retained on a row-13/14 conflict).
@@ -457,6 +480,7 @@ impl Config {
             radius_accounting.validate()?;
         }
         self.maintenance_window.validate()?;
+        self.ap_polling.validate()?;
         if let Some(flows) = &self.flows {
             flows.validate()?;
         }
@@ -466,11 +490,43 @@ impl Config {
     /// Loads and validates a config from a TOML string (the loader's parse step).
     pub fn load_from_string(s: &str) -> Result<Self, String> {
         let normalized = normalize_splynx_compat_keys(s)?;
-        let config: Config =
+        let mut config: Config =
             toml::from_str(&normalized).map_err(|e| format!("Error parsing config: {}", e))?;
+        config.normalize_ui_language();
         config.validate()?;
         Ok(config)
     }
+
+    /// Lowercases `ui_language` and drops it when it is not a locale tag.
+    ///
+    /// Side effects: warns when it drops a value.
+    fn normalize_ui_language(&mut self) {
+        let Some(raw) = self.ui_language.as_deref() else {
+            return;
+        };
+        let normalized = raw.trim().to_ascii_lowercase();
+        if is_locale_tag(&normalized) {
+            self.ui_language = Some(normalized);
+            return;
+        }
+        warn!("ui_language {raw:?} is not a locale tag; ignoring it");
+        self.ui_language = None;
+    }
+}
+
+/// True for a BCP-47-shaped tag: a 2–3 letter primary subtag followed by
+/// optional `-`/`_`-separated alphanumeric subtags of 2–8 characters.
+fn is_locale_tag(tag: &str) -> bool {
+    let mut subtags = tag.split(['-', '_']);
+    let Some(primary) = subtags.next() else {
+        return false;
+    };
+    if !(2..=3).contains(&primary.len()) || !primary.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    subtags.all(|subtag| {
+        (2..=8).contains(&subtag.len()) && subtag.bytes().all(|b| b.is_ascii_alphanumeric())
+    })
 }
 
 /// Normalizes historical misspellings of Splynx keys in the TOML configuration.
@@ -542,6 +598,7 @@ impl Default for Config {
             topology: super::topology::TopologyConfig::default(),
             topology_source_runtime: super::topology::TopologySourceRuntime::default(),
             maintenance_window: super::maintenance_window::MaintenanceWindowConfig::default(),
+            ap_polling: super::ap_polling::ApPollingConfig::default(),
             mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
@@ -557,6 +614,7 @@ impl Default for Config {
             webserver_listen: None,
             ssl: None,
             display_cobrand: false,
+            ui_language: None,
             stormguard: None,
             disable_icmp_ping: Some(false),
             exclude_efficiency_cores: true,
@@ -815,6 +873,29 @@ mod test {
             config.topology.source,
             Some(TopologySource::ShapedDevices)
         );
+        assert_eq!(
+            config.ui_language, None,
+            "the example ships no operator default"
+        );
+    }
+
+    #[test]
+    fn ui_language_is_normalized_at_load_and_malformed_values_are_dropped() {
+        let with_tag = Config::load_from_string(&format!(
+            "ui_language = \" ES-mx \"\n{}",
+            include_str!("example.toml")
+        ))
+        .expect("a locale tag parses");
+        assert_eq!(with_tag.ui_language.as_deref(), Some("es-mx"));
+
+        for malformed in ["swedish", "", "e", "spanish-mexican"] {
+            let config = Config::load_from_string(&format!(
+                "ui_language = {malformed:?}\n{}",
+                include_str!("example.toml")
+            ))
+            .expect("a malformed ui_language must not fail the load");
+            assert_eq!(config.ui_language.as_deref(), None, "{malformed:?}");
+        }
     }
 
     #[test]

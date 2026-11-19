@@ -400,7 +400,43 @@ fn node_to_transport_with_summary(
     transport.subtree_device_count = summary.subtree_device_count;
     // §`lqos-74t.47.1.4`: unify the full tree QoQ onto `circuit_qoo` too.
     transport.qoo = tree_node_qoo(node);
+    // The synthetic Root carries (0, 0) from the builder; display the
+    // configured link rate (`Config::bandwidth_mbps`, the documented single
+    // source) instead of "Unlimited".
+    let root_rates = is_synthetic_root(node)
+        .then(|| load_config().ok().map(|config| config.bandwidth_mbps()))
+        .flatten();
+    apply_root_display_limit(&mut transport, node, root_rates);
     transport
+}
+
+/// Whether `node` is the synthetic index-0 Root the `NetworkJson` builders
+/// insert (named "Root", no parents), not an operator-defined node.
+///
+/// Side effects: none.
+fn is_synthetic_root(node: &NetworkJsonNode) -> bool {
+    node.name == "Root" && node.parents.is_empty() && node.immediate_parent.is_none()
+}
+
+/// Display-only overlay for the synthetic Root: its configured limit becomes
+/// the link rates, and its effective limit takes them only when no E2 value is
+/// present (`get_or_insert`; an E2 value is never overwritten). Non-root nodes
+/// and `rates == None` are untouched.
+///
+/// Side effects: none (pure; the caller supplies the rates).
+fn apply_root_display_limit(
+    transport: &mut NetworkJsonTransport,
+    node: &NetworkJsonNode,
+    rates: Option<(f64, f64)>,
+) {
+    let Some(rates) = rates else {
+        return;
+    };
+    if !is_synthetic_root(node) {
+        return;
+    }
+    transport.configured_max_throughput = rates;
+    transport.effective_max_throughput.get_or_insert(rates);
 }
 
 fn build_network_tree_summaries(
@@ -1815,5 +1851,51 @@ mod bridge_catalog_tests {
             active_attachment_name: None,
             heatmap: None,
         }
+    }
+
+    #[test]
+    fn root_display_limit_sets_configured_and_effective_on_the_synthetic_root_only() {
+        let root = qoo_map_node("Root", None, None, Vec::new());
+        let site = qoo_map_node("SiteA", Some("site-a"), Some(0), vec![0]);
+        let rates = Some((2000.0, 1000.0));
+
+        // The synthetic Root with link rates: both fields shown.
+        let mut root_t = root.clone_to_transit();
+        root_t.configured_max_throughput = root.max_throughput;
+        root_t.effective_max_throughput = None;
+        apply_root_display_limit(&mut root_t, &root, rates);
+        assert_eq!(root_t.configured_max_throughput, (2000.0, 1000.0));
+        assert_eq!(root_t.effective_max_throughput, Some((2000.0, 1000.0)));
+
+        // A non-root node is untouched, even with rates supplied.
+        let mut site_t = site.clone_to_transit();
+        site_t.configured_max_throughput = (0.0, 0.0);
+        site_t.effective_max_throughput = None;
+        apply_root_display_limit(&mut site_t, &site, rates);
+        assert_eq!(site_t.configured_max_throughput, (0.0, 0.0));
+        assert_eq!(site_t.effective_max_throughput, None);
+
+        // No rates (config unreadable): the Root is untouched.
+        let mut none_t = root.clone_to_transit();
+        none_t.configured_max_throughput = (0.0, 0.0);
+        none_t.effective_max_throughput = None;
+        apply_root_display_limit(&mut none_t, &root, None);
+        assert_eq!(none_t.configured_max_throughput, (0.0, 0.0));
+        assert_eq!(none_t.effective_max_throughput, None);
+
+        // An existing (E2) effective value is preserved, never overwritten.
+        let mut e2_t = root.clone_to_transit();
+        e2_t.configured_max_throughput = (0.0, 0.0);
+        e2_t.effective_max_throughput = Some((1500.0, 750.0));
+        apply_root_display_limit(&mut e2_t, &root, rates);
+        assert_eq!(e2_t.configured_max_throughput, (2000.0, 1000.0));
+        assert_eq!(e2_t.effective_max_throughput, Some((1500.0, 750.0)));
+    }
+
+    #[test]
+    fn synthetic_root_requires_the_root_name_and_no_parents() {
+        assert!(is_synthetic_root(&qoo_map_node("Root", None, None, Vec::new())));
+        assert!(!is_synthetic_root(&qoo_map_node("Root", None, Some(0), vec![0])));
+        assert!(!is_synthetic_root(&qoo_map_node("SiteA", None, None, Vec::new())));
     }
 }

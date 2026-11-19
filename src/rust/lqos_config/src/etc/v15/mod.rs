@@ -4,6 +4,8 @@ mod top_config;
 pub use top_config::Config;
 pub use top_config::RttThresholds;
 pub use top_config::{SslConfig, normalize_external_hostname};
+mod ap_polling;
+pub use ap_polling::ApPollingConfig;
 mod bridge;
 mod dataplane;
 mod dataplane_bridge;

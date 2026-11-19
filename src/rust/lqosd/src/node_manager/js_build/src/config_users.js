@@ -5,6 +5,16 @@ import {
     renderConfigMenu,
     updateUser,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
+
+// The role column shows a label for the role the server stores; an
+// unrecognised role keeps the token it came with.
+function roleLabel(role) {
+    // translatable: false — "Admin" is the role token the server stores and this branch compares, never rendered
+    if (role === "Admin") return t("config.users.role.admin");
+    if (role === "ReadOnly") return t("config.users.role.read_only");
+    return role;
+}
 
 $(document).ready(() => {
     // Render the configuration menu
@@ -20,7 +30,7 @@ $(document).ready(() => {
         const role = $('#role').val();
         
         if (!username) {
-            alert('Username cannot be empty');
+            alert(t("config.users.validation.username_required"));
             return;
         }
         
@@ -36,11 +46,11 @@ $(document).ready(() => {
                     $('#password').val('');
                     loadUsers();
                 } else {
-                    alert(msg && msg.message ? msg.message : 'Failed to add user');
+                    alert(msg && msg.message ? msg.message : t("config.users.error.add"));
                 }
             },
             (e) => {
-                alert('Failed to add user');
+                alert(t("config.users.error.add"));
                 console.log(e);
             },
         );
@@ -71,11 +81,11 @@ $(document).ready(() => {
                     $('#editUserModal').modal('hide');
                     loadUsers();
                 } else {
-                    alert(msg && msg.message ? msg.message : 'Failed to update user');
+                    alert(msg && msg.message ? msg.message : t("config.users.error.update"));
                 }
             },
             () => {
-                alert('Failed to update user');
+                alert(t("config.users.error.update"));
             },
         );
     });
@@ -87,13 +97,13 @@ function loadUsers() {
         userList.empty();
         
         if (users.length === 0) {
-            userList.html('<div class="alert alert-info">No users found</div>');
+            userList.html(`<div class="alert alert-info">${t("config.users.empty")}</div>`);
             return;
         }
 
         const tableWrap = $('<div class="table-responsive lqos-table-wrap">');
         const table = $('<table class="lqos-table lqos-table-compact mb-0">')
-            .append('<thead><tr><th>Username</th><th>Role</th><th>Actions</th></tr></thead>');
+            .append(`<thead><tr><th>${t("config.users.username")}</th><th>${t("config.users.role")}</th><th>${t("common.table.actions")}</th></tr></thead>`);
         const tbody = $('<tbody>');
         
         users.forEach(user => {
@@ -101,17 +111,17 @@ function loadUsers() {
             const editButton = $('<button type="button" class="btn btn-sm btn-primary edit-user">')
                 .data('username', user.username)
                 .append($('<i class="fa fa-edit">'))
-                .append(document.createTextNode(' Edit'));
+                .append(document.createTextNode(` ${t("config.users.edit.action")}`));
             const deleteButton = $('<button type="button" class="btn btn-sm btn-danger delete-user">')
                 .data('username', user.username)
                 .append($('<i class="fa fa-trash">'))
-                .append(document.createTextNode(' Delete'));
+                .append(document.createTextNode(` ${t("common.action.delete")}`));
 
             actions.append(editButton, ' ', deleteButton);
 
             const row = $('<tr>')
                 .append($('<td>').text(user.username))
-                .append($('<td>').text(user.role))
+                .append($('<td>').text(roleLabel(user.role)))
                 .append(actions);
             
             tbody.append(row);
@@ -133,7 +143,7 @@ function loadUsers() {
 
         // Attach delete handlers
         $('.delete-user').on('click', function() {
-            if (confirm('Are you sure you want to delete this user?')) {
+            if (confirm(t("config.users.confirm_delete"))) {
                 const username = $(this).data('username');
                 deleteUser(
                     { username: username },
@@ -141,17 +151,17 @@ function loadUsers() {
                         if (msg && msg.ok) {
                             loadUsers();
                         } else {
-                            alert(msg && msg.message ? msg.message : 'Failed to delete user');
+                            alert(msg && msg.message ? msg.message : t("config.users.error.delete"));
                         }
                     },
                     (e) => {
                         console.error(e);
-                        alert('Failed to delete user');
+                        alert(t("config.users.error.delete"));
                     },
                 );
             }
         });
     }, () => {
-        $('#users-list').html('<div class="alert alert-danger">Failed to load users</div>');
+        $('#users-list').html(`<div class="alert alert-danger">${t("config.users.error.load")}</div>`);
     });
 }

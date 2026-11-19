@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -15,7 +16,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxis("Circuits", 40)
+            .withScaledAbsYAxis(t("common.table.circuits"), 40)
             .build();
 
         this.option.legend = {
@@ -25,7 +26,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
             selectMode: false,
             data: [
                 {
-                    name: "Active Circuits",
+                    name: t("graph.series.active_circuits"),
                     icon: 'circle',
                     itemStyle: {
                         color: window.graphPalette[0]
@@ -38,7 +39,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
         };
         this.option.series = [
             {
-                name: 'Active Circuits',
+                name: t("graph.series.active_circuits"),
                 data: [],
                 type: 'line',
                 stack: 'circuits',
@@ -69,7 +70,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
                 if (!params || params.length === 0) return '';
                 const idx = params[0].dataIndex;
                 const ts = this.ringbuffer.getTimestamp(idx);
-                let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
+                let s = `<div><b>${t("graph.tooltip.time")}</b> ${formatTime(ts)}</div>`;
                 for (const p of params) {
                     s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${p.value}</b></div>`;
                 }

@@ -1,81 +1,72 @@
 # Operating LibreQoS v3
 
-**Version: LibreQoS v3 (current).** How to check, change, and support a running
-v3 host.
+**Version: LibreQoS v3 beta.** How to check, change and support a running v3
+host.
 
-## The units
+## The services
 
 | Unit | Role | Starts |
 |---|---|---|
-| `libreqos-setup` | oneshot verify + on-disk migration | first |
-| `libreqos-lqosd` | control plane, local API, WebUI, bridge broker | after setup |
-| `libreqos-bridge` | the DPDK dataplane (shaping) | after lqosd (`Requires=` setup) |
-| `libreqos-scheduler` | integrations hub (incl. UISP) | after lqosd |
+| `libreqos-setup` | one-shot hugepage/NIC check | first |
+| `libreqos-lqosd` | control plane, local API, WebUI | after setup |
+| `libreqos-bridge` | DPDK dataplane (shaping) | after lqosd |
+| `libreqos-scheduler` | integrations (including UISP) | after lqosd |
 | `libreqos-power` | power-profile helper | on demand |
 
-The `libreqos` control-plane package provides setup/lqosd/scheduler/power; it also
-serves the node API at `/api/v3`, which is part of `lqosd` rather than a unit of
-its own;
-**`libreqos-bridge` (and its binary + DPDK runtime) comes from the separate
-`libreqos-dataplane` artifact** (`update_bridge.sh`; see
-[Installing v3](install.md)).
+The `libreqos` package provides all of these except `libreqos-bridge`, which
+comes from `libreqos-dataplane`. The node API at `/api/v3` is part of `lqosd`.
 
 ```bash
 systemctl status libreqos-setup libreqos-lqosd libreqos-bridge libreqos-scheduler libreqos-power
 ```
 
-**Control-plane independence:** stopping `lqosd` does **not** stop traffic
-shaping — the bridge keeps applying the last committed world. A bridge crash is
-restarted by systemd and boots from the LKG.
+Stopping `lqosd` does not stop shaping: the bridge keeps the last applied
+configuration. If the bridge crashes, systemd restarts it and it comes back
+shaping from its last-known-good file.
 
-## Seam health
-
-The bridge↔lqosd seam can be read directly:
+## Bridge connection health
 
 ```bash
 lqosd --print-seam-state
-cat /run/libreqos/seam_state.json
 ```
 
-A healthy seam means the bridge is attached and the control channel/analytics
-socket are live. `lqosd` never gains privilege beyond the three sudoers verbs.
+A healthy result shows the bridge attached and the control and analytics
+channels live. The same data is in `/run/libreqos/seam_state.json`.
 
-## Configuration you may edit
+## Files you may edit
 
-- **`/etc/libreqos/lqos.conf`** — the product network/shaping world (integrations,
-  queues, `[dataplane]` bandwidth, `[flows] do_not_track_subnets`, license).
-- **`/etc/libreqos/bridge.env`** — the bridge environment. The production wiring
-  keys (`LIBREQOS_DPDK_USE_LPM_CLASSIFIER`,
-  `LIBREQOS_DPDK_TRANSACTION_FILE`, `LIBREQOS_ANALYTICS_SOCKET`, the LKG path)
-  live here. **Operators edit this file, never the systemd unit.**
-- **`/etc/libreqos/bridge.conf`** — typed JSON runtime config (`schema_version`).
-  Strict: an unknown field is rejected.
+- **`/etc/libreqos/lqos.conf`**: the main config (integrations, queues,
+  `[dataplane]` rates, `[flows] do_not_track_subnets`, license).
+- **`/etc/libreqos/bridge.env`**: the bridge's environment. Edit this file,
+  never the systemd unit.
+- **`/etc/libreqos/bridge.conf`**: typed JSON bridge config. An unknown key
+  stops the bridge from starting.
 
-Changing the **queue mode** (`shape` ↔ `observe`) is a **supervised restart** of
-`libreqos-bridge`, never a runtime toggle.
+Do not edit the generated files under `/etc/libreqos/bridge.env.d/`.
+
+Switching the queue mode between `shape` and `observe` takes a restart of
+`libreqos-bridge`.
 
 ## WebUI and API
 
-`lqosd` serves the operator dashboard and the local API. If the dashboard is dark
-while traffic flows, the analytics socket is missing or the web UI bundles were
-not installed (see `packaging/INSTALL.md`). The tree view is served over a
-WebSocket (not HTTP).
+`lqosd` serves the dashboard on port 9123 and the local API. The dashboard frame
+can be shown in English or Spanish; see [Web UI language](node-manager-i18n.md).
+If the dashboard is blank while traffic flows, see
+[Troubleshooting](troubleshooting.md).
 
 ## Support bundle
-
-Collect everything a support ticket needs with the packaged, read-only tool:
 
 ```bash
 sudo libreqos-support-bundle [outdir]
 ```
 
-It gathers systemd/journal state, the bridge log + leafstats, LKG metadata, the
-env/config, hugepages, links, `lspci`, and `dpdk-devbind`. It never restarts
-anything.
+This collects service and journal state, the bridge log and stats, the LKG
+metadata, the configs, hugepages, links, `lspci` and `dpdk-devbind` output. It
+is read-only and restarts nothing.
 
-## Deploy rule: the full matched set
+## Updating
 
-A `lqosd`/control change is the **control** package; a `bridge_rs` change is the
-**dataplane** package. Install the **full matched set** together, stop the bridge
-first, then `dpkg --configure -a`. Mixing a control-only candidate with an older
-dataplane is the silent-teardown class.
+Always install `libreqos`, `libreqos-preflight` and `libreqos-dataplane` at the
+same version, through apt; see the
+{ref}`beta-to-beta upgrade <v3-beta-upgrade>`. Mixing a new control
+plane with an older dataplane can stop shaping.

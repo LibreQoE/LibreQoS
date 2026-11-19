@@ -1,3 +1,5 @@
+import {formatDateTime} from "./i18n/format.js";
+import {t} from "./i18n/index.js";
 import {get_ws_client} from "./pubsub/ws";
 
 function escapeHtml(str) {
@@ -15,7 +17,7 @@ function escapeHtml(str) {
 function getCommentor() {
     const el = document.getElementById("username");
     const name = el ? (el.textContent || "").trim() : "";
-    return name || "Anonymous";
+    return name || t("help.comments.anonymous");
 }
 
 function statusBadge(status) {
@@ -29,15 +31,23 @@ function statusBadge(status) {
     return { cls: "text-bg-primary", label: "NEW" };
 }
 
+// The comment timestamps and the list's "Updated" line read the shared Intl
+// formatters: a page that builds a clock by hand renders an English date in
+// every locale, and the contract test rejects the call.
 function fmtUnix(ts) {
     if (!ts) {
         return "";
     }
     try {
-        return new Date(ts * 1000).toLocaleString();
+        return formatDateTime(new Date(ts * 1000));
     } catch {
         return "";
     }
+}
+
+/** The "Updated …" line around a formatted timestamp; empty when there is none. */
+function updateLine(time) {
+    return time ? t("common.state.updated", {time}) : "";
 }
 
 let wsClient = null;
@@ -60,25 +70,25 @@ function renderTicketList(tickets) {
     if (!list) return;
     if (!tickets || tickets.length === 0) {
         list.innerHTML = `<div class="text-body-secondary small px-2 py-3">
-            <i class="fa fa-inbox me-1"></i> No tickets yet.
+            <i class="fa fa-inbox me-1"></i> ${escapeHtml(t("help.tickets.empty"))}
         </div>`;
         return;
     }
 
     list.innerHTML = tickets
-        .map((t) => {
-            const badge = statusBadge(t.status);
-            const subject = escapeHtml(t.subject || "(no subject)");
-            const updated = fmtUnix(t.updated_at);
+        .map((ticket) => {
+            const badge = statusBadge(ticket.status);
+            const subject = escapeHtml(ticket.subject || t("help.tickets.no_subject"));
+            const updated = fmtUnix(ticket.updated_at);
             return `<button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-2"
-                    data-ticket-id="${t.id}">
+                    data-ticket-id="${ticket.id}">
                 <div class="me-auto">
                     <div class="fw-semibold">${subject}</div>
-                    <div class="text-body-secondary small">Updated ${escapeHtml(updated)}</div>
+                    <div class="text-body-secondary small">${escapeHtml(updateLine(updated))}</div>
                 </div>
                 <div class="d-flex flex-column align-items-end gap-1">
                     <span class="badge ${badge.cls}">${badge.label}</span>
-                    <span class="badge text-bg-light border">P${t.priority ?? 0}</span>
+                    <span class="badge text-bg-light border">P${ticket.priority ?? 0}</span>
                 </div>
             </button>`;
         })
@@ -95,10 +105,10 @@ function renderTicketList(tickets) {
 
 function setTicketViewLoading() {
     setAlert("ticketViewAlert", "");
-    $("#ticketViewSubject").text("Loading…");
+    $("#ticketViewSubject").text(t("common.state.loading"));
     $("#ticketViewMeta").text("");
     $("#ticketViewBody").text("");
-    $("#ticketViewComments").html(`<div class="text-body-secondary small"><i class="fa fa-spinner fa-spin me-1"></i> Loading…</div>`);
+    $("#ticketViewComments").html(`<div class="text-body-secondary small"><i class="fa fa-spinner fa-spin me-1"></i> ${escapeHtml(t("common.state.loading"))}</div>`);
     $("#ticketViewStatus").removeClass().addClass("badge text-bg-secondary").text("…");
     $("#ticketViewPriority").text("");
 }
@@ -116,13 +126,13 @@ function openTicket(ticketId) {
 
 function renderTicketView(ticket) {
     if (!ticket) {
-        setAlert("ticketViewAlert", "Ticket not found.");
+        setAlert("ticketViewAlert", t("help.ticket.not_found"));
         return;
     }
 
     $("#ticketViewSubject").text(ticket.subject || "");
     const meta = [`#${ticket.id}`];
-    if (ticket.updated_at) meta.push(`Updated ${fmtUnix(ticket.updated_at)}`);
+    if (ticket.updated_at) meta.push(updateLine(fmtUnix(ticket.updated_at)));
     $("#ticketViewMeta").text(meta.join(" • "));
 
     $("#ticketViewBody").text(ticket.body || "");
@@ -133,12 +143,12 @@ function renderTicketView(ticket) {
 
     const comments = ticket.comments || [];
     if (!comments.length) {
-        $("#ticketViewComments").html(`<div class="text-body-secondary small"><i class="fa fa-comment-dots me-1"></i> No comments yet.</div>`);
+        $("#ticketViewComments").html(`<div class="text-body-secondary small"><i class="fa fa-comment-dots me-1"></i> ${escapeHtml(t("help.comments.empty"))}</div>`);
         return;
     }
     const html = comments
         .map((c) => {
-            const who = escapeHtml(c.commentor || "Unknown");
+            const who = escapeHtml(c.commentor || t("help.comments.unknown_author"));
             const when = escapeHtml(fmtUnix(c.date));
             const body = escapeHtml(c.body || "");
             return `<div class="border rounded p-2">
@@ -155,7 +165,7 @@ function renderTicketView(ticket) {
 
 function refreshTickets() {
     $("#ticketList").html(`<div class="text-body-secondary small px-2 py-3">
-        <i class="fa fa-spinner fa-spin me-1"></i> Loading tickets…
+        <i class="fa fa-spinner fa-spin me-1"></i> ${escapeHtml(t("help.tickets.loading"))}
     </div>`);
     wsClient.send({ SupportTicketList: {} });
 }
@@ -178,15 +188,15 @@ function submitNewTicket() {
     const body = String($("#newTicketBody").val() || "").trim();
     const priority = parseInt(String($("#newTicketPriority").val() || "3"), 10);
     if (!subject) {
-        setAlert("newTicketAlert", "Subject is required.");
+        setAlert("newTicketAlert", t("help.ticket.subject_required"));
         return;
     }
     if (!body) {
-        setAlert("newTicketAlert", "Details are required.");
+        setAlert("newTicketAlert", t("help.ticket.details_required"));
         return;
     }
     if (Number.isNaN(priority) || priority < 0 || priority > 5) {
-        setAlert("newTicketAlert", "Priority must be between 0 and 5.");
+        setAlert("newTicketAlert", t("help.ticket.priority_invalid"));
         return;
     }
     wsClient.send({
@@ -203,11 +213,11 @@ function submitComment() {
     setAlert("ticketViewAlert", "");
     const body = String($("#ticketCommentBody").val() || "").trim();
     if (!currentTicketId) {
-        setAlert("ticketViewAlert", "No ticket selected.");
+        setAlert("ticketViewAlert", t("help.ticket.none_selected"));
         return;
     }
     if (!body) {
-        setAlert("ticketViewAlert", "Comment cannot be empty.");
+        setAlert("ticketViewAlert", t("help.comments.empty_error"));
         return;
     }
     $("#ticketCommentBody").val("");
@@ -249,7 +259,7 @@ function initSupportTickets() {
     if (btnRefresh) btnRefresh.disabled = !liveControlAvailable;
 
     if (!liveControlAvailable) {
-        setAlert("ticketListAlert", "license valid, control service unavailable");
+        setAlert("ticketListAlert", t("config.lts.alert.control_unavailable"));
     }
 
     wsClient = get_ws_client();
@@ -274,17 +284,22 @@ function initSupportTickets() {
     });
     wsClient.on("SupportTicketAddCommentResult", (msg) => {
         if (!msg.ok) {
-            setAlert("ticketViewAlert", "Failed to add comment.");
+            setAlert("ticketViewAlert", t("help.comments.add_failed"));
             return;
         }
         if (currentTicketId) {
             wsClient.send({ SupportTicketGet: { ticket_id: currentTicketId } });
         }
     });
+    // translatable: false — "Error" is the websocket event name this handler binds to, not a label
     wsClient.on("Error", (msg) => {
-        const message = msg && msg.message ? String(msg.message) : "Unknown error";
+        const message = msg && msg.message ? String(msg.message) : t("help.errors.unknown");
         if (
+            // The server sends this reason as English text; the comparison is a
+            // protocol check, not copy, so the literal stays out of the catalog.
+            // translatable: false — "Support tickets require an entitled license." is the server reason matched here to reveal the licence gate, never rendered from this literal
             message.includes("Support tickets require an entitled license.") ||
+            // translatable: false — "license valid, control service unavailable" is the server reason matched here to reveal the licence gate, never rendered from this literal
             message.includes("license valid, control service unavailable")
         ) {
             if (noInsight) noInsight.classList.remove("d-none");

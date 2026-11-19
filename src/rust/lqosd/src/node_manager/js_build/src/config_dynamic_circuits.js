@@ -5,6 +5,7 @@ import {
     saveConfig,
     validNodeList,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 const DEFAULT_TTL_SECONDS = 300;
 
@@ -121,7 +122,7 @@ function renderRangesTable() {
         const cell = document.createElement("td");
         cell.colSpan = 6;
         cell.className = "text-muted";
-        cell.textContent = "No rules configured.";
+        cell.textContent = t("config.dynamic_circuits.ranges.empty");
         empty.appendChild(cell);
         tbody.appendChild(empty);
         return;
@@ -177,8 +178,18 @@ function renderRangesTable() {
                 return group;
             };
 
-            container.appendChild(mkDir("fa-arrow-down", "Down Mbps", downValue, onDownChange));
-            container.appendChild(mkDir("fa-arrow-up", "Up Mbps", upValue, onUpChange));
+            container.appendChild(mkDir(
+                "fa-arrow-down",
+                t("config.dynamic_circuits.ranges.down_aria"),
+                downValue,
+                onDownChange,
+            ));
+            container.appendChild(mkDir(
+                "fa-arrow-up",
+                t("config.dynamic_circuits.ranges.up_aria"),
+                upValue,
+                onUpChange,
+            ));
             return container;
         };
 
@@ -190,19 +201,19 @@ function renderRangesTable() {
         };
 
         addCell(
-            "Name",
+            t("config.dynamic_circuits.ranges.name"),
             mkText(rule.name, (v) => {
                 window.config.dynamic_circuits.ranges[index].name = v;
-            }, "Rule name"),
+            }, t("config.dynamic_circuits.ranges.rule_name_placeholder")),
         );
         addCell(
-            "IP Range",
+            t("config.dynamic_circuits.ranges.ip_range"),
             mkText(rule.ip_range, (v) => {
                 window.config.dynamic_circuits.ranges[index].ip_range = v;
             }, "192.168.0.0/24"),
         );
         addCell(
-            "Min Mbps",
+            t("config.dynamic_circuits.ranges.min_mbps"),
             mkRatePair(
                 rule.download_min_mbps,
                 (v) => {
@@ -215,7 +226,7 @@ function renderRangesTable() {
             ),
         );
         addCell(
-            "Max Mbps",
+            t("config.dynamic_circuits.ranges.max_mbps"),
             mkRatePair(
                 rule.download_max_mbps,
                 (v) => {
@@ -229,16 +240,16 @@ function renderRangesTable() {
         );
         const attach = mkText(rule.attach_to, (v) => {
             window.config.dynamic_circuits.ranges[index].attach_to = v;
-        }, "Blank = root; or network.json node");
+        }, t("config.dynamic_circuits.ranges.attach_placeholder"));
         attach.setAttribute("list", "networkNodesDatalist");
-        addCell("Attach To", attach);
+        addCell(t("config.dynamic_circuits.ranges.attach_to"), attach);
 
         const removeTd = document.createElement("td");
-        removeTd.dataset.label = "Actions";
+        removeTd.dataset.label = t("common.table.actions");
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn btn-sm btn-outline-danger";
-        removeBtn.textContent = "Remove";
+        removeBtn.textContent = t("common.action.remove");
         removeBtn.addEventListener("click", () => {
             window.config.dynamic_circuits.ranges.splice(index, 1);
             renderRangesTable();
@@ -255,28 +266,28 @@ function validateConfig() {
 
     const dyn = window.config?.dynamic_circuits;
     if (!dyn || typeof dyn !== "object") {
-        errors.push("dynamic_circuits section is missing");
+        errors.push(t("config.dynamic_circuits.validation.section_missing"));
     } else {
         const ttl = parsePositiveInt(dyn.ttl_seconds);
         if (ttl === null) {
-            errors.push("Time to live must be a positive integer (seconds)");
+            errors.push(t("config.dynamic_circuits.validation.ttl"));
         }
 
         const ranges = Array.isArray(dyn.ranges) ? dyn.ranges : [];
         ranges.forEach((rule, index) => {
             const label = (rule?.name ?? "").trim()
-                ? `Rule '${String(rule.name).trim()}'`
-                : `Rule #${index + 1}`;
+                ? t("config.dynamic_circuits.validation.rule_named", {name: String(rule.name).trim()})
+                : t("config.dynamic_circuits.validation.rule_numbered", {index: index + 1});
 
             if (!String(rule?.name ?? "").trim()) {
-                errors.push(`${label}: Name is required`);
+                errors.push(t("config.dynamic_circuits.validation.name_required", {rule: label}));
             }
 
             const ipRange = normalizeIpRangeInput(rule?.ip_range);
             if (!ipRange) {
-                errors.push(`${label}: IP Range is required`);
+                errors.push(t("config.dynamic_circuits.validation.ip_required", {rule: label}));
             } else if (!isValidCIDR(ipRange)) {
-                errors.push(`${label}: IP Range must be a valid CIDR (e.g. 192.168.1.0/24). 0.0.0.0 and :: are allowed.`);
+                errors.push(t("config.dynamic_circuits.validation.ip_invalid", {rule: label}));
             }
 
             const dmin = parseFiniteFloat(rule?.download_min_mbps);
@@ -285,16 +296,16 @@ function validateConfig() {
             const umax = parseFiniteFloat(rule?.upload_max_mbps);
 
             if (dmin === null || umin === null || dmax === null || umax === null) {
-                errors.push(`${label}: All rate fields must be valid numbers`);
+                errors.push(t("config.dynamic_circuits.validation.rate_numbers", {rule: label}));
                 return;
             }
 
-            if (dmin < 0.1) errors.push(`${label}: Min Download must be >= 0.1 Mbps`);
-            if (umin < 0.1) errors.push(`${label}: Min Upload must be >= 0.1 Mbps`);
-            if (dmax < 0.2) errors.push(`${label}: Max Download must be >= 0.2 Mbps`);
-            if (umax < 0.2) errors.push(`${label}: Max Upload must be >= 0.2 Mbps`);
-            if (dmin > dmax) errors.push(`${label}: Min Download must be <= Max Download`);
-            if (umin > umax) errors.push(`${label}: Min Upload must be <= Max Upload`);
+            if (dmin < 0.1) errors.push(t("config.dynamic_circuits.validation.min_download", {rule: label}));
+            if (umin < 0.1) errors.push(t("config.dynamic_circuits.validation.min_upload", {rule: label}));
+            if (dmax < 0.2) errors.push(t("config.dynamic_circuits.validation.max_download", {rule: label}));
+            if (umax < 0.2) errors.push(t("config.dynamic_circuits.validation.max_upload", {rule: label}));
+            if (dmin > dmax) errors.push(t("config.dynamic_circuits.validation.download_order", {rule: label}));
+            if (umin > umax) errors.push(t("config.dynamic_circuits.validation.upload_order", {rule: label}));
         });
     }
 
@@ -302,7 +313,7 @@ function validateConfig() {
         return true;
     }
 
-    alert("Validation errors:\n" + errors.join("\n"));
+    alert(`${t("config.common.validation.header")}\n${errors.join("\n")}`);
     return false;
 }
 
@@ -373,7 +384,7 @@ loadConfig(() => {
         if (!validateConfig()) return;
         finalizeConfigForSave();
         saveConfig(() => {
-            alert("Configuration saved successfully!");
+            alert(t("config.dynamic_circuits.saved"));
         });
     });
 });

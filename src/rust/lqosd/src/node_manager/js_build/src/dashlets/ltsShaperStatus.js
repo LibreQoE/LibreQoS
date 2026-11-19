@@ -1,6 +1,9 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDiv, simpleRow, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Cadence" is the websocket event name the dashlet filters on, not a label
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -17,7 +20,7 @@ export class LtsShaperStatus extends BaseDashlet {
     }
 
     title() {
-        return "Shaper Status (Insight)";
+        return t("dashlet.name.insight_shaper_status");
     }
 
     canBeSlowedDown() {
@@ -25,7 +28,7 @@ export class LtsShaperStatus extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>Shaper Status</h5><p>Status from each of the LibreQoS shapers you are running.</p>";
+        return `<h5>${t("dashlet.lts_shaper_status.heading")}</h5><p>${t("dashlet.lts_shaper_status.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -60,8 +63,8 @@ export class LtsShaperStatus extends BaseDashlet {
                     table.classList.add("lqos-table", "lqos-table-compact", "small");
                     let thead = document.createElement("thead");
                     thead.appendChild(theading(""));
-                    thead.appendChild(theading("Shaper"));
-                    thead.appendChild(theading("Last Seen (seconds)"));
+                    thead.appendChild(theading(t("common.label.shaper")));
+                    thead.appendChild(theading(t("common.table.last_seen_seconds")));
                     table.appendChild(thead);
                     let tbody = document.createElement("tbody");
 

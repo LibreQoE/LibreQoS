@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import test from "node:test";
 
-import {
+// `TOPOLOGY_SOURCES` renders its labels and descriptions through the catalog
+// when the module loads, so the English catalog has to be on `window` first:
+// static imports run before any statement here, hence the dynamic import.
+const EN = JSON.parse(readFileSync(new URL("../../static2/i18n/en.json", import.meta.url), "utf8"));
+globalThis.window = { configView: {}, LQOS_I18N_EN: EN };
+
+const {
     TOPOLOGY_SOURCES,
     buildTopologyConfigUpdate,
     topologyEditorsLockMessage,
     topologyEditorsLocked,
-} from "./config/topology_source.js";
-
-globalThis.window = { configView: {} };
+} = await import("./config/topology_source.js");
 
 const integrationSources = TOPOLOGY_SOURCES.filter((entry) => entry.integration);
 

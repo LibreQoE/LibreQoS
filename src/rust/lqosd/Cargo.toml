@@ -29,6 +29,7 @@ lqos_probe = { path = "../lqos_probe" }
 lqos_radius = { path = "../lqos_radius" }
 lqos_netplan_helper = { path = "../lqos_netplan_helper" }
 lqos_setup = { path = "../lqos_setup" }
+dudarchy-poller = { path = "../dudarchy_poller" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
@@ -56,6 +57,9 @@ fxhash = "0.2.1"
 axum = { version = "0.8.9", features = ["ws"] }
 axum-extra = {  version = "0.10.3", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.6.1", features = ["fs"] }
+# The assets-only fallback implements tower::Service in PRODUCTION
+# (static_pages.rs); the release/deb build does not see dev-dependencies.
+tower = { version = "0.5", features = ["util"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
 rand = { version = "0.8.6", default-features = false, features = ["std", "std_rng"] }
@@ -88,6 +92,5 @@ allocative_derive.workspace = true
 futures-util = "0.3.31"
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1", features = [ "full", "test-util" ] }
 toml = { workspace = true }

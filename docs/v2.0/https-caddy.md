@@ -45,7 +45,7 @@ If you want to back out, open `Configuration -> SSL Setup` and choose `Disable S
 LibreQoS then:
 
 - removes the managed Caddy configuration
-- restores the previous direct WebUI listener, or the normal default `:::9123` if no custom listener was set first
+- restores the previous direct WebUI listener, or the loopback default `127.0.0.1:9123` if no custom listener was set first
 - returns operators to direct HTTP access on the management IP and port `9123`
 
 ## Related Pages

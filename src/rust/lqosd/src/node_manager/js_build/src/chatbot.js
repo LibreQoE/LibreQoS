@@ -1,5 +1,10 @@
 // Node Manager Chatbot UI using unified websocket client
 import { get_ws_client } from "./pubsub/ws";
+import { t } from "./i18n/index.js";
+
+// translatable: false — "msg me" "msg bot" "meta muted" "bubble muted" are CSS class names
+// translatable: false — "Libby" is the assistant's product name
+// translatable: false — "data:" and "Enter" are the SSE field prefix and a keyboard key, not copy
 
 const log = document.getElementById('chatLog');
 const input = document.getElementById('chatInput');
@@ -29,10 +34,10 @@ function ensureInsightNotice() {
         <div>
           <div class="fw-semibold">${
             chatbotEnabled
-              ? "License valid, control service unavailable."
-              : "Libby requires an entitled license."
+              ? t("chatbot.notice.control_unavailable")
+              : t("chatbot.notice.entitled_required")
           }</div>
-          <a class="alert-link" href="config_lts.html">Open License &amp; Services</a> to review availability for this node.
+          <a class="alert-link" href="config_lts.html">${t("help.tickets.open_license")}</a> ${t("chatbot.notice.link_tail")}
         </div>
       </div>`;
     chatWrap.insertBefore(notice, chatLog);
@@ -49,14 +54,14 @@ function disableChatWhenUnavailable() {
   if (input) {
     input.disabled = true;
     input.placeholder = chatbotEnabled
-      ? 'license valid, control service unavailable'
-      : 'An entitled license is required to chat with Libby';
+      ? t("config.lts.alert.control_unavailable")
+      : t("chatbot.composer.entitled_placeholder");
   }
   if (sendBtn) {
     sendBtn.disabled = true;
     sendBtn.title = chatbotEnabled
-      ? 'license valid, control service unavailable'
-      : 'Enable an entitled license to chat with Libby';
+      ? t("config.lts.alert.control_unavailable")
+      : t("chatbot.composer.entitled_title");
   }
 }
 
@@ -236,10 +241,10 @@ if (libbyAvailable) {
       handleStreamText(msg.text);
     }
   });
-  appendSys("Connected to Libby");
+  appendSys(t("chatbot.status.connected"));
   client.send({ Private: { Chatbot: { browser_ts_ms: Date.now() } } });
 } else {
-  appendSys("Libby requires an entitled license. Open License & Services to enable chat.");
+  appendSys(t("chatbot.status.unavailable"));
 }
 
 function sendText() {

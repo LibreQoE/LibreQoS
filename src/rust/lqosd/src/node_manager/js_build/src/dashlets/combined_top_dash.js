@@ -1,4 +1,5 @@
 import {BaseCombinedDashlet} from "./base_combined_dashlet";
+import {t} from "../i18n/index.js";
 import {Top10Downloaders} from "./top10_downloaders";
 import {Top10FlowsRate} from "./top10flows_rate";
 import {Top10FlowsBytes} from "./top10flows_bytes";
@@ -20,7 +21,7 @@ export class CombinedTopDashlet extends BaseCombinedDashlet {
     }
 
     title() {
-        return "Top-10 Downloaders";
+        return t("dashlet.name.top_10_downloaders");
     }
 
     canBeSlowedDown() {

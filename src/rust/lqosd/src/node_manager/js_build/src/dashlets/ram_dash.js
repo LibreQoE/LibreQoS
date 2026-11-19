@@ -1,6 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {RamPie} from "../graphs/ram_pie";
+import {t} from "../i18n/index.js";
 
 export class RamDash extends BaseDashlet{
     constructor(slot) {
@@ -8,11 +9,11 @@ export class RamDash extends BaseDashlet{
     }
 
     title() {
-        return "RAM Utilization";
+        return t("dashlet.name.ram_utilization");
     }
 
     tooltip() {
-        return "<h5>RAM Utilization</h5><p>Percentage of RAM used and free. This includes both LibreQoS and anything else running on the server.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.ram.tooltip")}</p>`;
     }
 
     supportsZoom() {

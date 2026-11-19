@@ -6,12 +6,14 @@ import {
     cakeCommonXAxis,
     cakeHistoryWindow,
     cakeScatterSeries,
+    cakeLegendFormatter,
     cakeTooltip,
     formatCakeMillisecondsFromUs,
     CAKE_TIN_LEGEND_PAIRS,
     attachLegendPairMirror,
     cakeTinIndexFor,
 } from "./cake_history";
+import {t} from "../i18n/index.js";
 
 export class CakeDelays extends DashboardGraph {
     constructor(id) {
@@ -20,18 +22,20 @@ export class CakeDelays extends DashboardGraph {
         attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
-            title: cakeChartTitle("Delays", "Milliseconds"),
+            title: cakeChartTitle(t("graph.cake.delays"), t("graph.axis.milliseconds")),
             grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
                 // do NOT set selectedMode:false — it disables the legend + the mirror
+                formatter: cakeLegendFormatter,
                 textStyle: {
                     color: '#aaa'
                 },
                 data: [
                     {
+            // translatable: false — "Bulk" "Best Effort" "RT Video" "Voice" "Bulk Up" "Best Effort Up" "RT Video Up" "RT Voice Up" — CAKE tin series identifiers the legend formatter and the paired-upload mirror match on
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {
@@ -106,8 +110,8 @@ export class CakeDelays extends DashboardGraph {
         // cobalt base delay — label it honestly. The kernel path keeps the
         // legacy "Delays" title (base_delay_us).
         this.option.title = cakeChartTitle(
-            msg && msg.per_direction ? "Delay p99" : "Delays",
-            "Milliseconds",
+            msg && msg.per_direction ? t("graph.cake.delay_p99") : t("graph.cake.delays"),
+            t("graph.axis.milliseconds"),
         );
 
         for (let i=0; i<8; i++) {

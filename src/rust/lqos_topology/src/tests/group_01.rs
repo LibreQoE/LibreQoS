@@ -733,6 +733,125 @@
 
 
     #[test]
+    fn canonical_operator_min_floors_node_commit_before_sum_recompile() {
+        // lqos-74t190: a native-ingress tree carries ceil only, so the commit
+        // recompile would see existing = 0 and collapse the node to the raw
+        // circuit sum. Seeding from the canonical compatibility network must
+        // keep the operator floor: node min 8 with circuits at 1 stays 8, and
+        // the site (min 12 on a 12 ceil) clamps just below its ceil.
+        let mut network = json!({
+            "Ship": {
+                "id": "ship", "name": "Ship",
+                "downloadBandwidthMbps": 12.0, "uploadBandwidthMbps": 12.0,
+                "children": {
+                    "Crew": {
+                        "id": "crew", "name": "Crew",
+                        "downloadBandwidthMbps": 10.0, "uploadBandwidthMbps": 10.0,
+                        "children": {}
+                    },
+                    "Guest": {
+                        "id": "guest", "name": "Guest",
+                        "downloadBandwidthMbps": 12.0, "uploadBandwidthMbps": 12.0,
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let canonical = json!({
+            "Ship": {
+                "id": "ship",
+                "downloadBandwidthMbpsMin": 12, "uploadBandwidthMbpsMin": 12,
+                "children": {
+                    "Crew": {
+                        "id": "crew",
+                        "downloadBandwidthMbpsMin": 8, "uploadBandwidthMbpsMin": 8,
+                        "children": {}
+                    },
+                    "Guest": {
+                        "id": "guest",
+                        "downloadBandwidthMbpsMin": 1, "uploadBandwidthMbpsMin": 1,
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let inputs: TopologyShapingInputsFile = serde_json::from_value(json!({
+            "circuits": [
+                {
+                    "circuit_id": "c1", "circuit_name": "C1",
+                    "effective_parent_node_name": "Crew",
+                    "effective_parent_node_id": "crew",
+                    "download_min_mbps": 1.0, "upload_min_mbps": 1.0,
+                    "download_max_mbps": 10.0, "upload_max_mbps": 10.0
+                },
+                {
+                    "circuit_id": "c2", "circuit_name": "C2",
+                    "effective_parent_node_name": "Guest",
+                    "effective_parent_node_id": "guest",
+                    "download_min_mbps": 1.0, "upload_min_mbps": 1.0,
+                    "download_max_mbps": 12.0, "upload_max_mbps": 12.0
+                }
+            ]
+        }))
+        .expect("shaping inputs should deserialize");
+
+        crate::seed_effective_commits_from_canonical(
+            network.as_object_mut().expect("network object"),
+            &canonical,
+        );
+        recompile_effective_network_commits(&mut network, &inputs);
+
+        assert_eq!(
+            network["Ship"]["downloadBandwidthMbpsMin"].as_u64(),
+            Some(11),
+            "site min 12 on a 12 ceil clamps strictly below the ceil"
+        );
+        assert_eq!(
+            network["Ship"]["children"]["Crew"]["downloadBandwidthMbpsMin"].as_u64(),
+            Some(8),
+            "operator node min 8 must survive the circuit-sum recompile"
+        );
+        assert_eq!(
+            network["Ship"]["children"]["Guest"]["downloadBandwidthMbpsMin"].as_u64(),
+            Some(1),
+            "operator node min 1 is kept"
+        );
+    }
+
+    #[test]
+    fn canonical_seed_is_a_noop_without_operator_mins() {
+        // lqos-74t190 item 3: the seed is a max() floor, not a rewrite. A
+        // world with no operator mins must leave the effective tree untouched.
+        let mut network = json!({
+            "Site": {
+                "id": "site", "name": "Site",
+                "downloadBandwidthMbps": 12.0, "uploadBandwidthMbps": 12.0,
+                "children": {
+                    "AP": {
+                        "id": "ap", "name": "AP",
+                        "downloadBandwidthMbps": 10.0, "uploadBandwidthMbps": 10.0,
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let before = network.clone();
+        let canonical = json!({
+            "Site": {
+                "id": "site",
+                "children": {
+                    "AP": { "id": "ap", "children": {} }
+                }
+            }
+        });
+        crate::seed_effective_commits_from_canonical(
+            network.as_object_mut().expect("network object"),
+            &canonical,
+        );
+        assert_eq!(network, before, "no operator mins => byte-identical tree");
+    }
+
+    #[test]
     fn publish_marks_runtime_not_ready_when_shaping_inputs_are_absent() {
         let lqos_directory = unique_temp_dir("lqos-topology-publish-no-shaping-inputs");
         let config = Config {

@@ -1,6 +1,11 @@
 import {RttHistogram} from "../graphs/rtt_histo";
 import {RttHistogramTimeseries} from "../graphs/rtt_histo_timeseries";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+
+// translatable: false — "RttHistogram" is the websocket event name the dashlet filters on, not a label
 
 export class RttHistoDash extends DashletBaseInsight {
     constructor(slot) {
@@ -8,11 +13,11 @@ export class RttHistoDash extends DashletBaseInsight {
     }
 
     title() {
-        return "Round-Trip Time Histogram";
+        return t("dashlet.name.round_trip_time_histogram");
     }
 
     tooltip() {
-        return "<h5>Round-Trip Time Histogram</h5><p>Round-Trip Time Histogram, showing the distribution of round-trip times for packets in real-time.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.rtt_histo.tooltip")}</p>`;
     }
 
     supportsZoom() {

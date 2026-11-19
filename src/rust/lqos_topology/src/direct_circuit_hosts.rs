@@ -96,7 +96,7 @@ fn load_direct_circuit_hosts(
     else {
         return Ok(DirectCircuitHosts::default());
     };
-    let runtime_devices = apply_runtime_shaped_device_overrides(
+    let (runtime_devices, _replaced_rows) = apply_runtime_shaped_device_overrides(
         std::mem::take(&mut shaped_devices.devices),
         &runtime_overrides,
     );

@@ -1,3 +1,5 @@
+// translatable: false — "rgb( , , )" is the CSS colour function the channel triple builds
+// translatable: false — "buildHexGeometry: options.project is required" is a programmer-error message for a missing option
 // Flow Globe maths (bead lqos-74t.50, card docs/flow_globe_hexbin_card.md
 // §3 WG1/WG1.1, WG2.2, WG2.2-B and WG4). Browser-free (no THREE, no DOM) so the
 // node contract tests can exercise the grid, aggregation and geometry packing.

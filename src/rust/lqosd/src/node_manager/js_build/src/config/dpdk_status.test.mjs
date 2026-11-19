@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {dpdkKindLabel, normalizeDpdkStatus, normalizeWorkerCount} from "./dpdk_status.mjs";
+import {clearCatalogs, EN, ES, installCatalogs, installKeyEchoCatalogs} from "../../i18n/test_catalogs.mjs";
+
+test.beforeEach(() => {
+    installCatalogs();
+});
+
+test.afterEach(() => {
+    clearCatalogs();
+});
 
 test("labels known kinds and rejects unknown ones", () => {
     assert.equal(dpdkKindLabel("running"), "Running");
@@ -9,6 +18,30 @@ test("labels known kinds and rejects unknown ones", () => {
     assert.equal(dpdkKindLabel("configured"), "Configured");
     assert.equal(dpdkKindLabel("bogus"), "Unknown");
     assert.equal(dpdkKindLabel(undefined), "Unknown");
+});
+
+test("every kind and worker-count message maps to a key both catalogs define", () => {
+    installKeyEchoCatalogs();
+    const rendered = [
+        dpdkKindLabel("running"),
+        dpdkKindLabel("effective"),
+        dpdkKindLabel("configured"),
+        dpdkKindLabel("bogus"),
+        normalizeWorkerCount("two").error,
+        normalizeWorkerCount("0").error,
+    ];
+    for (const key of rendered) {
+        assert.equal(typeof EN.messages[key], "string", `${key} is missing from en.json`);
+        assert.equal(typeof ES.messages[key], "string", `${key} is missing from es.json`);
+    }
+});
+
+test("the kind labels follow the Spanish catalog", () => {
+    installCatalogs(ES);
+    assert.equal(dpdkKindLabel("running"), "En ejecución");
+    assert.equal(dpdkKindLabel("effective"), "Efectivo");
+    assert.equal(dpdkKindLabel("configured"), "Configurado");
+    assert.equal(dpdkKindLabel("bogus"), "Desconocido");
 });
 
 test("worker count accepts blank and positive whole numbers", () => {

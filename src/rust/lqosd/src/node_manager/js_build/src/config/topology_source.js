@@ -1,3 +1,7 @@
+import {t} from "../i18n/index.js";
+
+// One entry per topology source. Product names stay literal in both locales;
+// the labels and descriptions operators read are catalog text.
 export const TOPOLOGY_SOURCES = [
     {
         value: "uisp",
@@ -5,7 +9,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableUisp",
         modes: ["flat", "ap_only", "ap_site", "full"],
-        description: "UISP is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "UISP"}),
     },
     {
         value: "splynx",
@@ -13,7 +17,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableSplynx",
         modes: ["flat", "ap_only", "ap_site", "full"],
-        description: "Splynx is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "Splynx"}),
     },
     {
         value: "netzur",
@@ -21,7 +25,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableNetzur",
         modes: ["full"],
-        description: "Netzur is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "Netzur"}),
     },
     {
         value: "visp",
@@ -29,7 +33,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableVisp",
         modes: ["full"],
-        description: "VISP is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "VISP"}),
     },
     {
         value: "sonar",
@@ -37,7 +41,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableSonar",
         modes: ["flat", "full"],
-        description: "Sonar is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "Sonar"}),
     },
     {
         value: "powercode",
@@ -45,7 +49,7 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enablePowercode",
         modes: ["full"],
-        description: "Powercode is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "Powercode"}),
     },
     {
         value: "wispgate",
@@ -53,23 +57,23 @@ export const TOPOLOGY_SOURCES = [
         integration: true,
         domId: "enableWispgate",
         modes: ["full"],
-        description: "WispGate is the topology producer.",
+        description: t("config.common.topology_source.producer", {integration: "WispGate"}),
     },
     {
         value: "shaped_devices",
-        label: "Shaped devices",
+        label: t("config.common.topology_source.shaped_devices"),
         integration: false,
         domId: null,
         modes: ["flat", "ap_only", "ap_site", "full"],
-        description: "Use the manual ShapedDevices.csv + network.json pair.",
+        description: t("config.common.topology_source.shaped_devices_help"),
     },
     {
         value: "libreqos_network",
-        label: "LibreQoS network",
+        label: t("config.common.topology_source.libreqos_network"),
         integration: false,
         domId: null,
         modes: ["flat", "ap_only", "ap_site", "full"],
-        description: "Use the libreqos_network.json watched drop.",
+        description: t("config.common.topology_source.libreqos_network_help"),
     },
 ];
 
@@ -113,18 +117,23 @@ export function topologyEditorsLockMessage(config) {
     const conflict = topologyConflictMessage();
     if (source === "shaped_devices") {
         if (!conflict) return "";
+        // The server's conflict text is English and already self-describing;
+        // it is only re-prefixed when the payload arrives without one.
+        // translatable: false — "topology source conflict" is the server message prefix this check matches verbatim
         return conflict.toLowerCase().startsWith("topology source conflict")
             ? conflict
-            : `Topology source conflict: ${conflict}`;
+            : t("config.common.topology_source.conflict", {detail: conflict});
     }
     if (!source) {
         return conflict
-            ? `No topology source is selected. ${conflict}`
-            : "No topology source is selected.";
+            ? t("config.common.topology_source.none_selected_detail", {detail: conflict})
+            : t("config.common.topology_source.none_selected");
     }
     const base = source === "libreqos_network"
-        ? "Topology is produced by the libreqos_network.json drop."
-        : `Topology is produced by ${topologySourceLabel(source) || source}. Change Topology Source to edit manually.`;
+        ? t("config.common.topology_source.from_drop")
+        : t("config.common.topology_source.from_integration", {
+            integration: topologySourceLabel(source) || source,
+        });
     return conflict ? `${base} ${conflict}` : base;
 }
 

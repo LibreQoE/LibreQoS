@@ -1,0 +1,7 @@
+{
+  "schema_version": 2,
+  "id": "ip-address-wrong-netmask-parser",
+  "detect": { "sys_descr_contains": ["X"] },
+  "surfaces": [{ "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }],
+  "probes": [{ "id": "addresses", "surface": "snmp", "read": { "kind": "table", "table": { "columns": [{ "name": "if_index", "oid": "1.3.6.1.2.1.4.20.1.2", "parser": "u32" }, { "name": "netmask", "oid": "1.3.6.1.2.1.4.20.1.3", "parser": "utf8" }], "index": { "kind": "ip_address_v4" } } } }]
+}

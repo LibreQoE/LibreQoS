@@ -358,12 +358,12 @@
     <section class="lqos-config-panel">
         <div class="lqos-config-panel-header">
             <div>
-                <h5 class="lqos-config-panel-title"><i class="fa fa-microchip me-2"></i>CPU &amp; Workers</h5>
+                <h5 class="lqos-config-panel-title" data-i18n="common.nav.cpu_workers"><i class="fa fa-microchip me-2"></i>CPU &amp; Workers</h5>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="badge bg-secondary" id="cpuWorkersState">Loading…</span>
-                <span class="text-muted small" id="cpuWorkersUpdated">Waiting for data</span>
-                <button class="btn btn-sm btn-outline-secondary" id="cpuWorkersRefresh" type="button">
+                <span class="badge bg-secondary" id="cpuWorkersState" data-i18n="common.state.loading">Loading...</span>
+                <span class="text-muted small" id="cpuWorkersUpdated" data-i18n="common.state.waiting">Waiting for data</span>
+                <button class="btn btn-sm btn-outline-secondary" id="cpuWorkersRefresh" type="button" data-i18n="common.action.refresh">
                     <i class="fa fa-rotate me-1"></i>Refresh
                 </button>
             </div>
@@ -372,21 +372,23 @@
         <div id="cpuWorkersReasons" class="mb-3 cpu-workers-note" aria-live="polite"></div>
 
         <div class="cpu-summary-line">
-            <span><strong id="cpuWorkersCpuCount">—</strong> cores</span>
-            <span><strong id="cpuWorkersShapingCount">—</strong> shaping</span>
-            <span><strong id="cpuWorkersShardedCount">—</strong> sharded sites</span>
-            <span><strong id="cpuWorkersUnowned">—</strong> unowned</span>
+            <span data-i18n="cpu_workers.cores"><strong id="cpuWorkersCpuCount">—</strong> cores</span>
+            <span data-i18n="cpu_workers.shaping"><strong id="cpuWorkersShapingCount">—</strong> shaping</span>
+            <span data-i18n="cpu_workers.sharded_sites"><strong id="cpuWorkersShardedCount">—</strong> sharded sites</span>
+            <span data-i18n="cpu_workers.unowned"><strong id="cpuWorkersUnowned">—</strong> unowned</span>
         </div>
 
         <div class="lqos-config-section cpu-detail-layout">
             <div class="cpu-detail-pane">
-                <h6 class="mb-2">Cores</h6>
-                <div id="cpuWorkersCpuList" class="cpu-meter-list">Waiting for the CPU sampler…</div>
+                <h6 class="mb-2 d-flex flex-wrap align-items-center gap-2" data-i18n="cpu_workers.cores_heading">Cores
+                    <span id="cpuWorkersFleet" class="badge bg-secondary" data-i18n="cpu_workers.fleet_badge">Worker occupancy (poll-excluded)</span>
+                </h6>
+                <div id="cpuWorkersCpuList" class="cpu-meter-list" data-i18n="cpu_workers.waiting_sampler">Waiting for the CPU sampler…</div>
             </div>
             <div class="cpu-detail-pane cpu-detail-selected">
                 <div class="cpu-detail-header">
                     <div>
-                        <h6 class="mb-1" id="cpuSelectedTitle">Select a CPU</h6>
+                        <h6 class="mb-1" id="cpuSelectedTitle" data-i18n="cpu_workers.select_cpu">Select a CPU</h6>
                     </div>
                     <div id="cpuSelectedBadges" class="d-flex flex-wrap gap-1 justify-content-end"></div>
                 </div>

@@ -1,10 +1,14 @@
-// `.64.4` (R1.2): the pure, import-free Executive heatmap LABEL builders.
+// `.64.4` (R1.2): the pure Executive heatmap LABEL builders.
 //
 // These live in their own module (re-exported by `executive_utils.js`) so the
 // fit oracle and the `node --test` unit tests can import the SHIPPED builders
 // without pulling in the WebSocket runtime: `executive_utils.js` uses
 // extensionless relative imports that Node's ESM resolver cannot load, so a
-// test cannot import it directly. No imports here on purpose — keep it that way.
+// test cannot import it directly. The i18n renderer is the one import the
+// module takes: it is Node-safe, so a contract test can still render these
+// labels in both locales.
+
+import {t} from "./i18n/index.js";
 
 export const TYPE_MONO = {
     Site: {letter: "S", slug: "site"},
@@ -26,14 +30,47 @@ export function typeMonoMarkup(badge) {
     if (!mono) {
         return "";
     }
-    return `<span class="exec-type-mono exec-type-mono--${mono.slug}" title="${key}">${mono.letter}</span>`;
+    return `<span class="exec-type-mono exec-type-mono--${mono.slug}" title="${entityKindLabel(key)}">${mono.letter}</span>`;
 }
 
-export const ROW_KIND_CAPTION = {
-    Site: "sites",
-    Circuit: "circuits",
-    Asn: "ASNs",
-};
+/**
+ * The translated name of an entity-kind badge WORD.
+ *
+ * The word is also the type IDENTITY — `badgeForEntityKind` emits it,
+ * `redactClass` and `TYPE_MONO` compare it, and the caption switches on it — so
+ * it stays an English token in the data and only the rendered label translates.
+ * A word with no translation (`ASN`, whose acronym reads the same in both
+ * locales, or `Global`) passes through unchanged.
+ * @param {string} badge Entity-kind badge word.
+ * @returns {string}
+ */
+function entityKindLabel(badge) {
+    // translatable: false — "Site" "Circuit" "Asn" — the entity-kind tokens the server emits and every switch in this module compares, never rendered as-is
+    switch (String(badge || "")) {
+    case "Site":
+        return t("topology.node_kind.site");
+    case "Circuit":
+        return t("common.table.circuit");
+    default:
+        return String(badge || "");
+    }
+}
+
+/**
+ * The caption word for one rendered entity kind. One literal `t()` call per
+ * branch: the catalog extractor reads keys, it does not run code, so a table of
+ * keys would read as unused.
+ * @param {string} kind Entity kind as the server reports it.
+ * @returns {string}
+ */
+function kindCaption(kind) {
+    switch (kind) {
+        case "Site": return t("executive.heat.kind.sites");
+        case "Circuit": return t("executive.heat.kind.circuits");
+        case "Asn": return t("executive.heat.kind.asn");
+        default: return "";
+    }
+}
 
 /**
  * `.64` (v2): the panel caption DERIVED from the ACTUAL rendered rows' kinds
@@ -42,29 +79,38 @@ export const ROW_KIND_CAPTION = {
  * RTT panel can legitimately contain ASN rows. Returns "" when no kind is known.
  */
 export function heatRowsCaption(rows) {
-    const labels = [];
-    for (const kind of ["Site", "Circuit", "Asn"]) {
-        if (rows.some((row) => String(row?.entity_kind || "") === kind)) {
-            labels.push(ROW_KIND_CAPTION[kind]);
-        }
-    }
+    const labels = ["Site", "Circuit", "Asn"]
+        .filter((kind) => rows.some((row) => String(row?.entity_kind || "") === kind))
+        .map(kindCaption);
     if (!labels.length) {
         return "";
     }
     if (labels.length === 1) {
         return labels[0];
     }
-    return `${labels.slice(0, -1).join(", ")} & ${labels[labels.length - 1]}`;
+    if (labels.length === 2) {
+        return t("executive.heat.caption.two", {first: labels[0], second: labels[1]});
+    }
+    return t("executive.heat.caption.three", {
+        first: labels[0],
+        second: labels[1],
+        third: labels[2],
+    });
 }
 
 /**
  * `.64.4` (R1.3): the SINGLE source for a heat row's `aria-label` value. The
- * badge WORD is preserved even when the visible monogram is dropped (an unknown
- * badge renders no chip), so an ASN row can never masquerade as a circuit. The
- * row builders wrap this in `aria-label="…"`; `beforeLatest` injects the metric
- * word (e.g. "RTT") while keeping the exact legacy strings.
+ * badge WORD is preserved as the type identity even when the visible monogram is
+ * dropped (an unknown badge renders no chip), so an ASN row can never masquerade
+ * as a circuit; the word and the "latest" frame are rendered through the
+ * catalog, and `beforeLatest` injects the metric word (e.g. "RTT").
  */
 export function heatRowAriaLabel(label, badge, latestLabel, beforeLatest = "") {
     const metric = beforeLatest ? `${beforeLatest} ` : "";
-    return `${label} ${badge || ""} latest ${metric}${latestLabel}`;
+    return t("executive.heat.aria.row", {
+        label,
+        kind: entityKindLabel(badge),
+        metric,
+        value: latestLabel,
+    });
 }

@@ -99,7 +99,8 @@ RUSTPROGS=(
 #   BRIDGE_ROOT  engine tree root (default: the monorepo root)
 BRIDGE_PKG="${BRIDGE_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}/packaging"
 for f in systemd/libreqos-lqosd.service systemd/libreqos-setup.service \
-         systemd/libreqos-power.service \
+         systemd/libreqos-power.service systemd/libreqos-hugepages-numa.service \
+         libexec/libreqos-hugepages-numa \
          libexec/libreqos-setup-check libexec/libreqos-support-bundle \
          libexec/libreqos-api-legacy-cleanup libexec/libreqos-v3-rollback \
          libexec/libreqos-tx-pin-migrate \
@@ -259,6 +260,23 @@ fi
 }
 persist_hugepages
 
+# beta20.8: place the reservation on the DATA-PLANE NIC's NUMA node. A plain
+# total is split by the kernel across nodes and the mbuf pool (one socket) then
+# fails with a bare NULL on the node that holds half. The helper shrinks the
+# other nodes to 0 (verified) and grows the NIC's node, refusing a moved NIC or
+# an unfittable node. A refused placement is a loud WARNING here (the install
+# still completes; the bridge preflight re-checks and fails loud).
+place_hugepages_numa() {
+    local helper="${DPKG_DIR:-}/usr/libexec/libreqos-hugepages-numa"
+    [ -x "$helper" ] || helper="/usr/libexec/libreqos-hugepages-numa"
+    if [ -x "$helper" ]; then
+        if ! "$helper"; then
+            echo "libreqos postinst: WARNING: hugepage NUMA placement refused (see above); the bridge preflight will fail loud until it is resolved" >&2
+        fi
+    fi
+}
+place_hugepages_numa
+
 # The v3 SERVICE user is `lqosuser` (system, nologin, own group) — NEVER
 # `libreqos`: operators log in as `libreqos` on the ISP fleet, and adopting a
 # human login as the service identity would key the segment/socket/sudoers to
@@ -371,6 +389,15 @@ else
   echo "libreqos postinst: the dataplane is not installed (fetch failed or offline); the bridge unit is left as-is" >&2
 fi
 
+# beta20.8 (pre-tag gate, 2026-11-14): the per-node hugepage placement
+# oneshot is installed by THIS package, but libreqos-bridge.service's
+# `Before=` only ORDERS it — it never pulls it in. Enable it here so a fresh
+# install AND an upgrade actually run the placement at boot (without this the
+# U2 per-node provisioning is inert after the postrm's disable pass).
+if [ -e /etc/systemd/system/libreqos-hugepages-numa.service ]; then
+  /bin/systemctl enable libreqos-hugepages-numa.service 2>/dev/null || true
+fi
+
 # There is no API unit and no API binary any more: the API is a library inside
 # lqosd. The FILES below are the only thing left to sweep, and they belong to
 # the unofficially-installed world: the floating `api3.zip` fetch (via the old
@@ -430,8 +457,8 @@ EOF
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power || true
-/bin/systemctl disable libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power || true
+/bin/systemctl stop libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power libreqos-hugepages-numa || true
+/bin/systemctl disable libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power libreqos-hugepages-numa || true
 # A legacy `libreqos-api.service` is removed by the postinst's cleanup helper on
 # the next install/upgrade; nothing here depends on it existing.
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
@@ -568,11 +595,32 @@ WHEEL_CONSTRAINT_ARGS=()
 if [ -f deb-requirements-constraints.txt ]; then
   WHEEL_CONSTRAINT_ARGS=(-c deb-requirements-constraints.txt)
 fi
-python3 -m pip wheel --disable-pip-version-check --no-cache-dir \
-  --wheel-dir "$PY_WHEELHOUSE" "${WHEEL_CONSTRAINT_ARGS[@]}" -r ../requirements.txt \
+# Build the PORTABLE wheelhouse by downloading for the NEWEST supported
+# interpreter (26.04 / CPython 3.14) with binary-only resolution: a package
+# that publishes both a portable (`py3-none-any`) and a CPython-specific
+# wheel resolves to the portable one only when the target ABI has no
+# CPython-specific build (charset-normalizer 3.4.0 is the concrete case).
+# `pip wheel` on 24.04/3.12 would pick the cp312 binary wheel and fail the
+# portability guard below. `abi3` wheels (psutil) are forward-compatible.
+python3 -m pip download --disable-pip-version-check --no-cache-dir \
+  --only-binary=:all: \
+  --python-version 3.14 --implementation cp \
+  --abi cp314 --abi abi3 --abi none \
+  --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 \
+  --dest "$PY_WHEELHOUSE" "${WHEEL_CONSTRAINT_ARGS[@]}" -r ../requirements.txt \
   || { echo "ERROR: offline Python wheelhouse build failed (network is required at BUILD time)" >&2; exit 1; }
 [ -n "$(ls -A "$PY_WHEELHOUSE" 2>/dev/null)" ] \
   || { echo "ERROR: the offline Python wheelhouse is empty" >&2; exit 1; }
+
+# Portability guard (see wheelhouse_portability_check.py): portable wheels
+# only — `*-py3-none-any.whl` / `*-py2.py3-none-any.whl` / `*-abi3-*.whl`. The
+# python tag is checked explicitly, so `cp312-none-any` (ABI none, platform
+# any, CPython-3.12-specific) is REJECTED. A CPython-ABI-specific wheel in the
+# wheelhouse installs on the build host and fails on 26.04/CPython 3.14 with
+# "No matching distribution found".
+python3 "$(cd "$(dirname "$0")" && pwd)/wheelhouse_portability_check.py" "$PY_WHEELHOUSE" \
+  || { echo "ERROR: offline Python wheelhouse is not portable" >&2; exit 1; }
+
 echo "== vendored Python wheelhouse: $(ls "$PY_WHEELHOUSE" | wc -l) wheels"
 
 cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
@@ -644,6 +692,8 @@ install -D -m 0644 "$BRIDGE_PKG/systemd/libreqos-setup.service"  "$DPKG_DIR/etc/
 # (docs/power_profile_work_order.md). The CLI is exposed on PATH via /usr/bin.
 install -D -m 0755 "$LQOS_DIR/bin/libreqos-power-profile"        "$DPKG_DIR/usr/libexec/libreqos/libreqos-power-profile"
 install -D -m 0644 "$BRIDGE_PKG/systemd/libreqos-power.service"  "$DPKG_DIR/etc/systemd/system/libreqos-power.service"
+install -D -m 0644 "$BRIDGE_PKG/systemd/libreqos-hugepages-numa.service"  "$DPKG_DIR/etc/systemd/system/libreqos-hugepages-numa.service"
+install -D -m 0755 "$BRIDGE_PKG/libexec/libreqos-hugepages-numa"  "$DPKG_DIR/usr/libexec/libreqos-hugepages-numa"
 mkdir -p "$DPKG_DIR/usr/bin"
 ln -sf /usr/libexec/libreqos/libreqos-power-profile "$DPKG_DIR/usr/bin/libreqos-power-profile"
 # Path-stable operator commands (lqos-74t.37.20): the docs invoke the rollback

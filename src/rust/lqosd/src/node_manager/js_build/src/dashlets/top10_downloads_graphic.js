@@ -1,6 +1,7 @@
 import {TopNSankey} from "../graphs/top_n_sankey";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class Top10DownloadersVisual extends DashletBaseInsight {
     constructor(slot) {
@@ -9,11 +10,11 @@ export class Top10DownloadersVisual extends DashletBaseInsight {
     }
 
     title() {
-        return "Top 10 Downloaders (Visual)";
+        return t("dashlet.name.top_10_downloaders_visual");
     }
 
     tooltip() {
-        return "<h5>Top 10 Downloaders</h5><p>The top-10 users by bits-per-second. The ribbon goes red as they approach capacity. The name border indicates round-trip time, while the main label color indicates TCP retransmits. The legend is current download speed, followed by number of retransmits.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.top10.downloads_graphic.tooltip")}</p>`;
     }
 
     subscribeTo() {

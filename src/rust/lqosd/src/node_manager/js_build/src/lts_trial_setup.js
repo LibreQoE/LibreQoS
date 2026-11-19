@@ -1,3 +1,4 @@
+import {t} from "./i18n/index.js";
 import {buildInsightUrl, sendWsRequest} from "./lts_trial_shared";
 
 const setupStatusClasses = [
@@ -48,6 +49,7 @@ async function fetchTrialConfig() {
             insightBaseUrl = data.lts_url;
         }
     } catch (error) {
+        // translatable: false — "Unable to load LTS trial config, using default Insight URL." is a console diagnostic, never rendered
         console.warn('Unable to load LTS trial config, using default Insight URL.', error);
         insightBaseUrl = defaultInsightBaseUrl;
     }
@@ -61,8 +63,8 @@ function redirectToInsightSignup(claimId) {
 }
 
 async function startSignupSession() {
-    setSetupStatus('Creating your Insight signup session…');
-    setSetupHelp('LibreQoS is contacting Insight and preparing your claim.');
+    setSetupStatus(t("trial.setup.creating"));
+    setSetupHelp(t("trial.setup.creating_help"));
     await fetchTrialConfig();
 
     try {
@@ -72,26 +74,25 @@ async function startSignupSession() {
             : '';
 
         if (!claimId) {
-            throw new Error('Missing claim ID from signup response.');
+            throw new Error(t("trial.setup.missing_claim"));
         }
 
-        setSetupStatus('Signup session ready. Redirecting to Insight…', 'success', false);
-        setSetupHelp('Your signup session is ready. Continuing to Insight now.');
+        setSetupStatus(t("trial.setup.ready"), 'success', false);
+        setSetupHelp(t("trial.setup.ready_help"));
         redirectToInsightSignup(claimId);
     } catch (error) {
+        // translatable: false — "Failed to start Insight signup session." is a console diagnostic, never rendered
         console.error('Failed to start Insight signup session.', error);
         setSetupStatus(
-            getErrorMessage(error, 'Unable to start the Insight signup session right now.'),
+            getErrorMessage(error, t("trial.setup.start_failed")),
             'danger',
             false,
         );
-        setSetupHelp(
-            'Retry this page, use the direct signup form, or validate an existing license key below.',
-        );
+        setSetupHelp(t("trial.setup.retry_help"));
     }
 }
 
 $(document).ready(() => {
-    setSetupStatus('Preparing the Insight signup handoff…');
+    setSetupStatus(t("trial.setup.preparing"));
     void startSignupSession();
 });

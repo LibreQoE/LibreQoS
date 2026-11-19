@@ -54,34 +54,40 @@ pub(crate) enum PublishOutcome {
     Rejected(&'static str),
 }
 
+/// The ONE name the broker BRANCHES on (quarantine + the stable dedupe
+/// identity), taken from the contract crate's table so a rename cannot silently
+/// reroute broker behaviour. A `&'static str` const is pattern-usable, which is
+/// why this form is used instead of calling `wire_name()` at each site.
+pub(crate) const STRUCTURAL_REJECT: &str = AckOutcome::RejectedStructuralOp.wire_name();
+
 /// U1/W1: the broker classifies the SHARED `AckOutcome` vocabulary (one
 /// definition with both ends) — never a hand-copied numeric match.
+///
+/// S1: the operator-visible NAMES are [`AckOutcome::wire_name`] (the contract
+/// crate's table, shared with the channel producer), so a producer-side rename
+/// cannot leave the broker surfacing a stale label. Every variant is NAMED here
+/// — the table supplies the string, but the ROUTING decision stays per-variant,
+/// so a new `AckOutcome` variant is a compile error in the broker and cannot
+/// default into the fence-and-reject route (a `RebuildRequired`-style
+/// must-not-fence outcome would be silently quarantined by a wildcard).
+/// `UNKNOWN_OUTCOME` stays broker-local: it names a code this build cannot
+/// decode, not a contract outcome.
 pub(crate) fn classify(outcome: u8) -> PublishOutcome {
-    match AckOutcome::from_code(outcome) {
-        Some(AckOutcome::Applied) => PublishOutcome::Applied,
-        Some(AckOutcome::AttemptExhausted) => PublishOutcome::AttemptExhausted,
-        Some(AckOutcome::RejectedObserveMode) => PublishOutcome::ObserveMode,
-        Some(AckOutcome::RebuildRequired) => PublishOutcome::RebuildRequired,
-        Some(AckOutcome::RejectedInvalidFrame) => {
-            PublishOutcome::Rejected("REJECTED_INVALID_FRAME")
-        }
-        Some(AckOutcome::RejectedMalformedJson) => {
-            PublishOutcome::Rejected("REJECTED_MALFORMED_JSON")
-        }
-        Some(AckOutcome::RejectedReservedRoot) => {
-            PublishOutcome::Rejected("REJECTED_RESERVED_ROOT")
-        }
-        Some(AckOutcome::RejectedStructuralOp) => {
-            PublishOutcome::Rejected("REJECTED_STRUCTURAL_OP")
-        }
-        Some(AckOutcome::RejectedLpmPrepare) => PublishOutcome::Rejected("REJECTED_LPM_PREPARE"),
-        Some(AckOutcome::RejectedVersionMismatch) => {
-            PublishOutcome::Rejected("REJECTED_VERSION_MISMATCH")
-        }
-        Some(AckOutcome::RejectedBatchEnvelope) => {
-            PublishOutcome::Rejected("REJECTED_BATCH_ENVELOPE")
-        }
-        None => PublishOutcome::Rejected("UNKNOWN_OUTCOME"),
+    let Some(outcome) = AckOutcome::from_code(outcome) else {
+        return PublishOutcome::Rejected("UNKNOWN_OUTCOME");
+    };
+    match outcome {
+        AckOutcome::Applied => PublishOutcome::Applied,
+        AckOutcome::AttemptExhausted => PublishOutcome::AttemptExhausted,
+        AckOutcome::RejectedObserveMode => PublishOutcome::ObserveMode,
+        AckOutcome::RebuildRequired => PublishOutcome::RebuildRequired,
+        AckOutcome::RejectedInvalidFrame
+        | AckOutcome::RejectedMalformedJson
+        | AckOutcome::RejectedReservedRoot
+        | AckOutcome::RejectedStructuralOp
+        | AckOutcome::RejectedLpmPrepare
+        | AckOutcome::RejectedVersionMismatch
+        | AckOutcome::RejectedBatchEnvelope => PublishOutcome::Rejected(outcome.wire_name()),
     }
 }
 
@@ -96,9 +102,7 @@ pub(crate) fn classify(outcome: u8) -> PublishOutcome {
 /// apply path cannot clear them. Every other reject keys on its generation.
 pub(crate) fn reject_dedupe_key(outcome: PublishOutcome, generation: &str) -> String {
     match outcome {
-        PublishOutcome::Rejected("REJECTED_STRUCTURAL_OP") => {
-            "bridge-broker:structural".to_string()
-        }
+        PublishOutcome::Rejected(STRUCTURAL_REJECT) => "bridge-broker:structural".to_string(),
         PublishOutcome::RebuildRequired => "bridge-broker:rebuild".to_string(),
         _ => format!("bridge-broker:{generation}"),
     }
@@ -177,7 +181,7 @@ pub(crate) fn surface(
         PublishOutcome::Rejected(name) => (
             "BRIDGE_PUBLISH_REJECTED",
             UrgentSeverity::Error,
-            if name == "REJECTED_STRUCTURAL_OP" {
+            if name == STRUCTURAL_REJECT {
                 // L2 (`docs/control_plane_structural_convergence_card.md` §3): the
                 // world-freeze is GONE. A structural reject quarantines the one
                 // offending op; the rest of the world keeps applying. U1/W4: the

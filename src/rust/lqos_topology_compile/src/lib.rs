@@ -3,6 +3,7 @@
 
 #![warn(missing_docs)]
 
+pub mod ap_supplement;
 mod bundle;
 mod compile_mode;
 mod ingest;

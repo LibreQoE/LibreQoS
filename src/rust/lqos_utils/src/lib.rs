@@ -4,6 +4,8 @@
 #![warn(missing_docs)]
 mod commands;
 
+mod dynamic_origin;
+
 /// Provides a Linux file-descriptor based timing service.
 pub mod fdtimer;
 
@@ -53,6 +55,8 @@ pub use xdp_ip_address::XdpIpAddress;
 pub fn normalize_circuit_id_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
+
+pub use dynamic_origin::DynamicOriginRows;
 
 /// Insight standard hasher for strings
 pub fn hash_to_i64(text: &str) -> i64 {

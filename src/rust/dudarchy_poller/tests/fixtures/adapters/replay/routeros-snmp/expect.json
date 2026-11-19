@@ -1,0 +1,118 @@
+{
+  "supported": true,
+  "probes": [
+    { "probe": "system", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "routerboard_serial", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "if_table", "outcome": "present", "reason": null, "rows": 2 },
+    { "probe": "lldp", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "arp_media", "outcome": "empty", "reason": null, "rows": 0 },
+    { "probe": "arp_physical", "outcome": "empty", "reason": null, "rows": 0 },
+    { "probe": "fdb", "outcome": "present", "reason": null, "rows": 3 }
+  ],
+  "lldp": [
+    {
+      "chassis_id": "02:1f:5e:aa:bb:10",
+      "address": null,
+      "port_id": "ether1",
+      "sys_name": "edge-rtr",
+      "sys_descr": null,
+      "local_port": "3"
+    }
+  ],
+  "arp": [],
+  "fdb": {
+    "qbridge": [
+      { "vlan": 0, "mac": "00:05:b7:00:00:01", "port": 1, "status": 3 },
+      { "vlan": 0, "mac": "00:0c:42:00:00:02", "port": 2, "status": 3 },
+      { "vlan": 0, "mac": "00:15:17:00:00:03", "port": 1, "status": 4 }
+    ],
+    "bridge": null,
+    "port_if_index": [[1, 16], [2, 24]]
+  },
+  "stations": [],
+  "interfaces": [
+    {
+      "index": 16,
+      "name": "sfp-sfpplus1",
+      "descr": "sfp-sfpplus1",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:0c:42:00:00:10",
+      "admin_status": 1,
+      "oper_status": 1
+    },
+    {
+      "index": 17,
+      "name": "ether2",
+      "descr": "ether2",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:0c:42:00:00:11",
+      "admin_status": 1,
+      "oper_status": 2
+    }
+  ],
+  "claims": [
+    {
+      "probe": "routerboard_serial",
+      "row": null,
+      "kind": "serial",
+      "value": "6F5506551282",
+      "source": "snmp-system"
+    },
+    { "probe": "system", "row": null, "kind": "name", "value": "cr1", "source": "snmp-system" },
+    { "probe": "lldp", "row": 0, "kind": "name", "value": "edge-rtr", "source": "snmp-lldp" },
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "sysdescr",
+      "value": "RouterOS 6.49.18",
+      "source": "snmp-system"
+    },
+    { "probe": "lldp", "row": 0, "kind": "portid", "value": "ether1", "source": "snmp-lldp" }
+  ],
+  "details": {
+    "nat": null,
+    "dhcp_leases": null,
+    "interfaces": [
+      {
+        "id": "16",
+        "name": "sfp-sfpplus1",
+        "description": "sfp-sfpplus1",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:0c:42:00:00:10",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["snmp-interfaces"]
+      },
+      {
+        "id": "17",
+        "name": "ether2",
+        "description": "ether2",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:0c:42:00:00:11",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "down",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["snmp-interfaces"]
+      }
+    ],
+    "system": null,
+    "temperatures": [],
+    "stations": [],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": null
+  },
+  "residuals": []
+}

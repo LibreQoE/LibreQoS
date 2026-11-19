@@ -11,6 +11,7 @@ mod combined_catalog;
 mod dataplane_tree;
 mod directory_watcher;
 mod dynamic;
+mod dynamic_engine;
 mod dynamic_store;
 mod hash_cache;
 mod runtime_inputs;
@@ -18,7 +19,7 @@ mod state;
 mod topology;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use anyhow::{Context, Result};
 use lqos_config::{
@@ -30,7 +31,8 @@ use tracing::debug;
 
 pub use catalog::{CircuitRateCaps, ShapedDevicesCatalog};
 pub use combined_catalog::NetworkDevicesCatalog;
-pub use dynamic::{CircuitObservation, DynamicCircuit};
+pub use dynamic::DynamicCircuit;
+pub use dynamic_engine::{ActivitySource, HostActivity};
 pub use hash_cache::ShapedDeviceHashCache;
 pub use topology::{
     ParentNodeLookup, ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference,
@@ -55,6 +57,23 @@ pub(crate) enum LoadedShapedDevicesSource {
 pub(crate) struct LoadedShapedDevices {
     pub(crate) shaped: ConfigShapedDevices,
     pub(crate) source: LoadedShapedDevicesSource,
+    /// The device ROWS the topology fold marked dynamic-origin, keyed
+    /// `(normalized circuit id, device id)`. Empty for every source that never
+    /// carries folded dynamic rows (the raw import and the operator view are
+    /// pre-fold), so the supersede rule then treats every row as provisioned —
+    /// the conservative reading for those sources.
+    pub(crate) dynamic_origin_rows: lqos_utils::DynamicOriginRows,
+}
+
+impl LoadedShapedDevices {
+    /// Wraps a snapshot that carries no dynamic-origin rows (a pre-fold source).
+    fn from_source(shaped: ConfigShapedDevices, source: LoadedShapedDevicesSource) -> Self {
+        Self {
+            shaped,
+            source,
+            dynamic_origin_rows: lqos_utils::DynamicOriginRows::default(),
+        }
+    }
 }
 
 /// Hooks that `lqosd` can provide to run side effects after updates.
@@ -63,14 +82,6 @@ pub trait DaemonHooks: Send + Sync + 'static {
     fn on_shaped_devices_updated(&self);
     /// Called after a new `network.json` snapshot is published.
     fn on_network_json_updated(&self);
-    /// Called after one or more dynamic circuits are expired and pruned by the runtime actor.
-    ///
-    /// Default implementation does nothing so non-daemon callers don't need to handle it.
-    fn on_dynamic_circuits_expired(&self, _circuit_ids: &[String]) {}
-    /// Called when the runtime actor promotes an unknown IP into a dynamic circuit overlay entry.
-    ///
-    /// Default implementation does nothing so non-daemon callers don't need to handle it.
-    fn on_unknown_ip_promoted(&self, _shaped_device: &lqos_config::ShapedDevice) {}
 }
 
 /// Starts the runtime actor and directory watcher used by long-running daemons.
@@ -97,11 +108,13 @@ fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<Loaded
     if let Some(shaping_inputs) = load_runtime_shaping_inputs_for_config(config)? {
         let shaped_devices = runtime_inputs::shaped_devices_from_runtime_inputs(&shaping_inputs);
         if !shaped_devices.devices.is_empty() {
+            let dynamic_origin_rows = runtime_inputs::dynamic_origin_rows(&shaping_inputs);
             return Ok(LoadedShapedDevices {
                 shaped: shaped_devices,
                 source: LoadedShapedDevicesSource::RuntimeTopology {
                     shaping_generation: shaping_inputs.shaping_generation,
                 },
+                dynamic_origin_rows,
             });
         }
         debug!(
@@ -115,30 +128,30 @@ fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<Loaded
         if let Ok(Some(view)) = runtime_inputs::load_operator_view(config) {
             let shaped_devices = runtime_inputs::shaped_devices_from_operator_view(&view);
             if !shaped_devices.devices.is_empty() {
-                return Ok(LoadedShapedDevices {
-                    shaped: shaped_devices,
-                    source: LoadedShapedDevicesSource::RuntimeTopology {
+                return Ok(LoadedShapedDevices::from_source(
+                    shaped_devices,
+                    LoadedShapedDevicesSource::RuntimeTopology {
                         shaping_generation: view.source_generation,
                     },
-                });
+                ));
             }
         }
         debug!(
             "topology_import.json is missing or contains 0 shaped devices; keeping the world empty until topology is published"
         );
-        return Ok(LoadedShapedDevices {
-            shaped: ConfigShapedDevices::default(),
-            source: LoadedShapedDevicesSource::TopologyImport,
-        });
+        return Ok(LoadedShapedDevices::from_source(
+            ConfigShapedDevices::default(),
+            LoadedShapedDevicesSource::TopologyImport,
+        ));
     }
     match lqos_topology_compile::TopologyImportFile::load(config) {
         Ok(Some(topology_import)) => {
             let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
             if !shaped_devices.devices.is_empty() {
-                return Ok(LoadedShapedDevices {
-                    shaped: shaped_devices,
-                    source: LoadedShapedDevicesSource::TopologyImport,
-                });
+                return Ok(LoadedShapedDevices::from_source(
+                    shaped_devices,
+                    LoadedShapedDevicesSource::TopologyImport,
+                ));
             }
             debug!(
                 "topology_import.json advertised shaped devices but loaded empty; keeping the world empty until topology is published"
@@ -155,10 +168,10 @@ fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<Loaded
             );
         }
     }
-    Ok(LoadedShapedDevices {
-        shaped: ConfigShapedDevices::default(),
-        source: LoadedShapedDevicesSource::TopologyImport,
-    })
+    Ok(LoadedShapedDevices::from_source(
+        ConfigShapedDevices::default(),
+        LoadedShapedDevicesSource::TopologyImport,
+    ))
 }
 
 fn load_source_shaped_devices_for_config(config: &Config) -> Result<ConfigShapedDevices> {
@@ -220,6 +233,14 @@ pub fn network_devices_catalog() -> NetworkDevicesCatalog {
         state::shaped_devices_catalog(),
         state::dynamic_circuits_snapshot(),
     )
+}
+
+/// Returns the device ROWS the topology fold synthesized from the dynamic store.
+///
+/// Empty for a snapshot that carries no fold rows (the raw import, the operator
+/// view), so a caller may treat "not in this record" as "provisioned".
+pub fn dynamic_origin_rows() -> Arc<lqos_utils::DynamicOriginRows> {
+    state::dynamic_origin_rows()
 }
 
 /// Returns the canonical count of unique static or dynamic circuits with a valid IP mapping.
@@ -284,17 +305,10 @@ pub fn apply_shaped_devices_snapshot(
     actor::apply_shaped_devices_snapshot(reason, shaped, provenance)
 }
 
-/// Reports kernel observations that may indicate dynamic circuit activity.
-///
-/// This function is not pure: it sends a message to the runtime actor when running.
-pub fn report_observations(observations: &[CircuitObservation]) {
-    actor::report_observations(observations)
-}
-
 /// K1 §1.4: reports the bridge's active dynamic-circuit ids — the liveness
 /// backstop for the RADIUS-interim-stall class. Only matching dynamic
-/// circuits have their `last_seen` refreshed; the kernel observation feed
-/// remains a separate (DPDK-inert) arm.
+/// circuits have their liveness refreshed; the maintenance tick then
+/// checkpoints it at a bounded interval.
 ///
 /// This function is not pure: it sends a message to the runtime actor.
 pub fn report_bridge_activity(circuit_ids: &[String]) {
@@ -305,7 +319,9 @@ pub fn report_bridge_activity(circuit_ids: &[String]) {
 ///
 /// Side effects:
 /// - Updates the in-memory dynamic circuit snapshot.
-/// - Writes `dynamic_circuits.json` in the LibreQoS directory.
+/// - Writes `dynamic_circuits.json` when membership or rates changed, and the
+///   unhashed liveness checkpoint with it. A liveness-only renewal writes
+///   nothing.
 ///
 /// This function does **not** mutate `ShapedDevices.csv`.
 pub fn upsert_dynamic_circuit(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
@@ -325,19 +341,39 @@ pub fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
 
 /// Dynamic-ranges H2: replaces any dynamic circuit covering the same device
 /// IP(s) with `shaped_device` in ONE RMW (remove-by-IP + upsert-by-id). Used by
-/// the promotion scanner and the RADIUS in-place upgrade so a session-derived
+/// unshaped-host promotion and the RADIUS in-place upgrade so a session-derived
 /// id cannot mint a duplicate row + Map.
+///
+/// Side effects:
+/// - Updates the in-memory dynamic circuit snapshot.
+/// - Writes `dynamic_circuits.json` only when membership or rates changed, so a
+///   RADIUS Start/Interim that renews an unchanged plan writes nothing.
 ///
 /// This function does **not** mutate `ShapedDevices.csv`.
 pub fn replace_dynamic_circuit_by_ip(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
     actor::replace_dynamic_circuit_by_ip(shaped_device)
 }
 
-/// Dynamic-ranges §7: reports per-IP activity for in-range, catalog-unresolved
-/// hosts from the lqosd bridge analytics to the actor's promotion scanner. The
-/// actor owns the sustained-activity window, the cap, and the store write.
-pub fn report_range_host_activity(range_id: &str, samples: &[(std::net::IpAddr, u64, u64)]) {
-    actor::report_range_host_activity(range_id, samples)
+/// Dynamic-ranges §7 + u11 (SIGNAL): one bounded batch of per-host CUMULATIVE
+/// byte counters for promotion candidates.
+///
+/// A candidate is a host whose traffic a range FALLBACK already carries (u11 —
+/// the fallback is packet-one coverage, so such a host is never "unmapped"), or
+/// a genuinely unmapped host inside a configured range. Each entry names the
+/// counter source its bytes came from ([`ActivitySource`]), because the engine
+/// prices an interval only within one source.
+///
+/// The actor's pure engine owns eligibility, the sustained-activity windows,
+/// the counter-source rules, the per-range cap and the store write; this
+/// function only carries the observation, so it never filters, allocates the
+/// plan, or blocks the caller. Filtering, the batch limit and the per-IP
+/// de-duplication happen in lqosd, before this call.
+///
+/// Side effects: sends a message to the runtime actor without waiting for a
+/// reply; a full actor queue drops the batch (the next one diffs over a longer
+/// interval).
+pub fn report_promotion_candidate_activity(observed_at_millis: u64, samples: &[HostActivity]) {
+    actor::report_promotion_candidate_activity(observed_at_millis, samples)
 }
 
 /// Replaces the in-memory `ShapedDevices.csv` snapshot without involving the runtime actor.

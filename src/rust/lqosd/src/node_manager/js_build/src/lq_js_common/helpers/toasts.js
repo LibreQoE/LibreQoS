@@ -1,3 +1,7 @@
+import {t} from "../../i18n/index.js";
+
+// translatable: false — "toast hide" is a Bootstrap class list, not text
+
 export function createBootstrapToast(toastId, headerSpan, toastBody) {
     // Create the toast div
     const toast = document.createElement('div');
@@ -16,7 +20,7 @@ export function createBootstrapToast(toastId, headerSpan, toastBody) {
     button.type = 'button';
     button.className = 'btn-close';
     button.setAttribute('data-bs-dismiss', 'toast');
-    button.setAttribute('aria-label', 'Close');
+    button.setAttribute('aria-label', t("common.action.close"));
 
     // Append children to toast-header
     toastHeader.appendChild(headerSpan);

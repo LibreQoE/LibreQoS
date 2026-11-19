@@ -2,6 +2,7 @@ import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
 
 export const N_ITEMS = 50;
 const wsClient = get_ws_client();
@@ -39,7 +40,7 @@ export class RttHistogramTimeseries extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
-                name: "Samples",
+                name: t("graph.axis.samples"),
                 nameLocation: 'middle',
                 nameGap: 40,
             },
@@ -51,6 +52,7 @@ export class RttHistogramTimeseries extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
 
         let seconds = periodNameToSeconds(period);
+        // translatable: false — "Requesting Insight History Data (RTT Histo)" is a console diagnostic for the Insight history request
         console.log("Requesting Insight History Data (RTT Histo)");
         listenOnceForSeconds("LtsRttHisto", seconds, (msg) => {
             const rtt = msg && msg.data ? msg.data : [];

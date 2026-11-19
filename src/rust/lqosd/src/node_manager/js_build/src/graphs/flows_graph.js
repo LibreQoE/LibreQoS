@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {RingBuffer} from "../lq_js_common/helpers/ringbuffer";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -11,7 +12,7 @@ export class FlowCountGraph extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxis("Tracked Flows", 30)
+            .withScaledAbsYAxis(t("graph.axis.tracked_flows"), 30)
             .withLeftGridSize("15%")
             .build();
 
@@ -45,7 +46,7 @@ export class FlowCountGraph extends DashboardGraph {
                 const hh = String(date.getHours()).padStart(2, '0');
                 const mm = String(date.getMinutes()).padStart(2, '0');
                 const ss = String(date.getSeconds()).padStart(2, '0');
-                return `Value: <b>${val}</b><br/>Time: <b>${hh}:${mm}:${ss}</b>`;
+                return `${t("graph.tooltip.value")} <b>${val}</b><br/>${t("graph.tooltip.time")} <b>${hh}:${mm}:${ss}</b>`;
             }
         };
 

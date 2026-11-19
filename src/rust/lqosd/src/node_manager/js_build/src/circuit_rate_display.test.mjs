@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {dirname, resolve} from "node:path";
 import test from "node:test";
+import {fileURLToPath} from "node:url";
 
 import {
     applyMaxRateDisplay,
@@ -7,6 +10,15 @@ import {
     hasUsableRatePair,
     ratePairsDiffer,
 } from "./circuit_rate_display.mjs";
+
+// The tooltip and its aria twin come from the catalog; install the English
+// fallback the page loads so the messages render as the operator sees them.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CATALOG_DIR = resolve(HERE, "../../static2/i18n");
+const EN = JSON.parse(readFileSync(resolve(CATALOG_DIR, "en.json"), "utf8"));
+globalThis.window = {LQOS_I18N_EN: EN};
+globalThis.localStorage = {getItem: () => null, setItem: () => {}};
+globalThis.document = {documentElement: {lang: "en"}, cookie: ""};
 
 class FakeElement {
     constructor(parentElement = null) {

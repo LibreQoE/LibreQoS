@@ -147,11 +147,21 @@ html[data-bs-theme="dark"] .lqos_logo {
         min-height: auto;
     }
 }
-.sidebar .nav-link {
+/* The sidebar's rows share one inset and one type: a nav link, and the language
+   label that sits above its select. Declared once, so a future typography or
+   inset change moves every row together. */
+.sidebar .nav-link,
+.sidebar .nav-language-label {
     display: flex;
     align-items: center;
     gap: 10px;
+    font-size: 0.9rem;
+}
+.sidebar .nav-link,
+.sidebar .nav-language {
     padding: 0.4rem 0.65rem;
+}
+.sidebar .nav-link {
     border-radius: 0.85rem;
     color: var(--bs-body-color);
     transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
@@ -3267,6 +3277,26 @@ html[data-bs-theme="dark"] .btn-lqos-memorial.show {
     text-transform: uppercase;
     color: var(--bs-secondary-color);
 }
+/* The language item and its label take the shared nav inset and type; only the
+   spacing that stacks the select under the label is its own. */
+.sidebar .nav-language {
+    padding-bottom: 0.35rem;
+}
+.sidebar .nav-language-label {
+    margin: 0 0 0.35rem;
+}
+.sidebar .nav-language .form-select {
+    font-size: 0.85rem;
+}
+/* Every surface ships the control hidden until the switcher has options. The
+   standalone pages' wrapper also carries Bootstrap's `d-flex`, which comes
+   later in that stylesheet at the same `!important` weight as `[hidden]`, so
+   only a rule this specific keeps a bundle-less page from showing an empty
+   select. */
+#languageControl[hidden],
+.sidebar .nav-language[hidden] {
+    display: none !important;
+}
 .sidebar .nav-display summary {
     list-style: none;
     cursor: pointer;
@@ -3351,9 +3381,6 @@ html[data-bs-theme="dark"] .btn-lqos-memorial.show {
 }
 
 /* Active page pill. */
-.sidebar .nav-link {
-    font-size: 0.9rem;
-}
 .sidebar .nav-item .badge {
     font-size: 0.68rem;
 }
@@ -3652,3 +3679,27 @@ html[data-bs-theme="dark"] .btn-lqos-memorial.show {
 .pulse-metric-unmapped {
     transition: opacity 300ms ease;
 }
+
+/* 74t171: the classify phase color (a dark-theme-bright purple). */
+.bg-purple{background-color:#8b5cf6!important;color:#fff!important}
+
+/* The dashboard editor modal is built in code (lq_js_common/dashboard/
+   dashboard_editor.js), so its scaffolding is styled here instead of shipping
+   an injected stylesheet with the bundle. */
+#dashboardEditorModal .border-dashed { border: 2px dashed #dee2e6 !important; }
+#dashboardEditorModal .card.h-100 { min-height: 100px; }
+#dashboardEditorModal .tab-manager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+#dashboardEditorModal .tab-manager .nav-tabs {
+    flex: 1;
+    margin-bottom: 0;
+}
+#dashboardEditorModal .dashboard-grid-container { min-height: 400px; }
+#dashboardEditorModal .nav-link:hover .fa-pencil-alt { opacity: 1 !important; }
+#dashboardEditorModal .tab-name:focus + .fa-pencil-alt { display: none; }
+/* The drop overlay stays non-interactive so it never blocks a drag. */
+#dashboardEditorModal #dropZone { pointer-events: none; }

@@ -2,6 +2,7 @@ import {clearDiv} from "./helpers/builders";
 import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
 import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {get_ws_client} from "./pubsub/ws";
+import {t} from "./i18n/index.js";
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -28,10 +29,12 @@ let page = 0;
 let renderMode = "asn";
 
 let sortBy = "start";
+// `tag` is the request token the comparator switches on; `label` is built when
+// the menu is drawn, so the served catalog is already loaded.
 let sortOptionsList = [
-    { tag: "start", label: "Start Time" },
-    { tag: "duration", label: "Duration" },
-    { tag: "bytes", label: "Bytes" },
+    { tag: "start", label: () => t("asn_explorer.sort.start_time") },
+    { tag: "duration", label: () => t("asn_explorer.sort.duration") },
+    { tag: "bytes", label: () => t("asn_explorer.col.bytes") },
 ];
 
 function unixTimeToDate(unixTime) {
@@ -54,20 +57,18 @@ function maybeRenderEmptyBanner() {
 
     let title = document.createElement("div");
     title.classList.add("fw-semibold");
-    title.innerText = "No recent flow data to display.";
+    title.innerText = t("asn_explorer.no_data_to_display");
     alert.appendChild(title);
 
     let body = document.createElement("div");
     body.classList.add("small");
-    body.innerText =
-        "ASN Explorer is populated from recently completed two-way flows (roughly the last 60 seconds). " +
-        "On very low traffic networks there may be nothing to show yet. Generate some traffic and refresh.";
+    body.innerText = t("asn_explorer.banner_body");
     alert.appendChild(body);
 
     target.appendChild(alert);
 }
 
-function renderDropdown({ targetId, buttonText, data, emptyText, buildItem }) {
+function renderDropdown({ targetId, buttonText, data, buildItem }) {
     let parentDiv = document.createElement("div");
     parentDiv.classList.add("dropdown");
 
@@ -87,7 +88,7 @@ function renderDropdown({ targetId, buttonText, data, emptyText, buildItem }) {
         li.classList.add("dropdown-item", "disabled");
         li.setAttribute("aria-disabled", "true");
         li.tabIndex = -1;
-        li.innerText = emptyText || "No recent flow data";
+        li.innerText = t("asn_explorer.no_recent_flow_data");
         dropdownList.appendChild(li);
     } else {
         data.forEach((row) => {
@@ -116,9 +117,8 @@ function asnDropdown() {
 
         renderDropdown({
             targetId: "asnList",
-            buttonText: "Select ASN",
+            buttonText: t("asn_explorer.select.asn"),
             data,
-            emptyText: "No recent flow data",
             buildItem: (row) => {
                 if (!row) return null;
                 let li = document.createElement("li");
@@ -151,9 +151,8 @@ function countryDropdown() {
 
         renderDropdown({
             targetId: "countryList",
-            buttonText: "Select Country",
+            buttonText: t("asn_explorer.select.country"),
             data,
-            emptyText: "No recent flow data",
             buildItem: (row) => {
                 if (!row) return null;
                 let li = document.createElement("li");
@@ -193,9 +192,8 @@ function protocolDropdown() {
 
         renderDropdown({
             targetId: "protocolList",
-            buttonText: "Select Protocol",
+            buttonText: t("asn_explorer.select.protocol"),
             data,
-            emptyText: "No recent flow data",
             buildItem: (row) => {
                 if (!row) return null;
                 let li = document.createElement("li");
@@ -246,24 +244,27 @@ function renderAsn(asn, data) {
     if (renderMode === "asn") {
         let targetAsn = asnList.find((row) => row.asn === asn);
         if (targetAsn === undefined || targetAsn === null) {
+            // translatable: false — "Could not find ASN:" is a console diagnostic, never rendered
             console.error("Could not find ASN: " + asn);
             return;
         }
 
         // Build the heading
-        heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
+        heading.innerText = t("asn_explorer.heading.asn", {asn: String(asn), name: targetAsn.name});
     } else if (renderMode === "country") {
         let targetCountry = countryList.find((row) => row.iso_code === asn);
         if (targetCountry === undefined || targetCountry === null) {
+            // translatable: false — "Could not find country:" is a console diagnostic, never rendered
             console.error("Could not find country: " + asn);
             return;
         }
 
         // Build the heading
+        // translatable: false — "' src='flags/" ".svg' height=32 width=32 />" are the parts of a flag image tag, not copy
         heading.innerHTML = "<img alt='" + targetCountry.iso_code + "' src='flags/" + targetCountry.iso_code.toLowerCase() + ".svg' height=32 width=32 />" + targetCountry.name;
     } else if (renderMode === "protocol") {
         // Build the heading
-        heading.innerText = "Protocol: " + asn;
+        heading.innerText = t("asn_explorer.heading.protocol", {protocol: asn});
     }
 
     let target = document.getElementById("asnDetails");
@@ -275,7 +276,7 @@ function renderAsn(asn, data) {
 
         let alert = document.createElement("div");
         alert.classList.add("alert", "alert-secondary", "mt-2");
-        alert.innerText = "No recent flows match this selection yet.";
+        alert.innerText = t("asn_explorer.no_matching_flows");
         target.appendChild(alert);
         return;
     }
@@ -328,7 +329,7 @@ function renderAsn(asn, data) {
     headerDiv.classList.add("row");
     let headerBytes = document.createElement("div");
     headerBytes.classList.add("col-1", "text-secondary");
-    headerBytes.innerText = "Bytes";
+    headerBytes.innerText = t("asn_explorer.col.bytes");
     headerDiv.appendChild(headerBytes);
     let headerRtt = document.createElement("div");
     headerRtt.classList.add("col-1", "text-secondary");
@@ -336,15 +337,15 @@ function renderAsn(asn, data) {
     headerDiv.appendChild(headerRtt);
     let headerClient = document.createElement("div");
     headerClient.classList.add("col-1", "text-secondary");
-    headerClient.innerText = "Client";
+    headerClient.innerText = t("asn_explorer.col.client");
     headerDiv.appendChild(headerClient);
     let headerRemote = document.createElement("div");
     headerRemote.classList.add("col-1", "text-secondary");
-    headerRemote.innerText = "Remote";
+    headerRemote.innerText = t("asn_explorer.col.remote");
     headerDiv.appendChild(headerRemote);
     let headerProtocol = document.createElement("div");
     headerProtocol.classList.add("col-1", "text-secondary");
-    headerProtocol.innerText = "Protocol";
+    headerProtocol.innerText = t("asn_explorer.col.protocol");
     headerDiv.appendChild(headerProtocol);
     let headerTime1 = document.createElement("div");
     headerTime1.classList.add("col-4", "text-secondary");
@@ -396,12 +397,12 @@ function renderAsn(asn, data) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "btn btn-link btn-sm p-0 ms-1";
-            btn.title = "Exclude RTT for this remote endpoint (opens Flow Tracking config)";
+            btn.title = t("asn_explorer.exclude_rtt_title");
             btn.innerHTML = "<i class='fa fa-ban'></i>";
             btn.addEventListener("click", (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openFlowRttExcludeWizard({ remoteIp, sourceLabel: "ASN Explorer" });
+                openFlowRttExcludeWizard({ remoteIp, sourceLabel: t("asn_explorer.name") });
             });
             remoteCol.appendChild(btn);
         }
@@ -431,7 +432,7 @@ function renderAsn(asn, data) {
 
     let nextButton = document.createElement("button");
     nextButton.classList.add("btn", "btn-secondary", "btn-sm", "ms-2");
-    nextButton.innerHTML = "<i class='fa fa-arrow-right'></i> Next";
+    nextButton.innerHTML = `<i class='fa fa-arrow-right'></i> ${t("asn_explorer.next")}`;
     nextButton.onclick = () => {
         page++;
         if (page * itemsPerPage >= data.length) page = Math.floor(data.length / itemsPerPage);
@@ -441,7 +442,7 @@ function renderAsn(asn, data) {
 
     let prevButton = document.createElement("button");
     prevButton.classList.add("btn", "btn-secondary", "btn-sm", "me-2");
-    prevButton.innerHTML = "<i class='fa fa-arrow-left'></i> Prev";
+    prevButton.innerHTML = `<i class='fa fa-arrow-left'></i> ${t("asn_explorer.prev")}`;
     prevButton.onclick = () => {
         page--;
         if (page < 0) page = 0;
@@ -450,12 +451,15 @@ function renderAsn(asn, data) {
 
     let paginator = document.createElement("span");
     paginator.classList.add("text-secondary", "small", "ms-2", "me-2");
-    paginator.innerText = "Page " + (page + 1) + " of " + Math.ceil(data.length / itemsPerPage);
+    paginator.innerText = t("asn_explorer.page_of", {
+        page: page + 1,
+        pages: Math.ceil(data.length / itemsPerPage),
+    });
     paginator.id = "paginator";
 
     let sortOptions = document.createElement("span");
     sortOptions.classList.add("text-secondary", "small", "ms-2", "me-2");
-    sortOptions.innerText = "Sort by: ";
+    sortOptions.innerText = t("asn_explorer.sort_by");
 
     let sortBox = document.createElement("select");
     sortBox.classList.add("small");
@@ -463,7 +467,7 @@ function renderAsn(asn, data) {
     sortOptionsList.forEach((option) => {
         let opt = document.createElement("option");
         opt.value = option.tag;
-        opt.innerText = option.label;
+        opt.innerText = option.label();
         if (option.tag === sortBy) {
             opt.selected = true;
         }
@@ -504,6 +508,7 @@ function timeToX(time, width) {
 
 function drawTimeline() {
     var style = getComputedStyle(document.body)
+    // translatable: false — "--bs-tertiary-bg" "--bs-primary" "--bs-secondary" are Bootstrap CSS custom properties the timeline reads, not labels
     let regionBg = style.getPropertyValue('--bs-tertiary-bg');
     let lineColor = style.getPropertyValue('--bs-primary');
     let axisColor = style.getPropertyValue('--bs-secondary');

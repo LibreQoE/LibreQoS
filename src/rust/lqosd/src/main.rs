@@ -3,6 +3,9 @@
 
 #![deny(clippy::unwrap_used)]
 
+mod ap_polling;
+mod ap_polling_state;
+mod ap_poller_engine;
 mod blackboard;
 pub mod bridge_analytics;
 pub mod bridge_broker;
@@ -229,7 +232,12 @@ fn main() -> Result<()> {
     // `lqos-74t.118.3`: compute the shaping-CPU topology once at startup for
     // the same-origin CPU & Workers page (never on the request path).
     node_manager::local_api::cpu_workers::init_topology(config.as_ref());
+    // `lqos-74t.196` step 6a: the AP-polling status store exists from startup,
+    // including the disabled case, so `/local-api/ap-polling` can say
+    // "disabled" instead of inventing an empty healthy list.
+    ap_polling_state::init(config.as_ref());
     let web_config = config.clone();
+    let ap_polling_config = config.clone();
     let radius_accounting_config = config.radius_accounting.clone();
     shaping_runtime::mark_starting("LibreQoS is starting shaping services.");
 
@@ -393,6 +401,12 @@ fn main() -> Result<()> {
                 }
 
                 lqos_topology::start_topology_thread(bus_tx.clone());
+
+                // Step 2c AP polling seam: disabled by default, so this is a
+                // no-op unless `[ap_polling].enabled = true`. The handle is
+                // kept for the daemon lifetime; abort/await it on reload.
+                let _ap_polling_task =
+                    ap_polling::start_configured_ap_polling(ap_polling_config);
 
                 // K1b startup decoupling §1.1: StormGuard spawns AFTER the
                 // topology thread and UNCONDITIONALLY; on a bridge-only box the

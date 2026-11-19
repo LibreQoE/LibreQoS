@@ -1,0 +1,12 @@
+[
+  {
+    "tag": "en",
+    "name": "English",
+    "dir": "ltr"
+  },
+  {
+    "tag": "es",
+    "name": "Español",
+    "dir": "ltr"
+  }
+]

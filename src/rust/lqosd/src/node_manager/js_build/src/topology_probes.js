@@ -1,4 +1,6 @@
 import {get_ws_client} from "./pubsub/ws";
+import {formatDateTime} from "./i18n/format.js";
+import {t, tHtml, tn} from "./i18n/index.js";
 
 const wsClient = get_ws_client();
 let probeState = null;
@@ -21,6 +23,7 @@ function sendWsRequest(responseEvent, request) {
             reject(msg);
         };
         wsClient.on(responseEvent, responseHandler);
+        // translatable: false — "Error" is the WebSocket error event name, not text
         wsClient.on("Error", errorHandler);
         wsClient.send(request);
     });
@@ -48,7 +51,7 @@ function formatUnix(unix) {
     if (!unix) {
         return "—";
     }
-    return new Date(unix * 1000).toLocaleString();
+    return formatDateTime(unix * 1000);
 }
 
 function statusBadge(status) {
@@ -69,15 +72,29 @@ function statusBadge(status) {
 function statusLabel(status) {
     switch (status) {
     case "suppressed":
-        return "Suppressed";
+        return t("topology.status.suppressed");
     case "probe_unavailable":
-        return "Probe Unavailable";
+        return t("topology.status.probe_unavailable");
     case "disabled":
-        return "Disabled";
+        return t("topology.status.disabled");
     case "healthy":
-        return "Healthy";
+        return t("topology.status.healthy");
     default:
-        return status || "Unknown";
+        return status || t("topology.status.unknown");
+    }
+}
+
+// The page's own prose carries inline markup (`<code>`, `<strong>`), so it is
+// rendered through `tHtml()` rather than a `data-i18n` attribute: the applier
+// writes text, which would show the tags.
+function renderStaticText() {
+    const subtitle = document.getElementById("topologyProbesSubtitle");
+    if (subtitle) {
+        subtitle.innerHTML = tHtml("topology_probes.subtitle");
+    }
+    const note = document.getElementById("topologyProbesFilterNote");
+    if (note) {
+        note.innerHTML = tHtml("topology_probes.filter.note");
     }
 }
 
@@ -87,8 +104,8 @@ function endpointSummary(entry) {
     }
     return entry.endpoint_status.map((endpoint) => {
         const reachable = endpoint.reachable
-            ? "<span class='badge bg-success-subtle text-success'>Reachable</span>"
-            : "<span class='badge bg-danger-subtle text-danger'>Down</span>";
+            ? `<span class='badge bg-success-subtle text-success'>${t("topology_probes.reachable")}</span>`
+            : `<span class='badge bg-danger-subtle text-danger'>${t("topology_probes.down")}</span>`;
         return `<div>${reachable} <span class="text-muted">${escapeHtml(endpoint.ip)}</span></div>`;
     }).join("");
 }
@@ -150,24 +167,24 @@ function renderStats() {
 
     container.innerHTML = [
         {
-            label: "Enabled",
+            label: t("topology_probes.enabled"),
             value: enabled,
-            note: "Probe pairs in service",
+            note: t("topology_probes.stat.enabled_note"),
         },
         {
-            label: "Healthy",
+            label: t("topology.status.healthy"),
             value: healthy,
-            note: "Passing both endpoints",
+            note: t("topology_probes.stat.healthy_note"),
         },
         {
-            label: "Suppressed",
+            label: t("topology.status.suppressed"),
             value: suppressed,
-            note: "Currently held down",
+            note: t("topology_probes.stat.suppressed_note"),
         },
         {
-            label: "Unavailable",
+            label: t("topology_probes.stat.unavailable"),
             value: unavailable,
-            note: "Missing usable probe inputs",
+            note: t("topology_probes.stat.unavailable_note"),
         },
     ].map((card) => `
         <div class="topology-probes-stat">
@@ -186,16 +203,18 @@ function renderTable() {
     }
     const entries = filteredEntries();
     const total = probeState?.entries?.length || 0;
-    summary.textContent = `${entries.length} of ${total} probe pair${total === 1 ? "" : "s"}`;
+    // The gate requires a `tn()` parameter object to spell the count it also
+    // selects with; the runtime injects the same value.
+    summary.textContent = tn("topology_probes.summary", entries.length, {count: entries.length, total});
     renderStats();
 
     if (!probeState) {
-        table.innerHTML = '<tr><td colspan="8" class="text-muted">Loading topology probe state…</td></tr>';
+        table.innerHTML = `<tr><td colspan="8" class="text-muted">${t("topology_probes.loading")}</td></tr>`;
         return;
     }
 
     if (entries.length === 0) {
-        table.innerHTML = '<tr><td colspan="8" class="text-muted">No probe pairs match the current filters.</td></tr>';
+        table.innerHTML = `<tr><td colspan="8" class="text-muted">${t("topology_probes.empty")}</td></tr>`;
         return;
     }
 
@@ -204,12 +223,12 @@ function renderTable() {
             ? `/topology_manager.html?node_id=${encodeURIComponent(entry.child_node_id)}`
             : "/topology_manager.html";
         const healthBits = [
-            `<div>Misses <strong>${entry.consecutive_misses ?? 0}</strong> / Successes <strong>${entry.consecutive_successes ?? 0}</strong></div>`,
-            `<div class="text-muted">Last success ${escapeHtml(formatUnix(entry.last_success_unix))}</div>`,
-            `<div class="text-muted">Last failure ${escapeHtml(formatUnix(entry.last_failure_unix))}</div>`,
+            `<div>${tHtml("topology_probes.health.misses", {count: entry.consecutive_misses ?? 0})} / ${tHtml("topology_probes.health.successes", {count: entry.consecutive_successes ?? 0})}</div>`,
+            `<div class="text-muted">${escapeHtml(t("topology_probes.health.last_success", {time: formatUnix(entry.last_success_unix)}))}</div>`,
+            `<div class="text-muted">${escapeHtml(t("topology_probes.health.last_failure", {time: formatUnix(entry.last_failure_unix)}))}</div>`,
         ];
         if (entry.suppressed_until_unix) {
-            healthBits.push(`<div class="text-muted">Suppressed until ${escapeHtml(formatUnix(entry.suppressed_until_unix))}</div>`);
+            healthBits.push(`<div class="text-muted">${escapeHtml(t("topology.health.suppressed_until", {time: formatUnix(entry.suppressed_until_unix)}))}</div>`);
         }
         return `
             <tr>
@@ -232,7 +251,7 @@ function renderTable() {
                 </td>
                 <td>
                     <div><span class="badge ${statusBadge(entry.status)}">${escapeHtml(statusLabel(entry.status))}</span></div>
-                    <div class="small text-muted mt-1">${entry.enabled ? "Enabled" : "Disabled"} · ${entry.probeable ? "Probeable" : "Not probeable"}</div>
+                    <div class="small text-muted mt-1">${entry.enabled ? t("topology.status.enabled") : t("topology.status.disabled")} · ${entry.probeable ? t("topology_probes.probeable") : t("topology_probes.not_probeable")}</div>
                     <div class="small text-muted mt-1">${escapeHtml(entry.reason || "—")}</div>
                 </td>
                 <td class="small">
@@ -243,7 +262,7 @@ function renderTable() {
                 </td>
                 <td>
                     <a class="btn btn-sm btn-outline-primary" href="${topologyHref}">
-                        <i class="fa fa-diagram-project"></i> Open in Topology
+                        <i class="fa fa-diagram-project"></i> ${t("topology_probes.open_in_topology")}
                     </a>
                 </td>
             </tr>
@@ -257,26 +276,26 @@ function updateUpdatedLabel() {
         return;
     }
     updated.textContent = probeState?.generated_unix
-        ? `Updated ${new Date(probeState.generated_unix * 1000).toLocaleString()}`
-        : "No runtime probe snapshot found";
+        ? t("topology_probes.updated", {time: formatDateTime(probeState.generated_unix * 1000)})
+        : t("topology_probes.no_snapshot");
 }
 
 async function loadPage() {
-    setStatus("Loading…", "bg-secondary");
+    setStatus(t("common.state.loading"), "bg-secondary");
     try {
         const response = await sendWsRequest("GetTopologyProbesState", {GetTopologyProbesState: {}});
         probeState = response.data || {entries: []};
         updateUpdatedLabel();
         renderTable();
-        setStatus("Loaded", "bg-success");
+        setStatus(t("topology_probes.load_state.loaded"), "bg-success");
     } catch (error) {
         probeState = {entries: []};
         updateUpdatedLabel();
         renderTable();
-        setStatus("Error", "bg-danger");
+        setStatus(t("topology_probes.load_state.error"), "bg-danger");
         const summary = document.getElementById("topologyProbesSummary");
         if (summary) {
-            summary.textContent = error?.message || "Unable to load topology probe state";
+            summary.textContent = error?.message || t("topology_probes.error.load");
         }
     }
 }
@@ -285,5 +304,6 @@ document.getElementById("topologyProbesSearch")?.addEventListener("input", rende
 document.getElementById("topologyProbesStatusFilter")?.addEventListener("change", renderTable);
 document.getElementById("topologyProbesEnabledFilter")?.addEventListener("change", renderTable);
 
+renderStaticText();
 loadPage();
 window.setInterval(loadPage, 5000);

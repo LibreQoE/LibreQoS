@@ -5,104 +5,101 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Queues and Shaping</h5>
-                    <div class="lqos-config-panel-subtitle">Default SQM selection, shaping mode, and interface capacity for the DPDK pipeline.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.queues.title">Queues and Shaping</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.queues.subtitle">Default SQM selection, shaping mode, and interface capacity for the DPDK pipeline.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Shaping Defaults</h6>
-                        <div class="lqos-config-section-subtitle">Core shaping mode and default SQM selection for new circuits.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.queues.defaults.title">Shaping Defaults</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.queues.defaults.subtitle">Core shaping mode and default SQM selection for new circuits.</div>
 
                         <div class="mb-3">
-                            <label for="defaultSqm" class="form-label">Default SQM Algorithm</label>
+                            <label for="defaultSqm" class="form-label" data-i18n="config.queues.default_sqm">Default SQM Algorithm</label>
                             <select class="form-select" id="defaultSqm">
+                                <!-- translatable: false — "cake diffserv4" is the SQM token stored in the configuration, not a label -->
                                 <option value="cake diffserv4">cake diffserv4</option>
                             </select>
-                            <div class="form-text">The DPDK pipeline applies CAKE with the diffserv4 tin split. Kernel-era alternatives are no longer offered.</div>
+                            <div class="form-text" data-i18n="config.queues.default_sqm_help">The DPDK pipeline applies CAKE with the diffserv4 tin split. Kernel-era alternatives are no longer offered.</div>
                         </div>
 
                         <div class="lqos-config-note lqos-config-note-warning mb-3" role="alert">
-                            <i class="fa fa-exclamation-triangle me-2"></i>Configurations migrated from an older release may still name a kernel SQM (<code>fq_codel</code> or <code>cake diffserv4 ack-filter</code>). Saving this page normalizes the default to <code>cake diffserv4</code>.
+                            <i class="fa fa-exclamation-triangle me-2"></i><span id="legacySqmWarning"></span>
                         </div>
 
                         <div class="mb-0">
-                            <label for="queueMode" class="form-label">Queue Mode</label>
+                            <label for="queueMode" class="form-label" data-i18n="config.queues.queue_mode">Queue Mode</label>
                             <select class="form-select" id="queueMode">
-                                <option value="shape">Shape</option>
-                                <option value="observe">Observe</option>
+                                <option value="shape" data-i18n="config.queues.mode_shape">Shape</option>
+                                <option value="observe" data-i18n="config.queues.mode_observe">Observe</option>
                             </select>
-                            <div class="form-text">Shape applies the LibreQoS DPDK shaping tree. Observe keeps the bridge pass-through active without applying the shaping tree. The mode is resolved at boot; switching it restarts <code>libreqos-bridge</code>.</div>
+                            <div class="form-text" id="queueModeHelp"></div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Capacity</h6>
-                        <div class="lqos-config-section-subtitle">Aggregate bandwidth ceilings for the DPDK shaping tree.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.queues.capacity.title">Capacity</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.queues.capacity.subtitle">Aggregate bandwidth ceilings for the DPDK shaping tree.</div>
 
                         <div class="mb-3">
-                            <label for="uplinkBandwidth" class="form-label">Uplink Bandwidth (Mbps)</label>
+                            <label for="uplinkBandwidth" class="form-label" data-i18n="config.queues.uplink">Uplink Bandwidth (Mbps)</label>
                             <input type="number" class="form-control" id="uplinkBandwidth" min="0.01" step="any">
-                            <div class="form-text">Total upstream bandwidth capacity.</div>
+                            <div class="form-text" data-i18n="config.queues.uplink_help">Total upstream bandwidth capacity.</div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="downlinkBandwidth" class="form-label">Downlink Bandwidth (Mbps)</label>
+                            <label for="downlinkBandwidth" class="form-label" data-i18n="config.queues.downlink">Downlink Bandwidth (Mbps)</label>
                             <input type="number" class="form-control" id="downlinkBandwidth" min="0.01" step="any">
-                            <div class="form-text">Total downstream bandwidth capacity.</div>
+                            <div class="form-text" data-i18n="config.queues.downlink_help">Total downstream bandwidth capacity.</div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div id="flatModeQueueSizing" class="lqos-config-section mt-3 d-none">
-                <h6 class="lqos-config-section-title">Flat-Mode Queue Sizing</h6>
-                <div class="lqos-config-section-subtitle">These knobs are read only by the <code>flat</code> compile mode. They are ignored in <code>ap_only</code> / <code>ap_site</code> / <code>full</code>, where the DPDK compiler derives queue sizing itself.</div>
+                <h6 class="lqos-config-section-title" data-i18n="config.queues.flat.title">Flat-Mode Queue Sizing</h6>
+                <div class="lqos-config-section-subtitle" id="flatModeSubtitle"></div>
 
                 <div class="row g-3">
                     <div class="col-12 col-lg-6">
-                        <label for="generatedPnDownload" class="form-label">Generated Per-Node Download (Mbps)</label>
+                        <label for="generatedPnDownload" class="form-label" data-i18n="config.queues.flat.pn_download">Generated Per-Node Download (Mbps)</label>
                         <input type="number" class="form-control" id="generatedPnDownload" min="1">
-                        <div class="form-text">Flat mode: download bandwidth per interface queue.</div>
+                        <div class="form-text" data-i18n="config.queues.flat.pn_download_help">Flat mode: download bandwidth per interface queue.</div>
                     </div>
 
                     <div class="col-12 col-lg-6">
-                        <label for="generatedPnUpload" class="form-label">Generated Per-Node Upload (Mbps)</label>
+                        <label for="generatedPnUpload" class="form-label" data-i18n="config.queues.flat.pn_upload">Generated Per-Node Upload (Mbps)</label>
                         <input type="number" class="form-control" id="generatedPnUpload" min="1">
-                        <div class="form-text">Flat mode: upload bandwidth per interface queue.</div>
+                        <div class="form-text" data-i18n="config.queues.flat.pn_upload_help">Flat mode: upload bandwidth per interface queue.</div>
                     </div>
 
                     <div class="col-12 col-lg-6">
-                        <label for="overrideQueues" class="form-label">Override Available Queues</label>
+                        <label for="overrideQueues" class="form-label" data-i18n="config.queues.flat.override_queues">Override Available Queues</label>
                         <input type="number" class="form-control" id="overrideQueues" min="1">
-                        <div class="form-text">Flat mode: override the number of available queues (leave blank for auto).</div>
+                        <div class="form-text" data-i18n="config.queues.flat.override_queues_help">Flat mode: override the number of available queues (leave blank for auto).</div>
                     </div>
 
                     <div class="col-12 col-lg-6 d-flex align-items-start">
                         <div class="form-check mt-4">
                             <input type="checkbox" class="form-check-input" id="useBinpacking">
-                            <label class="form-check-label" for="useBinpacking">Use Binpacking</label>
-                            <div class="form-text">Flat mode: use the binpacking algorithm to optimize flat networks.</div>
+                            <label class="form-check-label" for="useBinpacking" data-i18n="config.queues.flat.binpacking">Use Binpacking</label>
+                            <div class="form-text" data-i18n="config.queues.flat.binpacking_help">Flat mode: use the binpacking algorithm to optimize flat networks.</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div id="flatModeHint" class="lqos-config-note mt-3 d-none" role="note">
-                Flat-mode queue sizing (per-node bandwidth, queue-count override, binpacking) applies only when <code>topology.compile_mode = "flat"</code>. The current compile mode derives queue sizing itself, so those controls are hidden.
-            </div>
+            <div id="flatModeHint" class="lqos-config-note mt-3 d-none" role="note"></div>
 
-            <div class="lqos-config-note mt-3" role="note">
-                Circuit capacity and descriptor sizing are read-only — see <a href="config_tuning.html">Tuning &rarr; DPDK Dataplane</a>. The kernel-era "prefer fq_codel at or above" threshold is no longer exposed; the DPDK pipeline is CAKE-only.
-            </div>
+            <div id="readonlyNote" class="lqos-config-note mt-3" role="note"></div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.queues.save">Save Changes</button>
         </div>
     </form>
 </div>

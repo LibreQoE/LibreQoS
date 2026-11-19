@@ -1,4 +1,6 @@
 import { saveConfig, loadConfig, renderConfigMenu } from "./config/config_helper";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 const DEFAULTS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
 
@@ -23,19 +25,23 @@ function setFormValues(values) {
 }
 
 function thresholdsFromConfig(config) {
-    const t = config?.rtt_thresholds;
-    if (!t) return null;
-    const green = toInt(t.green_ms, DEFAULTS.green_ms);
-    const yellow = toInt(t.yellow_ms, DEFAULTS.yellow_ms);
-    const red = toInt(t.red_ms, DEFAULTS.red_ms);
+    const thresholds = config?.rtt_thresholds;
+    if (!thresholds) return null;
+    const green = toInt(thresholds.green_ms, DEFAULTS.green_ms);
+    const yellow = toInt(thresholds.yellow_ms, DEFAULTS.yellow_ms);
+    const red = toInt(thresholds.red_ms, DEFAULTS.red_ms);
     return { green_ms: green, yellow_ms: yellow, red_ms: red };
 }
 
-function validateThresholds(t) {
-    if (!t) return { ok: true, message: "" };
-    if (t.red_ms <= 0) return { ok: false, message: "Red point must be > 0." };
-    if (t.green_ms > t.yellow_ms) return { ok: false, message: "Green must be <= Yellow." };
-    if (t.yellow_ms > t.red_ms) return { ok: false, message: "Yellow must be <= Red." };
+function validateThresholds(thresholds) {
+    if (!thresholds) return { ok: true, message: "" };
+    if (thresholds.red_ms <= 0) return { ok: false, message: t("config.rtt.validation.red_positive") };
+    if (thresholds.green_ms > thresholds.yellow_ms) {
+        return { ok: false, message: t("config.rtt.validation.green_le_yellow") };
+    }
+    if (thresholds.yellow_ms > thresholds.red_ms) {
+        return { ok: false, message: t("config.rtt.validation.yellow_le_red") };
+    }
     return { ok: true, message: "" };
 }
 
@@ -45,19 +51,19 @@ function setInputsEnabled(enabled) {
     document.getElementById("rttRedMs").disabled = !enabled;
 }
 
-function renderPreview(t) {
+function renderPreview(thresholds) {
     const holder = document.getElementById("rttPreview");
     if (!holder) return;
 
-    const green = t.green_ms;
-    const yellow = t.yellow_ms;
-    const red = t.red_ms;
+    // The label is catalog text; the value keeps its literal `ms` unit.
+    const swatch = (style, label, value) =>
+        `<div><span class="badge ${style} me-1">${label}</span><code>${value}ms</code></div>`;
 
     holder.innerHTML = `
         <div class="d-flex align-items-center gap-3 flex-wrap">
-            <div><span class="badge bg-success me-1">Green</span><code>${green}ms</code></div>
-            <div><span class="badge bg-warning text-dark me-1">Yellow</span><code>${yellow}ms</code></div>
-            <div><span class="badge bg-danger me-1">Red</span><code>${red}ms</code></div>
+            ${swatch("bg-success", t("config.rtt.preview.green"), thresholds.green_ms)}
+            ${swatch("bg-warning text-dark", t("config.rtt.preview.yellow"), thresholds.yellow_ms)}
+            ${swatch("bg-danger", t("config.rtt.preview.red"), thresholds.red_ms)}
         </div>
     `;
 }
@@ -85,9 +91,9 @@ function updateUiState() {
     }
 
     setInputsEnabled(true);
-    const t = getFormValues();
-    renderPreview(t);
-    const v = validateThresholds(t);
+    const thresholds = getFormValues();
+    renderPreview(thresholds);
+    const v = validateThresholds(thresholds);
     setValidationMessage(v.ok, v.message);
 }
 
@@ -98,14 +104,17 @@ function updateConfigFromForm() {
         return { ok: true };
     }
 
-    const t = getFormValues();
-    const v = validateThresholds(t);
+    const thresholds = getFormValues();
+    const v = validateThresholds(thresholds);
     if (!v.ok) return { ok: false, message: v.message };
-    window.config.rtt_thresholds = t;
+    window.config.rtt_thresholds = thresholds;
     return { ok: true };
 }
 
 renderConfigMenu("rtt");
+// The note wraps `not` in `<strong>`, which the DOM applier cannot keep: the
+// block is empty in the page and rendered here.
+renderMarkupText({rttThresholdsNote: tHtml("config.rtt.note")});
 
 loadConfig(() => {
     if (!window.config) return;
@@ -125,11 +134,11 @@ loadConfig(() => {
     document.getElementById("saveButton").addEventListener("click", () => {
         const res = updateConfigFromForm();
         if (!res.ok) {
-            alert(res.message || "Invalid RTT thresholds");
+            alert(res.message || t("config.rtt.validation.invalid"));
             return;
         }
         saveConfig(() => {
-            alert("Configuration saved successfully!");
+            alert(t("config.rtt.saved"));
         });
     });
 

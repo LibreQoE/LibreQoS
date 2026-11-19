@@ -7,12 +7,14 @@ import {
     cakeCommonXAxis,
     cakeHistoryWindow,
     cakeScatterSeries,
+    cakeLegendFormatter,
     cakeTooltip,
     formatCakeBitsPerSecond,
     CAKE_TIN_LEGEND_PAIRS,
     attachLegendPairMirror,
     cakeTinIndexFor,
 } from "./cake_history";
+import {t} from "../i18n/index.js";
 
 export class CakeTraffic extends DashboardGraph {
     constructor(id) {
@@ -22,18 +24,20 @@ export class CakeTraffic extends DashboardGraph {
         attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
-            title: cakeChartTitle("Traffic", "Bits per second"),
+            title: cakeChartTitle(t("graph.cake.traffic"), t("graph.axis.bits_per_second")),
             grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
                 // do NOT set selectedMode:false — it disables the legend + the mirror
+                formatter: cakeLegendFormatter,
                 textStyle: {
                     color: '#aaa'
                 },
                 data: [
                     {
+            // translatable: false — "Bulk" "Best Effort" "RT Video" "Voice" "Bulk Up" "Best Effort Up" "RT Video Up" "RT Voice Up" — CAKE tin series identifiers the legend formatter and the paired-upload mirror match on
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {

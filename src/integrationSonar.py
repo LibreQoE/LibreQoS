@@ -860,6 +860,23 @@ def sonarImportSummary(sites, aps, accounts):
     f"account_level_ip_devices={account_level_ip_devices}"
   )
 
+def addInfrastructureNodes(net, sites, aps):
+  for site in sites:
+      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site, networkJsonId=f"sonar:site:{site['raw_id']}"))
+
+  for ap in aps:
+    if ap['cpe_macs']: # I don't think we care about Aps with no customers.
+      ap_node = NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap, networkJsonId=f"sonar:ap:{ap['raw_id']}")
+      net.addRawNode(ap_node)
+      model = ap.get('model')
+      net.attachDeviceRef(
+          ap_node,
+          mgmt_ip=ap.get('ip'),
+          vendor_hint='sonar',
+          model=str(model) if model is not None else None,
+      )
+
+
 def createShaper():
   net = NetworkGraph()
 
@@ -890,12 +907,7 @@ def createShaper():
 
   print(sonarImportSummary(sites, aps, accounts))
 
-  for site in sites:
-      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site, networkJsonId=f"sonar:site:{site['raw_id']}"))
-
-  for ap in aps:
-    if ap['cpe_macs']: # I don't think we care about Aps with no customers.
-      net.addRawNode(NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap, networkJsonId=f"sonar:ap:{ap['raw_id']}"))
+  addInfrastructureNodes(net, sites, aps)
 
   for account in accounts:
     if account['parent']:

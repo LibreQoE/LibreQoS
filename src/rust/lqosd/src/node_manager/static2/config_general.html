@@ -5,81 +5,81 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">General Settings</h5>
-                    <div class="lqos-config-panel-subtitle">Node identity, packet capture timing, WebUI behavior, and heatmap retention.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.general.title">General Settings</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.general.subtitle">Node identity, packet capture timing, WebUI behavior, and heatmap retention.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Node and WebUI</h6>
-                        <div class="lqos-config-section-subtitle">Core identity and listener settings for this LibreQoS node.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.general.node.title">Node and WebUI</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.general.node.subtitle">Core identity and listener settings for this LibreQoS node.</div>
 
                         <div class="mb-3">
-                            <label for="nodeId" class="form-label">Node ID</label>
+                            <label for="nodeId" class="form-label" data-i18n="config.general.node.id">Node ID</label>
                             <input type="text" class="form-control" id="nodeId" aria-describedby="nodeIdHelp" disabled>
-                            <div id="nodeIdHelp" class="form-text">Unique identifier for this node</div>
+                            <div id="nodeIdHelp" class="form-text" data-i18n="config.general.node.id_help">Unique identifier for this node</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="nodeName" class="form-label">Node Name</label>
+                            <label for="nodeName" class="form-label" data-i18n="config.general.node.name">Node Name</label>
                             <input type="text" class="form-control" id="nodeName">
                         </div>
 
                         <div class="mb-3">
-                            <label for="packetCaptureTime" class="form-label">Packet Capture Time (seconds)</label>
+                            <label for="packetCaptureTime" class="form-label" data-i18n="config.general.node.capture_time">Packet Capture Time (seconds)</label>
                             <input type="number" class="form-control" id="packetCaptureTime" min="1">
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="disableWebserver">
-                            <label class="form-check-label" for="disableWebserver">Disable Web Server</label>
-                            <div class="form-text">Check to disable the web interface (headless mode)</div>
+                            <label class="form-check-label" for="disableWebserver" data-i18n="config.general.node.disable_web">Disable Web Server</label>
+                            <div class="form-text" data-i18n="config.general.node.disable_web_help">Check to disable the web interface (headless mode)</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="webserverListen" class="form-label">Web Server Listen Address</label>
-                            <input type="text" class="form-control" id="webserverListen" placeholder="e.g. 0.0.0.0:80">
-                            <div class="form-text">Leave blank for default (0.0.0.0:9123)</div>
-                            <div id="sslWebserverNotice" class="alert alert-warning mt-2 mb-0 py-2 d-none">HTTPS via Caddy manages this value while SSL is enabled. Use SSL Setup to change HTTPS behavior.</div>
+                            <label for="webserverListen" class="form-label" data-i18n="config.general.node.listen">Web Server Listen Address</label>
+                            <input type="text" class="form-control" id="webserverListen" placeholder="e.g. 0.0.0.0:80" data-i18n-placeholder="config.general.node.listen_placeholder">
+                            <div class="form-text" data-i18n="config.general.node.listen_help">Leave blank for default (0.0.0.0:9123)</div>
+                            <div id="sslWebserverNotice" class="alert alert-warning mt-2 mb-0 py-2 d-none" data-i18n="config.general.node.ssl_notice">HTTPS via Caddy manages this value while SSL is enabled. Use SSL Setup to change HTTPS behavior.</div>
                         </div>
 
                         <div class="mb-0 form-check">
                             <input type="checkbox" class="form-check-input" id="disableIcmpPing">
-                            <label class="form-check-label" for="disableIcmpPing">Disable ICMP Ping</label>
-                            <div class="form-text">Disable ICMP ping monitoring for devices in the hosts view</div>
+                            <label class="form-check-label" for="disableIcmpPing" data-i18n="config.general.node.disable_ping">Disable ICMP Ping</label>
+                            <div class="form-text" data-i18n="config.general.node.disable_ping_help">Disable ICMP ping monitoring for devices in the hosts view</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Runtime Behavior</h6>
-                        <div class="lqos-config-section-subtitle">Hybrid-core shaping preference and optional telemetry retention.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.general.runtime.title">Runtime Behavior</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.general.runtime.subtitle">Hybrid-core shaping preference and optional telemetry retention.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="excludeEfficiencyCores">
-                            <label class="form-check-label" for="excludeEfficiencyCores">Exclude Efficiency Cores</label>
-                            <div class="form-text">Use cached hybrid-core detection to keep shaping on P-cores and leave E-cores for background work when available</div>
+                            <label class="form-check-label" for="excludeEfficiencyCores" data-i18n="config.general.runtime.efficiency">Exclude Efficiency Cores</label>
+                            <div class="form-text" data-i18n="config.general.runtime.efficiency_help">Use cached hybrid-core detection to keep shaping on P-cores and leave E-cores for background work when available</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="enableCircuitHeatmaps">
-                            <label class="form-check-label" for="enableCircuitHeatmaps">Enable Circuit Heatmaps</label>
-                            <div class="form-text">Track per-circuit TemporalHeatmap data (disable to save memory)</div>
+                            <label class="form-check-label" for="enableCircuitHeatmaps" data-i18n="config.general.runtime.circuit_heatmaps">Enable Circuit Heatmaps</label>
+                            <div class="form-text" data-i18n="config.general.runtime.circuit_heatmaps_help">Track per-circuit TemporalHeatmap data (disable to save memory)</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="enableSiteHeatmaps">
-                            <label class="form-check-label" for="enableSiteHeatmaps">Enable Site Heatmaps</label>
-                            <div class="form-text">Track per-site TemporalHeatmap data (disable to save memory)</div>
+                            <label class="form-check-label" for="enableSiteHeatmaps" data-i18n="config.general.runtime.site_heatmaps">Enable Site Heatmaps</label>
+                            <div class="form-text" data-i18n="config.general.runtime.site_heatmaps_help">Track per-site TemporalHeatmap data (disable to save memory)</div>
                         </div>
 
                         <div class="mb-0 form-check">
                             <input type="checkbox" class="form-check-input" id="enableAsnHeatmaps">
-                            <label class="form-check-label" for="enableAsnHeatmaps">Enable ASN Heatmaps</label>
-                            <div class="form-text">Track per-ASN TemporalHeatmap data (disable to save memory)</div>
+                            <label class="form-check-label" for="enableAsnHeatmaps" data-i18n="config.general.runtime.asn_heatmaps">Enable ASN Heatmaps</label>
+                            <div class="form-text" data-i18n="config.general.runtime.asn_heatmaps_help">Track per-ASN TemporalHeatmap data (disable to save memory)</div>
                         </div>
                     </div>
                 </div>
@@ -89,42 +89,40 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">QoO Profiles</h5>
-                    <div class="lqos-config-panel-subtitle">Choose the default Quality of Outcome profile and review the profile catalog currently available on disk.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.general.qoo.title">QoO Profiles</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.general.qoo.subtitle">Choose the default Quality of Outcome profile and review the profile catalog currently available on disk.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-4">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Profile Selection</h6>
-                        <div class="lqos-config-section-subtitle">Set the profile used for QoO and QoQ scoring throughout the WebUI.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.general.qoo.selection">Profile Selection</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.general.qoo.selection_subtitle">Set the profile used for QoO and QoQ scoring throughout the WebUI.</div>
 
                         <div class="mb-3">
-                            <label for="qooProfileId" class="form-label">QoO Profile</label>
+                            <label for="qooProfileId" class="form-label" data-i18n="config.general.qoo.profile">QoO Profile</label>
                             <select class="form-select" id="qooProfileId"></select>
-                            <div class="form-text">Choose (default) to use the configured default profile.</div>
+                            <div class="form-text" data-i18n="config.general.qoo.profile_help">Choose (default) to use the configured default profile.</div>
                         </div>
 
-                        <div class="lqos-config-note" role="note">
-                            QoO profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add or change profiles, then reload this page.
-                        </div>
+                        <div id="qooProfilesNote" class="lqos-config-note" role="note"></div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-8">
                     <div class="card h-100">
-                        <div class="card-header">Available QoO Profiles</div>
+                        <div class="card-header" data-i18n="config.general.qoo.available">Available QoO Profiles</div>
                         <div class="card-body">
                             <div id="qooProfilesLoadAlert"></div>
                             <div class="table-responsive lqos-table-wrap">
                                 <table class="lqos-table lqos-table-compact align-middle mb-0">
                                     <thead>
                                     <tr>
-                                        <th>Name</th>
-                                        <th>ID</th>
-                                        <th>Description</th>
-                                        <th>Flags</th>
+                                        <th data-i18n="config.general.qoo.table.name">Name</th>
+                                        <th data-i18n="config.general.qoo.table.id">ID</th>
+                                        <th data-i18n="config.general.qoo.table.description">Description</th>
+                                        <th data-i18n="config.general.qoo.table.flags">Flags</th>
                                     </tr>
                                     </thead>
                                     <tbody id="qooProfilesTableBody"></tbody>
@@ -139,46 +137,44 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Cobrand Image</h5>
-                    <div class="lqos-config-panel-subtitle">Optionally show an operator PNG next to the LibreQoS logo in the sidebar.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.general.cobrand.title">Cobrand Image</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.general.cobrand.subtitle">Optionally show an operator PNG next to the LibreQoS logo in the sidebar.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Display</h6>
-                        <div class="lqos-config-section-subtitle">The image is shown only when this setting is enabled and <code>cobrand.png</code> exists.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.general.cobrand.display">Display</h6>
+                        <div id="cobrandDisplaySubtitle" class="lqos-config-section-subtitle"></div>
 
                         <div class="mb-0 form-check">
                             <input type="checkbox" class="form-check-input" id="displayCobrand">
-                            <label class="form-check-label" for="displayCobrand">Display Cobrand Image</label>
-                            <div class="form-text">If <code>display_cobrand</code> is omitted from <code>/etc/lqos.conf</code>, LibreQoS defaults it to off.</div>
+                            <label class="form-check-label" for="displayCobrand" data-i18n="config.general.cobrand.enable">Display Cobrand Image</label>
+                            <div id="cobrandEnableHelp" class="form-text"></div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Upload PNG</h6>
-                        <div class="lqos-config-section-subtitle">Uploaded images are saved as <code>cobrand.png</code> in the runtime static assets directory and overwrite any existing file.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.general.cobrand.upload">Upload PNG</h6>
+                        <div id="cobrandUploadSubtitle" class="lqos-config-section-subtitle"></div>
 
                         <div class="mb-3">
-                            <label for="cobrandFile" class="form-label">Cobrand PNG</label>
+                            <label for="cobrandFile" class="form-label" data-i18n="config.general.cobrand.file">Cobrand PNG</label>
                             <input type="file" class="form-control" id="cobrandFile" accept="image/png,.png">
-                            <div class="form-text">Rendered size: 48px tall to match the existing LibreQoS logo, with a maximum sidebar width of 176px.</div>
+                            <div class="form-text" data-i18n="config.general.cobrand.size_help">Rendered size: 48px tall to match the existing LibreQoS logo, with a maximum sidebar width of 176px.</div>
                         </div>
 
-                        <div id="cobrandUploadStatus" class="lqos-config-note" aria-live="polite">
-                            Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.
-                        </div>
+                        <div id="cobrandUploadStatus" class="lqos-config-note" aria-live="polite"></div>
                     </div>
                 </div>
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.general.save">Save Changes</button>
         </div>
     </form>
 </div>

@@ -2,9 +2,10 @@ import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {applyCircuitDeviceChartTheme} from "./circuit_device_chart_theme";
+import {t} from "../i18n/index.js";
 
 export class WindowedLatencyHistogram extends DashboardGraph {
-    constructor(id, title = "Latency Histogram", windowMs = 300000) {
+    constructor(id, title = t("graph.latency_histogram.title"), windowMs = 300000) {
         super(id);
         if (this.dom && this.dom.classList) {
             this.dom.classList.remove("muted");
@@ -40,7 +41,7 @@ export class WindowedLatencyHistogram extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
-                name: "Samples",
+                name: t("graph.axis.samples"),
             },
             series: {
                 data: d,

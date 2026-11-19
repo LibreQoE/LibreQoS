@@ -1,6 +1,11 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {QueuingActivityWaveform} from "../graphs/queuing_activity_uplot";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Throughput" is the websocket event name the dashlet filters on, not a label
+
+// translatable: false — "_queuedyn" is the DOM id suffix this dashlet appends
 
 // `.64.2.2`: the global `RttHistogram` ticker is a bus `Vec<u32>` of 50 buckets.
 // In bridge mode `throughput_tracker::rtt_histogram` buckets each host's CURRENT
@@ -50,9 +55,9 @@ export class QueueDynamicsDashlet extends BaseDashlet {
         this.graph = null;
     }
 
-    title() { return "Queue Dynamics"; }
+    title() { return t("dashlet.name.queue_dynamics"); }
     tooltip() {
-        return "<h5>Queue Dynamics</h5><p>Live global queue dynamics on a 30-second window. Top panel: the delivered (shaped) throughput with the configured capacity line, plus the offered/demand rate where the box reports one — on a bridge box the demand is zero until the backend ships it, otherwise the demand line is omitted. Bottom panel: the global host-median round-trip time from the bridge RTT histogram.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.queue_dynamics.tooltip")}</p>`;
     }
     subscribeTo() { return ["Throughput", "RttHistogram"]; }
     canBeSlowedDown() { return true; }

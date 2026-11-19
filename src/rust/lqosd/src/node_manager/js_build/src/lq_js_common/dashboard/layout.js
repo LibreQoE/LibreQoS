@@ -1,4 +1,5 @@
 import { pruneTabsWithoutKnownDashlets } from "./layout_prune.mjs";
+import {t} from "../../i18n/index.js";
 
 const CURRENT_VERSION = 3;
 
@@ -169,7 +170,7 @@ DashboardLayout.normalizeToTabs = function(defaultLayout) {
     if (Array.isArray(defaultLayout)) {
         return [DashboardLayout.normalizeTab({
             id: "dashboard",
-            name: "Dashboard",
+            name: t("common.nav.dashboard"),
             dashlets: defaultLayout
         })];
     }
@@ -185,7 +186,7 @@ DashboardLayout.makeTabId = function(name = "tab") {
     return `${base}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
-DashboardLayout.normalizeTab = function(tab, fallbackName = "Dashboard", fallbackId = null) {
+DashboardLayout.normalizeTab = function(tab, fallbackName = t("common.nav.dashboard"), fallbackId = null) {
     const name = tab?.name || fallbackName;
     return {
         id: tab?.id || fallbackId || DashboardLayout.makeTabId(name),
@@ -201,7 +202,7 @@ DashboardLayout.normalizeTabs = function(tabs) {
         return [];
     }
     return tabs.map((tab, index) =>
-        DashboardLayout.normalizeTab(tab, `Tab ${index + 1}`)
+        DashboardLayout.normalizeTab(tab, t("dashboard.tab_default", {number: index + 1}))
     );
 };
 
@@ -259,7 +260,7 @@ DashboardLayout.mergeMissingDefaultTabs = function(existingTabs, defaultTabs) {
     const knownIds = new Set(normalizedExisting.map((tab) => tab?.id || ""));
     const knownNames = new Set(normalizedExisting.map((tab) => tab?.name || ""));
     defaultTabs.forEach((tab, index) => {
-        const normalizedTab = DashboardLayout.normalizeTab(tab, `Tab ${index + 1}`);
+        const normalizedTab = DashboardLayout.normalizeTab(tab, t("dashboard.tab_default", {number: index + 1}));
         if (
             !normalizedTab.name
             || knownIds.has(normalizedTab.id)

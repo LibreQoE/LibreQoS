@@ -33,7 +33,11 @@ mod seam;
 mod translate;
 
 #[cfg(test)]
+mod dynamic_lifecycle_tests;
+#[cfg(test)]
 mod oracle1_live_tests;
+#[cfg(test)]
+mod test_fixtures;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -47,6 +51,7 @@ use lqos_dataplane_types::{
     DataplaneInnerOp, DataplaneLeafOp, DataplaneTransaction, LeafRow, compute_owner_sets,
     crossing_nodes,
 };
+use lqos_dataplane_types::wire::AckOutcome;
 use seam::{AttachError, SEGMENT_NAME, SeamSegment};
 use tracing::{error, info, warn};
 
@@ -73,15 +78,6 @@ fn ack_timeout() -> Duration {
     ACK_TIMEOUT
 }
 
-/// `lqos-74t.102` §2.4(19)/(20): any terminal loss of the in-flight non-suffix
-/// trigger (no seam, replaced seam, ack silence, attempt exhaustion) must keep
-/// the gate and re-arm the replay. The gate must never be left waiting with no
-/// trigger to come.
-fn rearm_non_suffix_after_lost_pending(state: &mut BrokerState) {
-    if state.pending_non_suffix.is_some() {
-        state.non_suffix_replay_due = true;
-    }
-}
 const ATTEMPT_EXHAUSTED_MAX_RETRIES: u32 = 3;
 const ATTEMPT_BACKOFF: Duration = Duration::from_secs(5);
 /// C3(b): consecutive terminal rejects (across generations) before the broker
@@ -114,6 +110,13 @@ const REPORT_REREAD_PERIOD: Duration = Duration::from_secs(60);
 /// A3 cadence: while there is NO base (the A1 HOLD), re-ask on this SHORTER
 /// backoff so recovery is AUTOMATIC (the report returning clears the surface).
 const REPORT_REREAD_RETRY: Duration = Duration::from_secs(10);
+
+/// W3: the placement-convergence bound. A mismatch that persists this long
+/// raises `PLACEMENT_STALE` once per episode and forces a full report
+/// re-read/re-emit. `Instant` (monotonic local); the poll count is a secondary
+/// progress counter, never a second clock.
+const PLACEMENT_STALE_AFTER: Duration = Duration::from_secs(30);
+const PLACEMENT_STALE_POLLS: u32 = 30;
 /// Persisted operator seam state (also the restart source for the non-suffix gate).
 const SEAM_STATE_PATH: &str = "/run/libreqos/seam_state.json";
 struct BrokerState {
@@ -135,6 +138,14 @@ struct BrokerState {
     /// so the bridge's cache-match check needs no bridge-side fold. `None` until
     /// the first artifact read.
     last_desired_world_key: Option<String>,
+    /// W3 placement-convergence bound state (monotonic `Instant`). A mismatch
+    /// starts `since`; at the bound we alert once and force a report re-read;
+    /// adoption clears `since`/`reported` but keeps the episode counter.
+    placement_stale_since: Option<Instant>,
+    placement_stale_reported: bool,
+    placement_stale_episodes: u64,
+    /// Secondary progress counter (30 polls); never a second clock.
+    placement_stale_polls: u32,
     /// Card (`docs/duplicate_mapping_alerts_card.md`): the mapping IDENTITIES
     /// currently surfaced as a `DUPLICATE_MAPPING_IDENTITY` alert (bound to >1
     /// circuit). Tracked so `clear_by_identity` fires when one resolves — the
@@ -159,25 +170,7 @@ struct BrokerState {
     /// `lqos-74t.54`: the last structural-remove capture — the FULL removed set,
     /// the bridge dense-table size, the suffix verdict, and the held non-suffix
     /// remainder. Surfaced by the ALWAYS-ON capture and persisted in SEAM_STATE.
-    removal_capture: Option<RemovalCapture>,
-    /// `lqos-74t.102`: the broker-owned non-suffix gate. It is deliberately NOT
-    /// keyed to the structural identity: after a non-suffix remove the next
-    /// structural ADD must not reach the partial slot table. While set, the
-    /// broker holds all new incremental emission and waits for the bridge's R3
-    /// report to match the full desired world before clearing this gate.
-    pending_non_suffix: Option<RemovalCapture>,
-    /// `lqos-74t.102` §2.4(9): a restored (or SEAM_LOST) non-suffix trigger
-    /// must be re-emitted only after a real control-seam attach. This flag is
-    /// deliberately separate from `pending`: the old restore set `pending`
-    /// before the loop, and the first no-segment `resolve_pending` consumed it
-    /// as SEAM_LOST, losing the only trigger. Keeping the intent here lets the
-    /// broker hold the gate and replay after attach.
-    non_suffix_replay_due: bool,
-    /// §2.4(14): the desired-world key carried by the non-suffix trigger that
-    /// is currently in `pending`. When the artifact advances (c4 -> c5) before
-    /// the in-flight trigger resolves, the broker must re-arm with c5 rather
-    /// than wait forever on the stale key.
-    non_suffix_trigger_key: Option<String>,
+    last_removal: Option<RemovalCapture>,
     /// §`lqos-74t.12` (DRIVER wave-1): NEW sites DEFERRED because no circuit
     /// rides them (a pure-site create has zero dataplane effect). The value is
     /// the site's FIRST-SEEN unix second, so the operator surface can show how
@@ -192,8 +185,7 @@ struct BrokerState {
     /// report). `None` = not carried — semantic_diff falls back to the
     /// baseline's own order and the drain key warns.
     slot_order: Option<Vec<String>>,
-    /// R3: the analytics socket path (the applied-state report source).
-    /// `None` = the [dataplane_bridge] section is unconfigured — the
+    /// R3: the analytics socket path (the applied-state report source).    /// `None` = the [dataplane_bridge] section is unconfigured — the
     /// adoption arm is inert and every attach falls back to full
     /// re-emit (exactly today's posture).
     socket_path: Option<std::path::PathBuf>,
@@ -320,116 +312,6 @@ struct Pending {
 }
 
 static STARTED: OnceLock<()> = OnceLock::new();
-
-/// `lqos-74t.102`: the R3 trigger for a held non-suffix removal. The engine's
-/// worker detector refuses the first non-suffix Remove BEFORE any mutation and
-/// raises `RebuildDivergence::SlotMismatch`, so this transaction never reaches
-/// the partial slot table. It carries NO structural ADD (and no rate work):
-/// the full desired world is installed by the R3/re-adopt.
-/// `lqos-74t.102`: an APPLIED ack for the remove-only trigger while the gate is
-/// armed is a partial-world acceptance (the engine detector should have forced
-/// R3). The broker must ignore that ack for belief advancement.
-fn non_suffix_applied_is_suspect(pending_non_suffix: Option<&RemovalCapture>) -> bool {
-    pending_non_suffix.is_some()
-}
-
-fn non_suffix_rebuild_trigger(
-    desired: &DataplaneTransaction,
-    capture: &RemovalCapture,
-) -> Option<DataplaneTransaction> {
-    if capture.non_suffix.is_empty() {
-        return None;
-    }
-    Some(DataplaneTransaction {
-        generation: desired.generation.clone(),
-        inner_ops: Vec::new(),
-        leaf_ops: capture
-            .non_suffix
-            .iter()
-            .map(|circuit_id| DataplaneLeafOp::Remove {
-                circuit_id: circuit_id.clone(),
-            })
-            .collect(),
-        mapping_ops: Vec::new(),
-        schema_version: desired.schema_version,
-        steering_vlans: Vec::new(),
-        lpm_delta: Vec::new(),
-        apply_mode: Default::default(),
-        circuit_capacity: None,
-    })
-}
-
-/// `lqos-74t.102` §2.4(9): queue the restored/lost non-suffix trigger only
-/// after a real control seam exists. The old restore path put this into
-/// `state.pending` before the loop, so the first no-segment step consumed it
-/// as SEAM_LOST and nothing was ever re-emitted.
-fn queue_non_suffix_replay(state: &mut BrokerState, desired: &DataplaneTransaction) -> bool {
-    let Some(capture) = state.pending_non_suffix.clone() else {
-        state.non_suffix_replay_due = false;
-        state.non_suffix_trigger_key = None;
-        return false;
-    };
-    let Some(trigger) = non_suffix_rebuild_trigger(desired, &capture) else {
-        state.pending_non_suffix = None;
-        state.removal_capture = None;
-        state.non_suffix_replay_due = false;
-        state.non_suffix_trigger_key = None;
-        state.terminal_fence = None;
-        warn!(
-            event = "NON_SUFFIX_GATE_DROPPED_NO_TRIGGER",
-            "the held non-suffix set has no removable trigger — falling back to the \
-             engine RemovedNotTail/SlotMismatch recovery"
-        );
-        return false;
-    };
-    let structural = translate::structural_identity(desired);
-    match seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref()) {
-        Ok(frames) => {
-            outcomes::record_emit(&trigger.generation, 1, 1);
-            state.terminal_fence = Some(structural.clone());
-            state.pending = Some(Pending {
-                frames,
-                pushed: 0,
-                awaiting_ack: false,
-                generation: trigger.generation.clone(),
-                structural_key: structural,
-                current_tx: trigger,
-                seq_pos: 1,
-                seq_len: 1,
-                applied_after_current: state
-                    .applied
-                    .tx()
-                    .cloned()
-                    .unwrap_or_else(|| desired.clone()),
-                desired_key: state.last_desired_world_key.clone(),
-                attempt_retries: 0,
-                ack_timeouts: 0,
-            });
-            state.non_suffix_replay_due = false;
-            state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-            warn!(
-                event = "NON_SUFFIX_TRIGGER_REPLAY_QUEUED",
-                held = ?capture.non_suffix,
-                "queued the non-suffix remove-only trigger after a real control-seam \
-                 attach (no SEAM_LOST consumption before attach)"
-            );
-            true
-        }
-        Err(_) => {
-            state.pending_non_suffix = None;
-            state.removal_capture = None;
-            state.non_suffix_replay_due = false;
-            state.non_suffix_trigger_key = None;
-            state.terminal_fence = None;
-            warn!(
-                event = "NON_SUFFIX_GATE_DROPPED_ENCODE",
-                "could not encode the held non-suffix trigger — falling back to the \
-                 engine RemovedNotTail/SlotMismatch recovery"
-            );
-            false
-        }
-    }
-}
 
 /// WP2 (`docs/wp2_wp3_fence_convergence_and_adopt_card.md`): the TERMINAL fence
 /// decision. A NON-structural terminal failure (bad frame / malformed / version
@@ -696,11 +578,13 @@ pub struct BridgeConvergenceSnapshot {
     /// remainder. Additive (`serde(default)`); answers suffix-ness at the next
     /// occurrence without re-instrumenting.
     #[serde(default)]
-    pub removal_capture: Option<RemovalCapture>,
-    /// `lqos-74t.102`: the non-suffix R3 gate is armed (a next structural ADD is
-    /// held until the bridge's R3 full world is adopted). Additive.
+    pub last_removal: Option<RemovalCapture>,
+    /// W3: placement convergence age (ms) and episode count — the operator
+    /// surface for a `PLACEMENT_STALE` alert. Additive.
     #[serde(default)]
-    pub pending_non_suffix: Option<RemovalCapture>,
+    pub placement_stale_age_ms: Option<u64>,
+    #[serde(default)]
+    pub placement_stale_episodes: u64,
 }
 
 static CONVERGENCE_SNAPSHOT: OnceLock<Mutex<BridgeConvergenceSnapshot>> = OnceLock::new();
@@ -1079,6 +963,33 @@ fn cpu_workers_slot() -> &'static Mutex<Option<serde_json::Value>> {
     CPU_WORKERS_SNAPSHOT.get_or_init(|| Mutex::new(None))
 }
 
+/// `lqos-74t.191` P0.1: the APPLIED owner vector indexed by the bridge's
+/// numeric SLOT (`CircuitLiveRow.bridge_circuit_id`). This is a read-only
+/// projection of the adopted report's parallel `slot_order`/`owners` table —
+/// the detector's only identity input. Empty until a consistent adoption.
+static APPLIED_SLOT_OWNERS: OnceLock<Mutex<Vec<u16>>> = OnceLock::new();
+
+fn applied_slot_owners_slot() -> &'static Mutex<Vec<u16>> {
+    APPLIED_SLOT_OWNERS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// `lqos-74t.191` P0.1: one circuit's applied placement worker by NUMERIC
+/// SLOT (`bridge_circuit_id`). `None` when the broker has no consistent
+/// owner table yet, when the slot is the reserved best-effort slot 0, or
+/// when the slot is outside the reported domain. A service id is NEVER
+/// accepted here (the v2 attempt's bug).
+pub fn applied_owner_of_slot(slot: u64) -> Option<u16> {
+    if slot == 0 {
+        return None;
+    }
+    let idx = usize::try_from(slot).ok()?;
+    applied_slot_owners_slot()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(idx).copied())
+        .filter(|owner| *owner < u16::MAX)
+}
+
 /// Replace the stored worker/ownership/moves snapshot after an adoption. The
 /// bridge section is assembled per request from the convergence snapshot (it
 /// changes independently of an adoption).
@@ -1095,6 +1006,9 @@ fn publish_cpu_workers_snapshot(
     if let Ok(mut slot) = cpu_workers_slot().lock() {
         *slot = Some(doc);
     }
+    if let Ok(mut owners) = applied_slot_owners_slot().lock() {
+        *owners = applied.slot_owners().to_vec();
+    }
 }
 
 /// Clear the stored snapshot on a re-attach/boot reset; the next adoption
@@ -1102,6 +1016,9 @@ fn publish_cpu_workers_snapshot(
 fn clear_cpu_workers_snapshot() {
     if let Ok(mut slot) = cpu_workers_slot().lock() {
         *slot = None;
+    }
+    if let Ok(mut owners) = applied_slot_owners_slot().lock() {
+        owners.clear();
     }
 }
 
@@ -1390,8 +1307,11 @@ fn publish_convergence_snapshot(state: &BrokerState) {
     // `lqos-74t.54`: the ALWAYS-ON structural-remove capture (the full removed
     // set, the dense-table size, the suffix verdict) — the next occurrence
     // answers suffix-ness from this snapshot, level-independent.
-    slot.removal_capture = state.removal_capture.clone();
-    slot.pending_non_suffix = state.pending_non_suffix.clone();
+    slot.last_removal = state.last_removal.clone();
+    slot.placement_stale_age_ms = state
+        .placement_stale_since
+        .map(|t| t.elapsed().as_millis() as u64);
+    slot.placement_stale_episodes = state.placement_stale_episodes;
     tracing::info!(
         event = "SEAM_STATE",
         schema = 1,
@@ -1485,15 +1405,16 @@ fn actor(
         terminal_fence: None,
         last_desired_generation: None,
         last_desired_world_key: None,
+        placement_stale_since: None,
+        placement_stale_reported: false,
+        placement_stale_episodes: 0,
+        placement_stale_polls: 0,
         duplicate_mapping_alerts: BTreeSet::new(),
         held_ops: BTreeSet::new(),
         held_structural_key: None,
         held_retry_at: None,
         held_retries: 0,
-        removal_capture: None,
-        pending_non_suffix: None,
-        non_suffix_replay_due: false,
-        non_suffix_trigger_key: None,
+        last_removal: None,
         deferred_sites: BTreeMap::new(),
         deferred_retires: BTreeMap::new(),
         artifact_cache: None,
@@ -1517,16 +1438,6 @@ fn actor(
             .parent()
             .map(|dir| dir.join("maintenance_control.json")),
     };
-    // `lqos-74t.102`: a broker restart must not lose the non-suffix gate while
-    // the bridge may still hold the partial table. Restore the persisted gate,
-    // read the CURRENT artifact (before any report reconcile), and replay the
-    // remove-only trigger. Missing artifact/trigger falls back to the engine
-    // RemovedNotTail/SlotMismatch recovery.
-    restore_non_suffix_gate_from(
-        std::path::Path::new(SEAM_STATE_PATH),
-        &artifact,
-        &mut state,
-    );
     loop {
         step(&artifact, &mut state);
         std::thread::sleep(POLL_ARTIFACT);
@@ -1552,6 +1463,10 @@ enum AdoptedBaseline {
         /// `slot_order`). `None` = a pre-owner bridge (the reparent twin is
         /// inert).
         owners: Option<Vec<u16>>,
+        /// `lqos-74t.191` MUST 2 (v4 review): the ACTUAL numeric slot of each
+        /// `slot_order` entry (`Vec<u64>`, parallel). `None` = a pre-MUST-2
+        /// bridge; the owner table is then rejected whole.
+        slot_numbers: Option<Vec<u64>>,
         /// `lqos-74t.118.1`/`.118.2`: the bridge's worker-affinity report.
         /// `None` = a pre-`.118.1` bridge or an unwired registry; the API must
         /// render it unavailable, never as zeros.
@@ -1587,6 +1502,14 @@ fn adopt_bridge_baseline(socket: &std::path::Path) -> AdoptedBaseline {
             } else {
                 ciborium::from_reader::<Vec<u16>, _>(&report.owners[..]).ok()
             };
+            // MUST 2 (v4 review): the actual numeric slot per name. A
+            // pre-MUST-2 bridge leaves this empty; the broker then rejects
+            // the owner table whole (no dense-position guess).
+            let slot_numbers: Option<Vec<u64>> = if report.slot_numbers.is_empty() {
+                None
+            } else {
+                ciborium::from_reader::<Vec<u64>, _>(&report.slot_numbers[..]).ok()
+            };
             match ciborium::from_reader::<DataplaneTransaction, _>(&report.transaction[..]) {
                 Ok(tx) => {
                     // §8 (c): note the bridge's APPLIED capacity so the emitter's
@@ -1600,6 +1523,7 @@ fn adopt_bridge_baseline(socket: &std::path::Path) -> AdoptedBaseline {
                         desired_world_content_key: report.desired_world_content_key,
                         slot_order,
                         owners,
+                        slot_numbers,
                         workers: report.workers,
                     }
                 }
@@ -1704,16 +1628,32 @@ fn reconcile_from_report(state: &mut BrokerState, cadence: bool) -> bool {
     let Some(socket) = state.socket_path.clone() else {
         return false;
     };
-    let (tx, content_key, desired_world_content_key, slot_order, owners, workers) =
-        match adopt_bridge_baseline(&socket) {
+    let (
+        tx,
+        content_key,
+        desired_world_content_key,
+        slot_order,
+        owners,
+        slot_numbers,
+        workers,
+    ) = match adopt_bridge_baseline(&socket) {
         AdoptedBaseline::Report {
             tx,
             content_key,
             desired_world_content_key,
             slot_order,
             owners,
+            slot_numbers,
             workers,
-        } => (tx, content_key, desired_world_content_key, slot_order, owners, workers),
+        } => (
+            tx,
+            content_key,
+            desired_world_content_key,
+            slot_order,
+            owners,
+            slot_numbers,
+            workers,
+        ),
             AdoptedBaseline::Unavailable(reason) => {
                 // A1: a missing base is a HOLD + surface + RE-ASK (this cadence),
                 // never a fabricated full-world (the last live non-incremental emit).
@@ -1819,90 +1759,13 @@ fn reconcile_from_report(state: &mut BrokerState, cadence: bool) -> bool {
     {
         return false;
     }
-    // `lqos-74t.102`: while a non-suffix R3 gate is armed, NEVER adopt an
-    // intermediate/partial report. The ONLY report that may advance the applied
-    // state (and clear the gate) is the R3 full desired world, identified by the
-    // full desired content key. A stale/partial report keeps the old applied
-    // world and the gate; the cadence re-asks on the short retry.
-    let pending_non_suffix = state.pending_non_suffix.clone();
-    if let Some(capture) = pending_non_suffix.as_ref() {
-        let expected = state.last_desired_world_key.as_deref();
-        if expected != Some(desired_world_content_key.as_str()) {
-            warn!(
-                event = "NON_SUFFIX_R3_WAIT",
-                expected = ?expected,
-                reported = %content_key,
-                held = ?capture.non_suffix,
-                "waiting for the post-R3 full desired world; keeping the old applied state \
-                 and the non-suffix gate (no partial adoption) (lqos-74t.102)"
-            );
-            let _ = urgent::submit(
-                UrgentSource::System,
-                UrgentSeverity::Warning,
-                "NON_SUFFIX_R3_WAIT".to_string(),
-                format!(
-                    "The broker is waiting for the R3/re-adopt full world after a non-suffix \
-                     structural remove ({} held circuit(s)). The current applied report does \
-                     not match the full desired world; the broker keeps the old applied state \
-                     and the R3 gate, and will re-ask.",
-                    capture.non_suffix.len()
-                ),
-                None,
-                Some("bridge-broker:non-suffix-wait".to_string()),
-            );
-            state.report_reread_due = true;
-            state.report_reread_at = Some(Instant::now() + REPORT_REREAD_RETRY);
-            return false;
-        }
-        // `lqos-74t.102` full-slot oracle: a matching content key alone is NOT
-        // proof that the R3/re-adopt committed a full slot table. Require the
-        // raw report order to name EVERY desired Upsert leaf (no absent table
-        // and no tail-completed short table) before clearing.
-        let tx_names: BTreeSet<&str> = tx
-            .leaf_ops
-            .iter()
-            .filter_map(|op| match op {
-                DataplaneLeafOp::Upsert { circuit_id, .. } => Some(circuit_id.as_str()),
-                _ => None,
-            })
-            .collect();
-        let full_slot_table = slot_order.as_ref().is_some_and(|order| {
-            // §2.4(11): set equality is the oracle. Length+contains allowed a
-            // duplicate to stand in for a missing circuit; the BTreeSet form
-            // rejects absent, short, and duplicate tables alike.
-            let order_names: BTreeSet<&str> = order.iter().map(String::as_str).collect();
-            order.len() == tx_names.len() && order_names == tx_names
-        });
-        if !full_slot_table {
-            warn!(
-                event = "NON_SUFFIX_R3_WAIT",
-                reason = "absent_or_partial_slot_table",
-                held = ?capture.non_suffix,
-                "the matching report carries no full slot table — the R3/re-adopt \
-                 commit is not proven; keeping the gate and the old applied state (lqos-74t.102)"
-            );
-            let _ = urgent::submit(
-                UrgentSource::System,
-                UrgentSeverity::Warning,
-                "NON_SUFFIX_R3_WAIT".to_string(),
-                "The broker is waiting for a full-slot R3/re-adopt report after a non-suffix \
-                 structural remove; the current report matched the desired key but carried no \
-                 full slot table. The old applied state and the gate are kept."
-                    .to_string(),
-                None,
-                Some("bridge-broker:non-suffix-wait".to_string()),
-            );
-            state.report_reread_due = true;
-            state.report_reread_at = Some(Instant::now() + REPORT_REREAD_RETRY);
-            return false;
-        }
-    }
     let reported = applied::AppliedGeneration {
         generation: tx.generation.clone(),
         content_key,
         desired_world_content_key: Some(desired_world_content_key.clone()),
         slot_order: slot_order.clone(),
         owners: owners.clone(),
+        slot_numbers: slot_numbers.clone(),
     };
     let diverged = if late {
         state.applied.adopt_late(reported, tx);
@@ -1925,24 +1788,6 @@ fn reconcile_from_report(state: &mut BrokerState, cadence: bool) -> bool {
         has_slot_order,
         "Bridge baseline ADOPTED from the applied-state report"
     );
-    if pending_non_suffix.is_some() {
-        // The R3 full world is now committed/applied and adopted; ONLY NOW may
-        // the gate/fence/capture clear. Delivery resumes on this/next tick.
-        state.pending_non_suffix = None;
-        state.terminal_fence = None;
-        state.removal_capture = None;
-        state.non_suffix_replay_due = false;
-        state.non_suffix_trigger_key = None;
-        info!(
-            event = "NON_SUFFIX_R3_COMPLETE",
-            generation = %generation,
-            inners,
-            leaves,
-            "post-R3 full world adopted — non-suffix gate/fence/capture cleared; delivery resumes"
-        );
-        let _ = urgent::clear_by_identity("NON_SUFFIX_R3_PENDING", "bridge-broker:non-suffix");
-        let _ = urgent::clear_by_identity("NON_SUFFIX_R3_WAIT", "bridge-broker:non-suffix-wait");
-    }
     if diverged {
         // A3 criterion 1/3: the report OVERRODE a diverging interim ack-fold.
         // The report is authoritative; the divergence is surfaced.
@@ -2006,82 +1851,198 @@ fn maybe_reread_report(state: &mut BrokerState) {
         return;
     }
     state.report_reread_due = false;
-    let has_base = state.applied.has_base();
-    state.report_reread_at = Some(now + if has_base {
-        REPORT_REREAD_PERIOD
-    } else {
-        REPORT_REREAD_RETRY
-    });
+    state.report_reread_at = Some(now + next_report_reread_delay(state));
     reconcile_from_report(state, true);
 }
 
-/// `lqos-74t.102`: restore a broker-owned non-suffix gate from the persisted
-/// SEAM_STATE across an lqosd restart. Returns the gate capture + the full
-/// desired key that the post-R3 report must match.
-fn read_restored_non_suffix(
-    path: &std::path::Path,
-) -> Option<(RemovalCapture, Option<String>)> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    let snapshot: BridgeConvergenceSnapshot = serde_json::from_str(&raw).ok()?;
-    let capture = snapshot.pending_non_suffix?;
-    Some((capture, snapshot.desired_world_content_key))
+/// The next re-read delay. The long drift-reconcile period applies only to a
+/// base the bridge's REPORT confirmed; no base, or an interim ACK-folded base
+/// (A3: the fold is a projection until the report reconciles it), re-asks on
+/// the short retry. Without this, an ACK fold right after a re-read waited the
+/// full 60 s period for confirmation — longer than the 30 s
+/// `PLACEMENT_STALE_AFTER` bound, so every bridge start raised a self-clearing
+/// PLACEMENT_STALE with IDENTICAL keys (PLACEMENT_STALE_DIAGNOSIS.md).
+fn next_report_reread_delay(state: &BrokerState) -> Duration {
+    if state.applied.has_base()
+        && state.applied.provenance() == Some(applied::BaseProvenance::Report)
+    {
+        REPORT_REREAD_PERIOD
+    } else {
+        REPORT_REREAD_RETRY
+    }
 }
 
-/// `lqos-74t.102` restart ordering/replay: restore the persisted gate, then
-/// read the CURRENT artifact **before** any report reconcile, and replay the
-/// remove-only R3 trigger. A missing artifact/trigger falls back to the engine
-/// RemovedNotTail/SlotMismatch path instead of holding silently forever.
-fn restore_non_suffix_gate_from(
-    snapshot_path: &std::path::Path,
-    artifact: &PathBuf,
-    state: &mut BrokerState,
-) {
-    let Some((capture, _persisted_key)) = read_restored_non_suffix(snapshot_path) else {
+/// Names the convergence term that failed, for the PLACEMENT_STALE text (the
+/// keys alone hide an identity or provenance failure behind identical keys).
+fn placement_unconverged_reason(
+    state: &BrokerState,
+    applied_key: Option<&str>,
+    desired_key: Option<&str>,
+) -> String {
+    if desired_key.is_none() {
+        return "no desired world key".to_string();
+    }
+    if applied_key != desired_key {
+        return "applied key differs from desired".to_string();
+    }
+    match state.applied.provenance() {
+        Some(applied::BaseProvenance::Report) => {}
+        other => {
+            return format!(
+                "applied report pending (base provenance {})",
+                other.map_or("none", |p| p.as_str())
+            )
+        }
+    }
+    if !state.applied.owners_reported() {
+        return "owners not reported".to_string();
+    }
+    "slot-map identity mismatch (names / slots / owners / holes)".to_string()
+}
+
+/// W3: the placement identity the broker can prove from the applied report:
+/// the desired world's live leaf names == the report's `slot_order` names, the
+/// ordered numeric slots are parallel to the owners, every live owner is a real
+/// worker (holes are allowed only in the numeric-indexed table), and a
+/// non-empty world carries the owner table. The incarnations remain the
+/// bridge-side S2b backstop.
+fn placement_identity_matches(state: &BrokerState, desired: &DataplaneTransaction) -> bool {
+    if state.applied.provenance() != Some(applied::BaseProvenance::Report)
+        || !state.applied.owners_reported()
+    {
+        return false;
+    }
+    let desired_names: BTreeSet<&str> = desired
+        .leaf_ops
+        .iter()
+        .filter_map(|op| match op {
+            DataplaneLeafOp::Upsert { circuit_id, .. } => Some(circuit_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    let applied_names: BTreeSet<&str> = state
+        .applied
+        .slot_order()
+        .iter()
+        .map(String::as_str)
+        .collect();
+    if desired_names != applied_names {
+        return false;
+    }
+    if state.applied.slot_order().len() != state.applied.slot_numbers().len()
+        || state.applied.slot_numbers().len() != state.applied.owners().len()
+    {
+        return false;
+    }
+    // The numeric-indexed table's holes are LEGAL (a removed circuit's row);
+    // a hole in a LIVE numeric slot, or a stale live row at a non-live numeric,
+    // is not. Index 0 is the reserved best-effort row.
+    let numbers = state.applied.slot_numbers();
+    let table = state.applied.slot_owners();
+    if !desired_names.is_empty() && table.is_empty() {
+        return false;
+    }
+    if !numbers.is_empty() {
+        let max_live = numbers.iter().copied().max().unwrap_or(0) as usize;
+        if table.len() != max_live + 1 {
+            return false;
+        }
+    }
+    let live: BTreeSet<usize> = numbers
+        .iter()
+        .filter_map(|n| usize::try_from(*n).ok())
+        .collect();
+    let mut table_live = 0usize;
+    for (idx, &owner) in table.iter().enumerate() {
+        if idx == 0 {
+            continue; // reserved best-effort row
+        }
+        if live.contains(&idx) {
+            if owner == u16::MAX {
+                return false; // a hole in a LIVE slot
+            }
+            table_live += 1;
+        } else if owner != u16::MAX {
+            return false; // a stale live row at a non-live numeric
+        }
+    }
+    if table_live != live.len() {
+        return false;
+    }
+    // A same (desired key, generation) map change is a divergence; a new
+    // key/generation is a new world and resets the converged map.
+    if state.applied.slot_map_diverged() {
+        return false;
+    }
+    true
+}
+
+/// W3: the ONE placement-convergence rule. Compares the desired world key with
+/// the applied report's desired key AND the applied ordered slot map (names,
+/// numerics, owners; holes allowed) against the desired leaf projection, then
+/// runs the bounded stale timer. It never suppresses emission: a mismatch only
+/// starts the timer; at the bound it submits one `PLACEMENT_STALE`, forces a
+/// report re-read, and keeps the normal diff cadence.
+fn refresh_placement_stale(state: &mut BrokerState, desired_now: Option<&DataplaneTransaction>) {
+    let Some(desired) = desired_now else {
         return;
     };
-    state.pending_non_suffix = Some(capture.clone());
-    state.removal_capture = Some(capture.clone());
-
-    let Some(desired) = read_artifact_cached(artifact, &mut state.artifact_cache) else {
-        state.pending_non_suffix = None;
-        state.removal_capture = None;
-        state.non_suffix_replay_due = false;
-        state.non_suffix_trigger_key = None;
-        warn!(
-            event = "NON_SUFFIX_GATE_DROPPED_NO_ARTIFACT",
-            "a persisted non-suffix gate had no current artifact to rebuild from — \
-             falling back to the engine RemovedNotTail/SlotMismatch recovery"
-        );
-        return;
-    };
-    state.last_desired_generation = Some(desired.generation.clone());
-    state.last_desired_world_key = Some(translate::content_key(&desired));
-
-    if non_suffix_rebuild_trigger(&desired, &capture).is_none() {
-        state.pending_non_suffix = None;
-        state.removal_capture = None;
-        state.non_suffix_replay_due = false;
-        state.non_suffix_trigger_key = None;
-        warn!(
-            event = "NON_SUFFIX_GATE_DROPPED_NO_TRIGGER",
-            "a persisted non-suffix gate had no removable trigger — falling back to the \
-             engine RemovedNotTail/SlotMismatch recovery"
-        );
+    let desired_key = state.last_desired_world_key.clone();
+    let applied_key = state.applied.desired_key().map(str::to_owned);
+    let converged = desired_key.is_some()
+        && applied_key.as_deref() == desired_key.as_deref()
+        && placement_identity_matches(state, desired);
+    if converged {
+        let was_stale = state.placement_stale_since.is_some() || state.placement_stale_reported;
+        state.placement_stale_since = None;
+        state.placement_stale_reported = false;
+        state.placement_stale_polls = 0;
+        if was_stale {
+            let _ = urgent::clear_by_identity("PLACEMENT_STALE", "bridge-broker:placement-stale");
+        }
         return;
     }
-    state.terminal_fence = Some(translate::structural_identity(&desired));
-    // §2.4(9): do NOT put the trigger into `state.pending` here. The first
-    // step after a restart has no segment yet, and resolving a pending then
-    // records SEAM_LOST and destroys the only trigger. Hold the intent and
-    // queue it only after the control seam attaches.
-    state.non_suffix_replay_due = true;
-    state.non_suffix_trigger_key = None;
-    state.pending = None;
-    warn!(
-        event = "NON_SUFFIX_GATE_RESTORED_WAIT",
-        "restored the non-suffix R3 gate from {snapshot_path:?}; current artifact \
-         loaded; the remove-only trigger will be replayed after a real seam attach"
-    );
+    let now = Instant::now();
+    // The IDENTICAL-KEYS race (PLACEMENT_STALE_DIAGNOSIS.md): the keys match but
+    // the base is still the interim ACK fold, so only the authoritative report
+    // can prove convergence. Ask for it NOW, on the first unconverged tick,
+    // instead of waiting out the periodic re-read (60 s > the 30 s bound). A
+    // report that never confirms still alerts at the bound (the semantics are
+    // unchanged: only a Report-proven identity converges).
+    if state.placement_stale_since.is_none()
+        && applied_key.is_some()
+        && applied_key == desired_key
+        && state.applied.provenance() != Some(applied::BaseProvenance::Report)
+    {
+        state.report_reread_due = true;
+    }
+    let since = *state.placement_stale_since.get_or_insert(now);
+    state.placement_stale_polls = state.placement_stale_polls.saturating_add(1);
+    let elapsed = now.saturating_duration_since(since);
+    if !state.placement_stale_reported
+        && (elapsed >= PLACEMENT_STALE_AFTER || state.placement_stale_polls >= PLACEMENT_STALE_POLLS)
+    {
+        state.placement_stale_reported = true;
+        state.placement_stale_episodes = state.placement_stale_episodes.saturating_add(1);
+        let _ = urgent::submit(
+            UrgentSource::System,
+            UrgentSeverity::Warning,
+            "PLACEMENT_STALE".to_string(),
+            format!(
+                "The broker has not converged to the desired placement for {}s \
+                 (applied desired key {:?}, current desired key {:?}; failing term: {}). \
+                 Re-reading the applied report and re-emitting; this is an alert, not a hold.",
+                elapsed.as_secs(),
+                applied_key.as_deref(),
+                desired_key.as_deref(),
+                placement_unconverged_reason(state, applied_key.as_deref(), desired_key.as_deref()),
+            ),
+            None,
+            Some("bridge-broker:placement-stale".to_string()),
+        );
+        state.report_reread_due = true;
+        state.report_reread_at = Some(now);
+    }
 }
 
 fn step(artifact: &PathBuf, state: &mut BrokerState) {
@@ -2211,12 +2172,6 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
                     Some("bridge-broker:seam-replaced".to_string()),
                 );
                 state.segment = None;
-                if state.pending_non_suffix.is_some() {
-                    // §2.4(13): the idle replacement invalidated the seam while
-                    // the gate is armed; 2c must queue the replay after the
-                    // next attach instead of leaving the gate waiting forever.
-                    state.non_suffix_replay_due = true;
-                }
             }
         }
     }
@@ -2249,29 +2204,9 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
         maybe_reread_report(state);
     }
 
-    // 2c. `lqos-74t.102` §2.4(9): a restored/lost non-suffix trigger is held
-    // as INTENT, never as a pending before a segment exists. Queue it only
-    // after a real attach; if no seam is present, keep the gate and return
-    // without consuming the trigger as SEAM_LOST.
-    if state.pending_non_suffix.is_some() {
-        // §2.4(14): the ack path arms replay_due when the in-flight trigger
-        // carried an older desired key than the current artifact. A c4 trigger
-        // resolving after the desired became c5 must not leave the gate
-        // waiting on c4.
-        if state.non_suffix_replay_due && state.pending.is_none() {
-            if state.segment.is_none() {
-                publish_convergence_snapshot(state);
-                return;
-            }
-            if let Some(desired) = desired_now.as_ref() {
-                let _ = queue_non_suffix_replay(state, desired);
-            }
-        }
-        if state.pending_non_suffix.is_some() {
-            publish_convergence_snapshot(state);
-            return;
-        }
-    }
+    // 2c. W3: ONE convergence rule. The capture no longer arms a gate; a
+    // mismatch starts the bounded stale timer and never suppresses emission.
+    refresh_placement_stale(state, desired_now.as_ref());
 
     // 3. Start a new publish when idle. C3(b): a consecutive-reject backoff
     // throttles the re-diff instead of a per-tick reject storm.
@@ -2406,7 +2341,7 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
             // are persisted in SEAM_STATE so the next occurrence answers
             // suffix-ness without re-instrumenting.
             if outcome.removal_capture.removed.is_empty() {
-                state.removal_capture = None;
+                state.last_removal = None;
             } else {
                 let capture = outcome.removal_capture.clone();
                 if capture.non_suffix.is_empty() {
@@ -2436,44 +2371,12 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
                     // NOTE: the shared `terminal_fence` FREEZES ALL work for this
                     // structural identity (not only the held remove) until the
                     // identity changes — a deliberate settled state, not a spin.
-                    state.terminal_fence = Some(desired_structural.clone());
-                    // `lqos-74t.102`: a NON-SUFFIX capture arms a broker-owned
-                    // gate that is NOT keyed to the structural identity. The
-                    // trigger below carries only the non-suffix Removes; the
-                    // engine's typed SlotMismatch detector refuses them before
-                    // any mutation and forces R3. No ADD is ever emitted while
-                    // this gate is set. It clears only when the post-R3 report
-                    // matches the full desired world.
-                    state.pending_non_suffix = Some(capture.clone());
-                    // The normal capture tick emits the remove-only trigger
-                    // below; this is not a replay intent.
-                    state.non_suffix_replay_due = false;
-                    state.non_suffix_trigger_key = None;
-                    warn!(
-                        event = "NON_SUFFIX_R3_PENDING",
-                        held = ?capture.non_suffix,
-                        slot_table_len = capture.slot_table_len,
-                        "non-suffix remove captured — holding ALL new incremental emission; \
-                         routing the whole world to R3/re-adopt (no ADD against the partial \
-                         slot table) (lqos-74t.102)"
-                    );
-                    let _ = urgent::submit(
-                        UrgentSource::System,
-                        UrgentSeverity::Warning,
-                        "NON_SUFFIX_R3_PENDING".to_string(),
-                        format!(
-                            "A non-suffix structural remove was captured ({} circuit(s), slot \
-                             table {}); the broker is holding new incremental changes and \
-                             routing the full desired world through R3/re-adopt. No ADD is \
-                             emitted against the partial slot table.",
-                            capture.non_suffix.len(),
-                            capture.slot_table_len
-                        ),
-                        None,
-                        Some("bridge-broker:non-suffix".to_string()),
-                    );
+                    // W3: diagnostics-only capture. W2 makes a middle remove
+                    // a row hole, so the normal semantic_diff carries it; the
+                    // convergence rule (applied==desired + PLACEMENT_STALE)
+                    // handles any lag. No gate, no fence, no remove-only R3.
                 }
-                state.removal_capture = Some(capture);
+                state.last_removal = Some(capture);
             }
             // §`lqos-74t.12`: refresh the aged pure-site deferral set — stamp a
             // site's first-seen time, clear it once a circuit rides it, and emit
@@ -2522,10 +2425,7 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
             // by a remove-only R3 trigger. It carries the non-suffix circuits
             // (which the engine refuses before mutating) and NO structural ADD,
             // so the next ADD never reaches the partial slot table.
-            let delta = match state.pending_non_suffix.as_ref() {
-                Some(capture) => non_suffix_rebuild_trigger(&desired, capture),
-                None => outcome.delta,
-            };
+            let delta = outcome.delta;
             if let Some(delta) = delta {
                 let baseline = outcome.baseline.unwrap_or_else(|| {
                     // A non-suffix-only capture may have no normal delta at all;
@@ -2578,10 +2478,6 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
                                 attempt_retries: 0,
                                 ack_timeouts: 0,
                             });
-                            if state.pending_non_suffix.is_some() {
-                                state.non_suffix_trigger_key =
-                                    state.last_desired_world_key.clone();
-                            }
                         }
                     }
                     Err(_) => {
@@ -2621,12 +2517,16 @@ fn ack_drops(
         .map(|kind| (kind, ack.dropped_packets()))
 }
 
+/// The operator-facing name for a broker outcome: the contract crate's
+/// [`AckOutcome::wire_name`] for every wire outcome, so this cannot diverge from
+/// the producer's `outcome_name`. A `Rejected` name is already one of those, or
+/// the broker-local `UNKNOWN_OUTCOME` for a code this build cannot decode.
 fn reject_reason(outcome: &ack_map::PublishOutcome) -> &'static str {
     match outcome {
-        ack_map::PublishOutcome::Applied => "APPLIED",
-        ack_map::PublishOutcome::AttemptExhausted => "ATTEMPT_EXHAUSTED",
-        ack_map::PublishOutcome::ObserveMode => "REJECTED_OBSERVE_MODE",
-        ack_map::PublishOutcome::RebuildRequired => "REBUILD_REQUIRED",
+        ack_map::PublishOutcome::Applied => AckOutcome::Applied.wire_name(),
+        ack_map::PublishOutcome::AttemptExhausted => AckOutcome::AttemptExhausted.wire_name(),
+        ack_map::PublishOutcome::ObserveMode => AckOutcome::RejectedObserveMode.wire_name(),
+        ack_map::PublishOutcome::RebuildRequired => AckOutcome::RebuildRequired.wire_name(),
         ack_map::PublishOutcome::Rejected(name) => name,
     }
 }
@@ -2656,7 +2556,7 @@ fn outcome_disposition(outcome: ack_map::PublishOutcome) -> OutcomeDisposition {
             fence: false,
             reject: false,
         },
-        ack_map::PublishOutcome::Rejected("REJECTED_STRUCTURAL_OP") => OutcomeDisposition {
+        ack_map::PublishOutcome::Rejected(ack_map::STRUCTURAL_REJECT) => OutcomeDisposition {
             quarantine: true,
             fence: false,
             reject: true,
@@ -2679,7 +2579,6 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
         outcomes::record_rejected(&pending.generation, "SEAM_LOST");
         // §2.4(9): losing the push before a real attach is not permission
         // to lose the trigger. Keep the gate and replay after attach.
-        rearm_non_suffix_after_lost_pending(state);
         return Resolve::Cleared;
     };
     // Push-once (review fix 1): write only unwritten frames; once the
@@ -2709,8 +2608,7 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
         if segment.is_replaced(SEGMENT_NAME) {
             info!("Bridge seam replaced mid-publish (ack silence) — re-attaching");
             outcomes::record_rejected(&pending.generation, "SEAM_LOST");
-            rearm_non_suffix_after_lost_pending(state);
-            state.segment = None;
+                state.segment = None;
             return Resolve::Cleared;
         }
         if pending.ack_timeouts >= ACK_SILENCE_MAX_TIMEOUTS {
@@ -2731,8 +2629,7 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
             // terminal an ACK-silence attempt.
             state.report_reread_due = true;
             state.report_reread_at = Some(Instant::now() + REPORT_REREAD_RETRY);
-            rearm_non_suffix_after_lost_pending(state);
-            warn!(
+                warn!(
                 event = "ACK_SILENCE_LATE_WAIT",
                 generation = %pending.generation,
                 timeouts = pending.ack_timeouts,
@@ -2749,37 +2646,6 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
     let outcome = ack_map::classify(ack.outcome_code());
     match outcome {
         ack_map::PublishOutcome::Applied => {
-            if non_suffix_applied_is_suspect(state.pending_non_suffix.as_ref()) {
-                // Defensive fallback (engine detector should have forced R3):
-                // an APPLIED ack for the remove-only trigger means the bridge
-                // accepted a partial world. NEVER advance the applied belief or
-                // clear the gate here; keep the old applied state and wait for
-                // the matching full R3 report. One surfaced item (bounded).
-                warn!(
-                    event = "NON_SUFFIX_UNEXPECTED_APPLIED",
-                    generation = %pending.generation,
-                    "the non-suffix trigger was APPLIED (the engine SlotMismatch fallback did \
-                     not fire) — keeping the old applied state and the R3 gate; no partial \
-                     applied belief (lqos-74t.102)"
-                );
-                let _ = urgent::submit(
-                    UrgentSource::System,
-                    UrgentSeverity::Warning,
-                    "NON_SUFFIX_R3_WAIT".to_string(),
-                    "A non-suffix trigger was unexpectedly applied by the bridge; the broker \
-                     is keeping the previous applied state and the R3 gate until the full \
-                     desired world is adopted."
-                        .to_string(),
-                    None,
-                    Some("bridge-broker:non-suffix-wait".to_string()),
-                );
-                state.report_reread_due = true;
-                // §2.4(17): recovery from the wait hazard — re-read the report
-                // AND re-arm the trigger for the current desired key; state
-                // retention alone would leave the gate with no next attempt.
-                state.non_suffix_replay_due = true;
-                return Resolve::Cleared;
-            }
             ack_map::record_applied();
             state.record_applied_reset();
             // AVAIL 0(c): a successful apply is CONVERGENCE on the publish +
@@ -2853,15 +2719,14 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
             // exhausted (the transaction could not be applied).
             pending.attempt_retries += 1;
             if pending.attempt_retries >= ATTEMPT_EXHAUSTED_MAX_RETRIES {
-                outcomes::record_rejected(&pending.generation, "ATTEMPT_EXHAUSTED");
+                outcomes::record_rejected(&pending.generation, AckOutcome::AttemptExhausted.wire_name());
                 state.terminal_fence = Some(pending.structural_key.clone());
                 state.record_reject();
                 // A3 cadence: a terminal reject marks a report re-read DUE.
                 state.report_reread_due = true;
                 // §2.4(19): AttemptExhausted is the same wait hazard as
                 // ACK_SILENCE while the non-suffix gate is armed.
-                rearm_non_suffix_after_lost_pending(state);
-                return Resolve::Cleared;
+                        return Resolve::Cleared;
             }
             outcomes::record_retry(
                 &pending.generation,
@@ -2899,15 +2764,6 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
             );
             // A3 cadence: re-read the report so the rebuilt key is observed.
             state.report_reread_due = true;
-            // §2.4(14): the in-flight trigger carried the c4 key while the
-            // current artifact is already c5. Re-arm the remove-only trigger
-            // for c5 after this ack instead of waiting on the stale key.
-            if state.pending_non_suffix.is_some()
-                && state.non_suffix_trigger_key.as_deref()
-                    != state.last_desired_world_key.as_deref()
-            {
-                state.non_suffix_replay_due = true;
-            }
             Resolve::Cleared
         }
         other => {
@@ -3094,15 +2950,16 @@ mod r3_tests {
             terminal_fence: None,
             last_desired_generation: None,
         last_desired_world_key: None,
+        placement_stale_since: None,
+        placement_stale_reported: false,
+        placement_stale_episodes: 0,
+        placement_stale_polls: 0,
         duplicate_mapping_alerts: BTreeSet::new(),
             held_ops: BTreeSet::new(),
             held_structural_key: None,
             held_retry_at: None,
             held_retries: 0,
-            removal_capture: None,
-            pending_non_suffix: None,
-            non_suffix_replay_due: false,
-            non_suffix_trigger_key: None,
+            last_removal: None,
             deferred_sites: BTreeMap::new(),
             deferred_retires: BTreeMap::new(),
                 slot_order: None,
@@ -3146,6 +3003,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket(&dir, analytics_ipc::StateReply::Report(report));
@@ -3207,6 +3065,7 @@ mod r3_tests {
             desired_world_content_key: desired_key.clone(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket(&dir, analytics_ipc::StateReply::Report(report));
@@ -3255,6 +3114,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket(&dir, analytics_ipc::StateReply::Report(report));
@@ -3298,6 +3158,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let gen_match_bad_key = analytics_ipc::StateReport {
@@ -3309,6 +3170,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket_seq(
@@ -3395,6 +3257,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket(&dir, analytics_ipc::StateReply::Report(report));
@@ -3433,299 +3296,6 @@ mod r3_tests {
 
     /// `lqos-74t.102`: while the non-suffix gate is armed, a report that is NOT
     /// the full desired R3 world must not advance the applied state or clear the
-    /// fence/capture. The next (matching) report adopts and clears the gate.
-    #[test]
-    fn non_suffix_gate_clears_only_after_the_r3_full_world_is_adopted() {
-        let dir = std::env::temp_dir().join(format!("r3-non-suffix-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let desired = base_tx();
-        let mut partial = base_tx();
-        partial.leaf_ops.truncate(1);
-        partial.mapping_ops.truncate(1);
-        let partial_report = analytics_ipc::StateReport {
-            generation: "gen-partial".to_string(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&partial),
-            slot_order: Vec::new(),
-            content_key: crate::bridge_broker::translate::content_key(&partial),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let full_report = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: slot_order_bytes(&["c1", "c2"]),
-            content_key: crate::bridge_broker::translate::content_key(&desired),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (socket, feeder) = state_socket_seq(
-            &dir,
-            vec![
-                analytics_ipc::StateReply::Report(partial_report),
-                analytics_ipc::StateReply::Report(full_report),
-            ],
-        );
-        let mut state = bare_state(Some(socket));
-        let capture = RemovalCapture {
-            removed: vec!["c2".to_string()],
-            slot_table_len: 3,
-            slot_order_available: true,
-            suffix: false,
-            non_suffix: vec!["c2".to_string()],
-        };
-        state.pending_non_suffix = Some(capture.clone());
-        state.terminal_fence = Some("non-suffix-fence".to_string());
-        state.removal_capture = Some(capture);
-        state.last_desired_world_key = Some(crate::bridge_broker::translate::content_key(&desired));
-
-        assert!(
-            !reconcile_from_report(&mut state, false),
-            "a partial report must not adopt while the R3 gate is armed"
-        );
-        assert!(!state.applied.has_base(), "the old applied state is kept");
-        assert_eq!(
-            state
-                .pending_non_suffix
-                .as_ref()
-                .map(|c| c.non_suffix.clone()),
-            Some(vec!["c2".to_string()]),
-            "the gate persists"
-        );
-        assert!(state.terminal_fence.is_some(), "the fence persists");
-        assert!(state.removal_capture.is_some(), "the capture persists");
-
-        assert!(
-            reconcile_from_report(&mut state, true),
-            "the full desired R3 report adopts"
-        );
-        assert!(state.applied.has_base());
-        assert_eq!(
-            state.applied.key(),
-            Some(crate::bridge_broker::translate::content_key(&desired).as_str())
-        );
-        assert!(
-            state.pending_non_suffix.is_none(),
-            "the gate clears after R3"
-        );
-        assert!(state.terminal_fence.is_none(), "the fence clears after R3");
-        assert!(
-            state.removal_capture.is_none(),
-            "the capture clears after R3"
-        );
-        feeder.join().unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// `lqos-74t.102` full-slot oracle: a matching desired key with an ABSENT
-    /// slot table is not proof of a committed R3/re-adopt. The gate stays until
-    /// a report carries a full slot table.
-    #[test]
-    fn non_suffix_gate_rejects_absent_duplicate_and_short_slot_tables() {
-        let dir = std::env::temp_dir().join(format!("r3-non-suffix-slot-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let desired = base_tx();
-        let key = crate::bridge_broker::translate::content_key(&desired);
-        let absent = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: Vec::new(),
-            content_key: key.clone(),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let duplicate = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: slot_order_bytes(&["c1", "c1"]),
-            content_key: key.clone(),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let short = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: slot_order_bytes(&["c1"]),
-            content_key: key.clone(),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let duplicate_full = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: slot_order_bytes(&["c1", "c2", "c1"]),
-            content_key: key.clone(),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let full = analytics_ipc::StateReport {
-            generation: desired.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&desired),
-            slot_order: slot_order_bytes(&["c1", "c2"]),
-            content_key: key,
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (socket, feeder) = state_socket_seq(
-            &dir,
-            vec![
-                analytics_ipc::StateReply::Report(absent),
-                analytics_ipc::StateReply::Report(duplicate),
-                analytics_ipc::StateReply::Report(short),
-                analytics_ipc::StateReply::Report(duplicate_full),
-                analytics_ipc::StateReply::Report(full),
-            ],
-        );
-        let mut state = bare_state(Some(socket));
-        let capture = RemovalCapture {
-            removed: vec!["c2".to_string()],
-            slot_table_len: 3,
-            slot_order_available: true,
-            suffix: false,
-            non_suffix: vec!["c2".to_string()],
-        };
-        state.pending_non_suffix = Some(capture.clone());
-        state.terminal_fence = Some("non-suffix-fence".to_string());
-        state.removal_capture = Some(capture);
-        state.last_desired_world_key =
-            Some(crate::bridge_broker::translate::content_key(&desired));
-
-        assert!(
-            !reconcile_from_report(&mut state, false),
-            "matching key without a slot table must not clear the gate"
-        );
-        assert!(state.pending_non_suffix.is_some(), "gate persists");
-        assert!(
-            !reconcile_from_report(&mut state, true),
-            "a duplicate slot name must not stand in for the full set"
-        );
-        assert!(state.pending_non_suffix.is_some(), "gate persists on duplicate");
-        assert!(
-            !reconcile_from_report(&mut state, true),
-            "a short slot table must not stand in for the full set"
-        );
-        assert!(state.pending_non_suffix.is_some(), "gate persists on short");
-        assert!(
-            !reconcile_from_report(&mut state, true),
-            "a duplicate-plus-full slot table must not pass the bijection"
-        );
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "gate persists on duplicate-plus-full"
-        );
-        assert!(
-            reconcile_from_report(&mut state, true),
-            "the full-slot report clears the gate"
-        );
-        assert!(state.pending_non_suffix.is_none());
-        assert!(state.terminal_fence.is_none());
-        assert!(state.removal_capture.is_none());
-        feeder.join().unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// `lqos-74t.102` §2.4(10): refresh the current artifact/key BEFORE the
-    /// due report reconcile. With a stale persisted c4 key and a due c4 report,
-    /// the old ordering would match c4 and clear the gate; the current c5
-    /// artifact must be read first, keep the gate, and only the c5 report may
-    /// clear it.
-    #[test]
-    fn non_suffix_gate_refreshes_current_desired_before_a_due_old_report() {
-        let dir = std::env::temp_dir().join(format!("r3-order-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        let old = base_tx();
-        let mut current = base_tx();
-        current.generation = "matrix-current-c5".to_string();
-        current.leaf_ops.retain(|op| {
-            !matches!(op, DataplaneLeafOp::Upsert { circuit_id, .. } if circuit_id == "c2")
-        });
-        current.mapping_ops.retain(|op| {
-            !matches!(op, DataplaneMappingOp::Map { circuit_id, .. } if circuit_id == "c2")
-        });
-        std::fs::write(&artifact, serde_json::to_vec(&current).unwrap()).unwrap();
-        let old_report = analytics_ipc::StateReport {
-            generation: old.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&old),
-            slot_order: slot_order_bytes(&["c1", "c2"]),
-            content_key: crate::bridge_broker::translate::content_key(&old),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let current_report = analytics_ipc::StateReport {
-            generation: current.generation.clone(),
-            report_schema: 1,
-            transaction: report_tx_bytes(&current),
-            slot_order: slot_order_bytes(&["c1"]),
-            content_key: crate::bridge_broker::translate::content_key(&current),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (socket, feeder) = state_socket_seq(
-            &dir,
-            vec![
-                analytics_ipc::StateReply::Report(old_report),
-                analytics_ipc::StateReply::Report(current_report),
-            ],
-        );
-        let mut state = bare_state(Some(socket));
-        let capture = RemovalCapture {
-            removed: vec!["c2".to_string()],
-            slot_table_len: 2,
-            slot_order_available: true,
-            suffix: false,
-            non_suffix: vec!["c2".to_string()],
-        };
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture);
-        // Deliberately stale: the persisted trigger-time key is c4.
-        state.last_desired_world_key =
-            Some(crate::bridge_broker::translate::content_key(&old));
-        state.report_reread_due = true;
-
-        step(&artifact, &mut state);
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "a due old c4 report must not clear the c5 gate"
-        );
-        state.report_reread_due = true;
-        state.report_reread_at = None;
-        step(&artifact, &mut state);
-        assert!(
-            state.pending_non_suffix.is_none(),
-            "the current c5 report clears after the gate held the old report"
-        );
-        feeder.join().unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The fallback: a typed unavailable (no report yet — a fresh bridge
-    /// boot) degrades to baseline-None, i.e. exactly today's posture.
     #[test]
     fn adoption_degrades_on_typed_unavailable() {
         let dir = std::env::temp_dir().join(format!("r3-unavail-{}", std::process::id()));
@@ -3766,6 +3336,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket_seq(
@@ -3823,6 +3394,7 @@ mod r3_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers: None,
         };
         let (socket, feeder) = state_socket(&dir, analytics_ipc::StateReply::Report(report));
@@ -4017,57 +3589,16 @@ mod ghost_segment_tests {
     use super::seam::{AckFrame, create_full_test_segment, create_test_segment, unlink_test_segment};
     use super::*;
     use lqos_dataplane_types::DataplaneLeafOp;
-    use lqos_dataplane_types::wire::AckOutcome;
 
-    /// The idle arm checks `SEGMENT_NAME`, so these units must own the real
-    /// segment name; serialize them (cargo runs tests in parallel).
-    static GHOST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    /// A1: a step with NO base HOLDS, so the publish-path tests seed the empty
+    /// applied world (site-1, no circuits). The idle arm checks
+    /// `SEGMENT_NAME`, so `seam_segment_lock` serializes the segment owners.
     fn test_state(segment: Option<SeamSegment>) -> BrokerState {
-        // A1: a step with NO base now HOLDS, so the publish-path tests need a
-        // base (the empty applied world: site-1, no circuits).
-        let test_base = fence_tx(&[]);
-        // A3: seed the one owner with the test base (a folded interim belief —
-        // the tests exercise the publish path, not the adopt).
-        let mut applied = applied::AppliedState::default();
-        applied.fold_ack(test_base);
-        BrokerState {
-            segment,
-            applied,
-            pending: None,
-            terminal_fence: None,
-            last_desired_generation: None,
-        last_desired_world_key: None,
-        duplicate_mapping_alerts: BTreeSet::new(),
-            held_ops: BTreeSet::new(),
-            held_structural_key: None,
-            held_retry_at: None,
-            held_retries: 0,
-            removal_capture: None,
-            pending_non_suffix: None,
-            non_suffix_replay_due: false,
-            non_suffix_trigger_key: None,
-            deferred_sites: BTreeMap::new(),
-            deferred_retires: BTreeMap::new(),
-                slot_order: None,
-            socket_path: None,
-            artifact_cache: None,
-            bad_layout_reported: false,
-            attach_polls: 0,
-            liveness_polls: 0,
-            rejects_consecutive: 0,
-            backoff_until: None,
-            report_reread_at: None,
-            report_reread_due: false,
-            late_adopt: false,
-            maintenance: lqos_config::MaintenanceWindowConfig::default(),
-            maintenance_tz: None,
-            maintenance_override_ops: None,
-            deferred_maintenance: None,
-            apply_now: false,
-            break_glass_until_unix: None,
-            maintenance_control_path: None,
-        }
+        super::test_fixtures::broker_state(segment, fence_tx(&[]))
+    }
+
+    fn ghost_lock() -> std::sync::MutexGuard<'static, ()> {
+        super::test_fixtures::seam_segment_lock()
     }
 
     fn absent_artifact() -> PathBuf {
@@ -4144,7 +3675,7 @@ mod ghost_segment_tests {
     /// is the encode argument). This is the identity the ack-fold later uses.
     #[test]
     fn pending_stores_the_frame_desired_key_at_encode() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         let path = std::env::temp_dir().join(format!(
             "lqosd-pending-key-{}.json",
             std::process::id()
@@ -4181,7 +3712,7 @@ mod ghost_segment_tests {
     /// a re-attach clears the hold too. (Replaces the old world-freeze test.)
     #[test]
     fn structural_hold_quarantines_the_op_and_never_freezes_the_world() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         let path = std::env::temp_dir().join(format!("lqosd-hold-{}.json", std::process::id()));
         create_test_segment(SEGMENT_NAME, [7u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
@@ -4248,7 +3779,7 @@ mod ghost_segment_tests {
     /// attempt (so a transient cause self-clears without an operator re-attach).
     #[test]
     fn held_op_auto_retries_after_the_backoff_deadline() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         let path = std::env::temp_dir().join(format!("lqosd-retry-{}.json", std::process::id()));
         create_test_segment(SEGMENT_NAME, [9u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
@@ -4276,7 +3807,7 @@ mod ghost_segment_tests {
     /// genuinely-unappliable hold is NOT re-emitted forever.
     #[test]
     fn held_op_stops_retrying_after_the_cap() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         let path = std::env::temp_dir().join(format!("lqosd-retrycap-{}.json", std::process::id()));
         create_test_segment(SEGMENT_NAME, [10u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
@@ -4304,7 +3835,7 @@ mod ghost_segment_tests {
     /// segment and drops it to None (the existing attach machinery recovers).
     #[test]
     fn idle_replacement_drops_segment_to_none() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         create_test_segment(SEGMENT_NAME, [1u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
         let mut state = test_state(Some(segment));
@@ -4323,7 +3854,7 @@ mod ghost_segment_tests {
     /// (2) no churn: an intact segment is a no-op (retained, counter resets).
     #[test]
     fn idle_intact_segment_is_a_noop() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         create_test_segment(SEGMENT_NAME, [3u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
         let mut state = test_state(Some(segment));
@@ -4338,7 +3869,7 @@ mod ghost_segment_tests {
     /// cadence — no-op steps until the first cadence, then detection.
     #[test]
     fn idle_replacement_detected_on_the_first_cadence() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         create_test_segment(SEGMENT_NAME, [4u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
         let mut state = test_state(Some(segment));
@@ -4356,7 +3887,7 @@ mod ghost_segment_tests {
     /// the idle arm also covers bridge death; the Absent retry arm holds.
     #[test]
     fn idle_absent_segment_drops_to_none() {
-        let _guard = GHOST_LOCK.lock().unwrap();
+        let _guard = ghost_lock();
         create_test_segment(SEGMENT_NAME, [6u8; 16]);
         let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
         let mut state = test_state(Some(segment));
@@ -4365,815 +3896,6 @@ mod ghost_segment_tests {
         step(&absent_artifact(), &mut state);
         assert!(state.segment.is_none(), "an absent seam must drop to None");
     }
-
-    fn non_suffix_capture(circuits: &[&str]) -> RemovalCapture {
-        RemovalCapture {
-            removed: circuits.iter().map(|c| (*c).to_string()).collect(),
-            slot_table_len: circuits.len() + 1,
-            slot_order_available: true,
-            suffix: false,
-            non_suffix: circuits.iter().map(|c| (*c).to_string()).collect(),
-        }
-    }
-
-    /// `lqos-74t.102`: the trigger itself carries ONLY the held non-suffix
-    /// Removes — never an ADD — so the next structural ADD cannot reach the
-    /// partial slot table.
-    #[test]
-    fn non_suffix_trigger_has_removes_and_no_add() {
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        assert_eq!(trigger.generation, desired.generation);
-        assert!(trigger.inner_ops.is_empty());
-        assert!(trigger.mapping_ops.is_empty());
-        assert_eq!(trigger.leaf_ops.len(), 1);
-        assert!(matches!(
-            &trigger.leaf_ops[0],
-            DataplaneLeafOp::Remove { circuit_id } if circuit_id == "c2"
-        ));
-    }
-
-    /// `lqos-74t.102` broker/publish-level regression: a non-suffix capture is
-    /// replaced by the remove-only R3 trigger (the new ADD is suppressed); the
-    /// gate persists across the next structural identity; after the R3 full
-    /// world is represented in the applied base the gate clears and delivery
-    /// resumes.
-    #[test]
-    fn non_suffix_capture_suppresses_the_next_add_until_r3_then_resumes() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let path =
-            std::env::temp_dir().join(format!("lqosd-non-suffix-{}.json", std::process::id()));
-        create_test_segment(SEGMENT_NAME, [11u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-
-        // The applied world and bridge slot order include the interior c2.
-        let base = fence_tx(&["c1", "c2", "c3"]);
-        let mut applied = applied::AppliedState::default();
-        applied.fold_ack(base);
-        state.applied = applied;
-        state.slot_order = Some(vec!["c1".to_string(), "c2".to_string(), "c3".to_string()]);
-
-        // Desired removes the interior c2 AND adds c4: exactly the incident's
-        // non-suffix remove followed by a structural identity change.
-        let desired = fence_tx(&["c1", "c3", "c4"]);
-        write_fence_artifact(&path, &desired);
-        step(&path, &mut state);
-
-        let pending = state
-            .pending
-            .take()
-            .expect("the capture tick must emit the R3 trigger");
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "the non-suffix gate must be armed"
-        );
-        assert!(
-            pending
-                .current_tx
-                .leaf_ops
-                .iter()
-                .all(|op| !matches!(op, DataplaneLeafOp::Upsert { .. })),
-            "the trigger must carry NO ADD: {:?}",
-            pending.current_tx.leaf_ops
-        );
-        assert!(
-            pending.current_tx.leaf_ops.iter().any(
-                |op| matches!(op, DataplaneLeafOp::Remove { circuit_id } if circuit_id == "c2")
-            ),
-            "the trigger must carry the non-suffix Remove"
-        );
-
-        // The next structural ADD MUST NOT be emitted while the gate is set.
-        let desired_next = fence_tx(&["c1", "c3", "c4", "c5"]);
-        write_fence_artifact(&path, &desired_next);
-        step(&path, &mut state);
-        assert!(
-            state.pending.is_none(),
-            "the next structural ADD must be suppressed while the gate is set"
-        );
-        assert!(state.pending_non_suffix.is_some(), "the gate persists");
-
-        // The post-R3 report is the FULL desired world. The broker clears the
-        // gate by ADOPTING that report — no manual state clearing.
-        let sock_dir =
-            std::env::temp_dir().join(format!("lqosd-non-suffix-sock-{}", std::process::id()));
-        std::fs::create_dir_all(&sock_dir).unwrap();
-        let report = analytics_ipc::StateReport {
-            generation: desired_next.generation.clone(),
-            report_schema: 1,
-            transaction: super::r3_tests::report_tx_bytes(&desired_next),
-            slot_order: super::r3_tests::slot_order_bytes(&["c1", "c3", "c4", "c5"]),
-            content_key: translate::content_key(&desired_next),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (socket, feeder) =
-            super::r3_tests::state_socket(&sock_dir, analytics_ipc::StateReply::Report(report));
-        state.socket_path = Some(socket);
-        assert!(
-            reconcile_from_report(&mut state, true),
-            "the post-R3 full-world report must adopt"
-        );
-        feeder.join().unwrap();
-        assert!(state.pending_non_suffix.is_none(), "the gate clears on R3");
-        assert!(state.terminal_fence.is_none(), "the fence clears on R3");
-        assert!(state.removal_capture.is_none(), "the capture clears on R3");
-        assert_eq!(
-            state.applied.key(),
-            Some(translate::content_key(&desired_next).as_str()),
-            "the applied belief advances only to the R3 full world"
-        );
-        state.socket_path = None;
-        let _ = std::fs::remove_dir_all(&sock_dir);
-
-        // Delivery resumes with the NEXT structural ADD (c6).
-        let desired_resume = fence_tx(&["c1", "c3", "c4", "c5", "c6"]);
-        write_fence_artifact(&path, &desired_resume);
-        step(&path, &mut state);
-        let resumed = state
-            .pending
-            .take()
-            .expect("delivery must resume after the R3 full world");
-        assert!(
-            resumed.current_tx.leaf_ops.iter().any(
-                |op| matches!(op, DataplaneLeafOp::Upsert { circuit_id, .. } if circuit_id == "c6")
-            ),
-            "the new structural ADD resumes after R3"
-        );
-        assert!(
-            resumed.current_tx.leaf_ops.iter().all(
-                |op| !matches!(op, DataplaneLeafOp::Remove { circuit_id } if circuit_id == "c2")
-            ),
-            "the full-world applied base no longer removes c2"
-        );
-
-        unlink_test_segment(SEGMENT_NAME);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    /// `lqos-74t.102` stale expected key: while the gate is armed, the broker
-    /// must still read the artifact. A desired change (c4 -> c5) updates the
-    /// expected full-desired key; the post-R3 c5 report then matches and clears
-    /// the gate (no unbounded `NON_SUFFIX_R3_WAIT`).
-    #[test]
-    fn non_suffix_expected_key_tracks_a_desired_change_while_armed() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let path = std::env::temp_dir().join(format!(
-            "lqosd-non-suffix-stale-{}.json",
-            std::process::id()
-        ));
-        create_test_segment(SEGMENT_NAME, [12u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-
-        let base = fence_tx(&["c1", "c2", "c3"]);
-        let mut applied = applied::AppliedState::default();
-        applied.fold_ack(base);
-        state.applied = applied;
-        state.slot_order = Some(vec!["c1".to_string(), "c2".to_string(), "c3".to_string()]);
-
-        let desired = fence_tx(&["c1", "c3", "c4"]);
-        write_fence_artifact(&path, &desired);
-        step(&path, &mut state);
-        state.pending.take().expect("capture trigger");
-        assert!(state.pending_non_suffix.is_some());
-        assert_eq!(
-            state.last_desired_world_key.as_deref(),
-            Some(translate::content_key(&desired).as_str())
-        );
-
-        // Desired changes while armed: the artifact must be re-read and the
-        // expected key refreshed, with no emission.
-        let desired_next = fence_tx(&["c1", "c3", "c4", "c5"]);
-        write_fence_artifact(&path, &desired_next);
-        step(&path, &mut state);
-        assert!(state.pending.is_none(), "armed gate emits nothing");
-        assert_eq!(
-            state.last_desired_world_key.as_deref(),
-            Some(translate::content_key(&desired_next).as_str()),
-            "expected key must track the current desired"
-        );
-
-        // The R3 report is the NEW full world; it matches and clears.
-        let sock_dir =
-            std::env::temp_dir().join(format!("lqosd-non-suffix-stale-sock-{}", std::process::id()));
-        std::fs::create_dir_all(&sock_dir).unwrap();
-        let report = analytics_ipc::StateReport {
-            generation: desired_next.generation.clone(),
-            report_schema: 1,
-            transaction: super::r3_tests::report_tx_bytes(&desired_next),
-            slot_order: super::r3_tests::slot_order_bytes(&["c1", "c3", "c4", "c5"]),
-            content_key: translate::content_key(&desired_next),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (socket, feeder) =
-            super::r3_tests::state_socket(&sock_dir, analytics_ipc::StateReply::Report(report));
-        state.socket_path = Some(socket);
-        assert!(
-            reconcile_from_report(&mut state, true),
-            "the c5 R3 report must adopt"
-        );
-        feeder.join().unwrap();
-        assert!(state.pending_non_suffix.is_none(), "gate clears on c5 R3");
-        assert!(state.terminal_fence.is_none());
-        assert!(state.removal_capture.is_none());
-        assert_eq!(
-            state.applied.key(),
-            Some(translate::content_key(&desired_next).as_str())
-        );
-        state.socket_path = None;
-        let _ = std::fs::remove_dir_all(&sock_dir);
-        unlink_test_segment(SEGMENT_NAME);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    /// `lqos-74t.102`: an APPLIED ack for the remove-only trigger while armed
-    /// is a partial-world acceptance and must not advance the belief.
-    #[test]
-    fn non_suffix_applied_ack_is_suspect_only_when_armed() {
-        let capture = non_suffix_capture(&["c2"]);
-        assert!(!non_suffix_applied_is_suspect(None));
-        assert!(non_suffix_applied_is_suspect(Some(&capture)));
-    }
-
-    fn write_gate_snapshot(path: &std::path::Path, capture: &RemovalCapture, key: &str) {
-        let snap = BridgeConvergenceSnapshot {
-            pending_non_suffix: Some(capture.clone()),
-            removal_capture: Some(capture.clone()),
-            desired_world_content_key: Some(key.to_string()),
-            ..Default::default()
-        };
-        std::fs::write(path, serde_json::to_vec(&snap).expect("serialize snapshot")).unwrap();
-    }
-
-    /// `lqos-74t.102` restart ordering: the restored gate reads the CURRENT
-    /// artifact before any report reconcile. An OLD full report (c4) must not
-    /// clear it; only the current c5 report does.
-    #[test]
-    fn restart_loads_current_desired_before_the_old_report() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "lqosd-non-suffix-restart-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        let snapshot = dir.join("seam_state.json");
-        let old = fence_tx(&["c1", "c3", "c4"]);
-        let current = fence_tx(&["c1", "c3", "c4", "c5"]);
-        write_fence_artifact(&artifact, &current);
-        write_gate_snapshot(
-            &snapshot,
-            &non_suffix_capture(&["c2"]),
-            &translate::content_key(&old),
-        );
-
-        let mut state = test_state(None);
-        let old_report = analytics_ipc::StateReport {
-            generation: old.generation.clone(),
-            report_schema: 1,
-            transaction: super::r3_tests::report_tx_bytes(&old),
-            slot_order: super::r3_tests::slot_order_bytes(&["c1", "c3", "c4"]),
-            content_key: translate::content_key(&old),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let (old_socket, old_feeder) = super::r3_tests::state_socket(
-            &dir,
-            analytics_ipc::StateReply::Report(old_report),
-        );
-        state.socket_path = Some(old_socket);
-        restore_non_suffix_gate_from(&snapshot, &artifact, &mut state);
-
-        assert!(state.pending_non_suffix.is_some(), "gate restored");
-        assert_eq!(
-            state.last_desired_world_key.as_deref(),
-            Some(translate::content_key(&current).as_str()),
-            "restart must read the current artifact before reconciling"
-        );
-        assert!(
-            state.pending.is_none(),
-            "restore holds intent only; no pending before a real attach"
-        );
-        assert!(state.non_suffix_replay_due, "the replay intent is held");
-
-        // The old full report must not clear the gate.
-        step(&artifact, &mut state);
-        old_feeder.join().unwrap();
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "the old report must not clear the restored gate"
-        );
-
-        // The current c5 report (with a full slot table) clears.
-        let current_report = analytics_ipc::StateReport {
-            generation: current.generation.clone(),
-            report_schema: 1,
-            transaction: super::r3_tests::report_tx_bytes(&current),
-            slot_order: super::r3_tests::slot_order_bytes(&["c1", "c3", "c4", "c5"]),
-            content_key: translate::content_key(&current),
-            desired_world_content_key: String::new(),
-            applied_circuit_capacity: None,
-            owners: Vec::new(),
-            workers: None,
-        };
-        let current_dir = dir.join("current");
-        std::fs::create_dir_all(&current_dir).unwrap();
-        let (current_socket, current_feeder) = super::r3_tests::state_socket(
-            &current_dir,
-            analytics_ipc::StateReply::Report(current_report),
-        );
-        state.socket_path = Some(current_socket);
-        state.report_reread_due = true;
-        state.report_reread_at = None;
-        step(&artifact, &mut state);
-        current_feeder.join().unwrap();
-        assert!(state.pending_non_suffix.is_none(), "c5 report clears");
-        assert!(state.terminal_fence.is_none());
-        assert!(state.removal_capture.is_none());
-        assert_eq!(
-            state.applied.key(),
-            Some(translate::content_key(&current).as_str())
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// `lqos-74t.102` lost-trigger fallback: a restored gate with no current
-    /// artifact drops the broker gate (engine RemovedNotTail/SlotMismatch takes
-    /// over) and the next structural ADD proceeds — no hang.
-    #[test]
-    fn restored_gate_without_artifact_falls_back_without_hanging() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "lqosd-non-suffix-lost-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        let snapshot = dir.join("seam_state.json");
-        write_gate_snapshot(
-            &snapshot,
-            &non_suffix_capture(&["c2"]),
-            &translate::content_key(&fence_tx(&["c1", "c2", "c3"])),
-        );
-
-        let mut state = test_state(None);
-        restore_non_suffix_gate_from(&snapshot, &artifact, &mut state);
-        assert!(
-            state.pending_non_suffix.is_none(),
-            "no current artifact must drop the broker gate, not hang"
-        );
-
-        let desired = fence_tx(&["c1", "c3", "c4"]);
-        write_fence_artifact(&artifact, &desired);
-        step(&artifact, &mut state);
-        assert!(
-            state.pending.is_some(),
-            "delivery resumes (engine fallback owns the recovery)"
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// §2.4(13): an idle segment replacement while the gate is armed and no
-    /// publish is pending must arm the 2c replay intent.
-    #[test]
-    fn idle_segment_replacement_arms_replay_when_gate_armed() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_test_segment(SEGMENT_NAME, [31u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        state.pending_non_suffix = Some(non_suffix_capture(&["c2"]));
-        state.removal_capture = Some(non_suffix_capture(&["c2"]));
-        state.liveness_polls = RETRY_ATTACH_EVERY - 1;
-
-        // Bridge restart: same name, new inode; the idle liveness arm sees it.
-        create_test_segment(SEGMENT_NAME, [32u8; 16]);
-        step(&absent_artifact(), &mut state);
-        assert!(state.segment.is_none(), "replacement drops the segment");
-        assert!(
-            state.non_suffix_replay_due,
-            "§2.4(13) arms the replay intent"
-        );
-        assert!(state.pending_non_suffix.is_some(), "the gate remains");
-        unlink_test_segment(SEGMENT_NAME);
-    }
-
-    /// §2.4(16): a queued trigger that loses its seam through `resolve_pending`
-    /// must re-arm the replay, not leave the gate waiting forever.
-    #[test]
-    fn queued_lost_push_rearms_the_replay() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_full_test_segment(SEGMENT_NAME, [33u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&desired));
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-        let pending = Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&desired),
-            current_tx: trigger,
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: desired,
-            desired_key: None,
-            attempt_retries: 0,
-            ack_timeouts: 0,
-        };
-        state.segment = None;
-        let resolved = resolve_pending(&mut state, pending);
-        assert!(matches!(resolved, Resolve::Cleared));
-        assert!(state.pending.is_none());
-        assert!(state.pending_non_suffix.is_some(), "gate remains");
-        assert!(
-            state.non_suffix_replay_due,
-            "the lost push re-arms the replay"
-        );
-        unlink_test_segment(SEGMENT_NAME);
-    }
-
-    /// §2.4(19)/(20): ACK_SILENCE after three real timeouts re-arms the gate.
-    #[test]
-    fn queued_lost_push_rearms_on_ack_silence() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_full_test_segment(SEGMENT_NAME, [35u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&desired));
-        state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        let mut pending = Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&desired),
-            current_tx: trigger,
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: desired,
-            desired_key: None,
-            attempt_retries: 0,
-            ack_timeouts: 0,
-        };
-        TEST_ACK_TIMEOUT_MS.with(|cell| cell.set(Some(1)));
-        for _ in 0..(ACK_SILENCE_MAX_TIMEOUTS - 1) {
-            match resolve_pending(&mut state, pending) {
-                Resolve::Retained(next) => pending = *next,
-                Resolve::Cleared => panic!("must retain before the ACK bound"),
-            }
-        }
-        let resolved = resolve_pending(&mut state, pending);
-        TEST_ACK_TIMEOUT_MS.with(|cell| cell.set(None));
-        assert!(
-            matches!(resolved, Resolve::Retained(_)),
-            "ACK_SILENCE is not a bridge-reported fence: hold fail-closed, no terminal"
-        );
-        assert!(
-            state.terminal_fence.is_none(),
-            "ACK_SILENCE must not set a terminal fence"
-        );
-        assert!(state.pending_non_suffix.is_some(), "gate remains");
-        assert!(
-            state.non_suffix_replay_due,
-            "ACK_SILENCE re-arms the replay"
-        );
-        unlink_test_segment(SEGMENT_NAME);
-    }
-
-    /// §2.4(20): a replaced segment detected on ack silence re-arms too.
-    #[test]
-    fn queued_lost_push_rearms_on_segment_replacement() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_full_test_segment(SEGMENT_NAME, [36u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&desired));
-        state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        let pending = Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&desired),
-            current_tx: trigger,
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: desired,
-            desired_key: None,
-            attempt_retries: 0,
-            ack_timeouts: 0,
-        };
-        // Bridge restart: same name, new inode.
-        create_full_test_segment(SEGMENT_NAME, [37u8; 16]);
-        TEST_ACK_TIMEOUT_MS.with(|cell| cell.set(Some(1)));
-        let resolved = resolve_pending(&mut state, pending);
-        TEST_ACK_TIMEOUT_MS.with(|cell| cell.set(None));
-        assert!(matches!(resolved, Resolve::Cleared));
-        assert!(state.segment.is_none(), "replacement drops the seam");
-        assert!(state.pending_non_suffix.is_some(), "gate remains");
-        assert!(
-            state.non_suffix_replay_due,
-            "segment replacement re-arms the replay"
-        );
-        unlink_test_segment(SEGMENT_NAME);
-    }
-
-    /// §2.4(19): terminal AttemptExhausted re-arms the gate as well.
-    #[test]
-    fn queued_lost_push_rearms_on_attempt_exhausted() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_full_test_segment(SEGMENT_NAME, [38u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&desired));
-        state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        let pending = Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&desired),
-            current_tx: trigger,
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: desired,
-            desired_key: None,
-            attempt_retries: ATTEMPT_EXHAUSTED_MAX_RETRIES - 1,
-            ack_timeouts: 0,
-        };
-        let ack = AckFrame::new(AckOutcome::AttemptExhausted, &pending.generation, 0);
-        state
-            .segment
-            .as_mut()
-            .expect("segment")
-            .push_test_ack(&ack);
-        let resolved = resolve_pending(&mut state, pending);
-        assert!(matches!(resolved, Resolve::Cleared));
-        assert!(state.pending_non_suffix.is_some(), "gate remains");
-        assert!(
-            state.non_suffix_replay_due,
-            "AttemptExhausted re-arms the replay"
-        );
-        unlink_test_segment(SEGMENT_NAME);
-    }
-
-    /// §2.4(14): a c4 trigger already in flight when the desired becomes c5
-    /// must re-arm with c5 after its ack; inspect the real queued frames via
-    /// `as_ref`, never `take()` masking the in-flight state.
-    #[test]
-    fn inflight_c4_trigger_rearms_to_c5_after_ack() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!("lqosd-c4-c5-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        let c4 = fence_tx(&["c1", "c2", "c3"]);
-        let c5 = fence_tx(&["c1", "c3", "c4"]);
-        let capture = non_suffix_capture(&["c2"]);
-        write_fence_artifact(&artifact, &c5);
-
-        create_full_test_segment(SEGMENT_NAME, [34u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&c4));
-        let trigger = non_suffix_rebuild_trigger(&c4, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        state.non_suffix_trigger_key = state.last_desired_world_key.clone();
-        state.pending = Some(Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&c4),
-            current_tx: trigger.clone(),
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: c4.clone(),
-            desired_key: None,
-            attempt_retries: 0,
-            ack_timeouts: 0,
-        });
-        let ack = AckFrame::new(AckOutcome::RebuildRequired, &trigger.generation, 0);
-        state
-            .segment
-            .as_mut()
-            .expect("segment")
-            .push_test_ack(&ack);
-
-        step(&artifact, &mut state);
-        let queued = state.pending.as_ref().expect("c5 replay queued");
-        assert_eq!(
-            queued.current_tx.generation,
-            c5.generation,
-            "the stale c4 trigger was replaced by a c5 trigger"
-        );
-        assert_eq!(
-            state.non_suffix_trigger_key.as_deref(),
-            Some(translate::content_key(&c5).as_str())
-        );
-        unlink_test_segment(SEGMENT_NAME);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// §2.4(9): a restart restores INTENT, not a pending. The first no-segment
-    /// step must not consume the trigger as SEAM_LOST; after a real control
-    /// segment attaches, the remove-only trigger is replayed and its
-    /// RebuildRequired ack follows the real `resolve_pending` path.
-    #[test]
-    fn restart_replays_only_after_a_real_attach_not_seam_lost() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "lqosd-restart-real-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        let snapshot = dir.join("seam_state.json");
-        let desired = fence_tx(&["c1", "c3"]);
-        write_fence_artifact(&artifact, &desired);
-        let capture = non_suffix_capture(&["c2"]);
-        let snap = BridgeConvergenceSnapshot {
-            pending_non_suffix: Some(capture.clone()),
-            removal_capture: Some(capture.clone()),
-            desired_world_content_key: Some(translate::content_key(&desired)),
-            ..Default::default()
-        };
-        std::fs::write(&snapshot, serde_json::to_vec(&snap).unwrap()).unwrap();
-
-        let mut state = test_state(None);
-        restore_non_suffix_gate_from(&snapshot, &artifact, &mut state);
-        assert!(state.pending_non_suffix.is_some(), "gate restored");
-        assert!(state.pending.is_none(), "restore must not seed a pending");
-        assert!(state.non_suffix_replay_due, "replay intent is held");
-
-        // First step: no segment and attach_polls < RETRY_ATTACH_EVERY.
-        step(&artifact, &mut state);
-        assert!(state.pending.is_none(), "no no-segment pending was consumed");
-        assert!(state.non_suffix_replay_due, "the trigger intent survives");
-        assert!(state.pending_non_suffix.is_some(), "the gate survives");
-
-        // A REAL control segment now appears. The next step attaches and
-        // queues the replay; a real ack resolves it.
-        create_full_test_segment(SEGMENT_NAME, [21u8; 16]);
-        state.attach_polls = RETRY_ATTACH_EVERY - 1;
-        step(&artifact, &mut state);
-        assert!(state.segment.is_some(), "real segment attached");
-        assert!(!state.non_suffix_replay_due, "replay intent consumed");
-        let replayed = state.pending.as_ref().expect("replayed trigger queued");
-        assert!(replayed.current_tx.leaf_ops.iter().any(
-            |op| matches!(op, DataplaneLeafOp::Remove { circuit_id } if circuit_id == "c2")
-        ));
-        assert!(
-            replayed
-                .current_tx
-                .leaf_ops
-                .iter()
-                .all(|op| !matches!(op, DataplaneLeafOp::Upsert { .. })),
-            "replayed trigger carries no ADD"
-        );
-        let ack = AckFrame::new(
-            AckOutcome::RebuildRequired,
-            &replayed.generation,
-            0,
-        );
-        state
-            .segment
-            .as_mut()
-            .expect("segment")
-            .push_test_ack(&ack);
-        step(&artifact, &mut state);
-        assert!(state.pending.is_none(), "ack resolved the replay");
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "RebuildRequired keeps the gate until the c5 report"
-        );
-        unlink_test_segment(SEGMENT_NAME);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// §2.4(12): exercise the real ack/state path. An APPLIED ack for the
-    /// remove-only trigger while the gate is armed is a partial-world
-    /// acceptance: it must clear the pending but keep the gate and the old
-    /// applied belief, and mark the report re-read due.
-    #[test]
-    fn unexpected_applied_ack_keeps_gate_and_old_applied_state() {
-        let _guard = GHOST_LOCK.lock().unwrap();
-        create_full_test_segment(SEGMENT_NAME, [22u8; 16]);
-        let segment = SeamSegment::attach(SEGMENT_NAME).expect("attach");
-        let mut state = test_state(Some(segment));
-        let desired = fence_tx(&["c1", "c3"]);
-        let capture = non_suffix_capture(&["c2"]);
-        state.pending_non_suffix = Some(capture.clone());
-        state.removal_capture = Some(capture.clone());
-        state.last_desired_world_key = Some(translate::content_key(&desired));
-        let trigger = non_suffix_rebuild_trigger(&desired, &capture).expect("trigger");
-        let frames = seam::encode_transaction(&trigger, state.last_desired_world_key.as_deref())
-            .expect("encode");
-        let before = state.applied.key().map(str::to_string);
-        state.pending = Some(Pending {
-            frames,
-            pushed: 0,
-            awaiting_ack: false,
-            generation: trigger.generation.clone(),
-            structural_key: translate::structural_identity(&desired),
-            current_tx: trigger.clone(),
-            seq_pos: 1,
-            seq_len: 1,
-            applied_after_current: desired.clone(),
-            desired_key: None,
-            attempt_retries: 0,
-            ack_timeouts: 0,
-        });
-        let ack = AckFrame::new(AckOutcome::Applied, &trigger.generation, 0);
-        state
-            .segment
-            .as_mut()
-            .expect("segment")
-            .push_test_ack(&ack);
-        let pending = state.pending.take().expect("pending");
-        let resolved = resolve_pending(&mut state, pending);
-        assert!(matches!(resolved, Resolve::Cleared));
-        assert!(state.pending.is_none(), "the suspect ack clears the pending");
-        assert!(
-            state.pending_non_suffix.is_some(),
-            "APPLIED must not clear the R3 gate"
-        );
-        assert_eq!(
-            state.applied.key().map(str::to_string),
-            before,
-            "APPLIED must not advance the applied belief"
-        );
-        assert!(state.report_reread_due, "the report re-read is armed");
-        assert!(
-            state.non_suffix_replay_due,
-            "§2.4(17) re-arms the trigger, not only the report read"
-        );
-        // Prove the recovery actually queues a fresh attempt for the current
-        // desired, rather than only retaining the gate.
-        let dir = std::env::temp_dir().join(format!("lqosd-applied-rearm-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let artifact = dir.join("dataplane_transaction.json");
-        write_fence_artifact(&artifact, &desired);
-        step(&artifact, &mut state);
-        assert!(
-            state.pending.is_some(),
-            "the re-armed trigger is queued after the APPLIED wait hazard"
-        );
-        assert!(
-            state.non_suffix_trigger_key.as_deref()
-                == Some(translate::content_key(&desired).as_str())
-        );
-        unlink_test_segment(SEGMENT_NAME);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
-
-#[cfg(test)]
-mod posture_surface_tests {
-    use super::*;
 
     /// NON-VACUOUS (#4, the coordinator rev 4845): `posture::log_posture` actually EMITS
     /// the `RESOLVED_POSTURE` event carrying the resolved fields — a
@@ -5224,6 +3946,233 @@ mod posture_surface_tests {
             out.contains("side=\"lqosd\""),
             "the side must be emitted: {out}"
         );
+    }
+    fn map_report(
+        generation: &str,
+        key: &str,
+        names: &[&str],
+        owners: &[u16],
+        numbers: &[u64],
+    ) -> applied::AppliedGeneration {
+        applied::AppliedGeneration {
+            generation: generation.to_string(),
+            content_key: key.to_string(),
+            desired_world_content_key: Some(key.to_string()),
+            slot_order: Some(names.iter().map(|n| (*n).to_string()).collect()),
+            owners: Some(owners.to_vec()),
+            slot_numbers: Some(numbers.to_vec()),
+        }
+    }
+
+    /// W3 (pin 2): a middle remove leaves a numeric-table hole; the matching
+    /// live names/owners must still CONVERGE (holes are legal in the numeric
+    /// table). This is the anti-permanent-false-stale case.
+    #[test]
+    fn placement_identity_accepts_a_middle_remove_hole() {
+        let mut state = test_state(None);
+        let tx = fence_tx(&["c1", "c3"]);
+        let key = "remove-key";
+        state.last_desired_world_key = Some(key.to_string());
+        state.applied.adopt(
+            map_report("g-remove", key, &["c1", "c3"], &[0, 0], &[1, 3]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_none(),
+            "a hole at numeric 2 is legal; c1@1/c3@3 converged"
+        );
+        assert!(!state.placement_stale_reported);
+    }
+
+    /// W3 (pin 2): a hole in a LIVE numeric slot is not a valid placement.
+    #[test]
+    fn placement_identity_rejects_a_hole_in_a_live_slot() {
+        let mut state = test_state(None);
+        let tx = fence_tx(&["c1", "c2"]);
+        let key = "live-hole-key";
+        state.last_desired_world_key = Some(key.to_string());
+        state.applied.adopt(
+            map_report("g-live-hole", key, &["c1", "c2"], &[0, 0], &[1, 2]),
+            tx.clone(),
+        );
+        state.applied.set_slot_owner_for_test(2, u16::MAX);
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_some(),
+            "a hole in a live slot (2) must not converge"
+        );
+    }
+
+    /// W3 (pin 2): the SAME live names under the SAME desired key+generation
+    /// with a different assignment or different hole positions are NOT
+    /// converged; returning to the converged layout clears.
+    #[test]
+    fn placement_identity_rejects_same_names_different_layout() {
+        let mut state = test_state(None);
+        let tx = fence_tx(&["c1", "c2"]);
+        let key = "stable-key";
+        state.last_desired_world_key = Some(key.to_string());
+        state.applied.adopt(
+            map_report("g-stable", key, &["c1", "c2"], &[0, 0], &[1, 2]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_since.is_none(), "baseline converges");
+        // Different assignment, same names/numbers/generation/key.
+        state.applied.adopt(
+            map_report("g-stable", key, &["c1", "c2"], &[1, 1], &[1, 2]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_some(),
+            "same names + different assignment is a divergence"
+        );
+        // Different hole positions, same names/owners/generation/key.
+        state.applied.adopt(
+            map_report("g-stable", key, &["c1", "c2"], &[0, 0], &[1, 3]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_some(),
+            "same names + different hole positions is a divergence"
+        );
+        // Back to the converged layout clears.
+        state.applied.adopt(
+            map_report("g-stable", key, &["c1", "c2"], &[0, 0], &[1, 2]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_none(),
+            "the converged layout clears the timer"
+        );
+    }
+
+    /// PLACEMENT_STALE_DIAGNOSIS.md: the IDENTICAL-KEYS race. After an APPLIED
+    /// ack the base is the interim ACK fold with the frame's desired key, equal
+    /// to the current desired key. OLD: the confirming report arrived only at the
+    /// 60 s periodic re-read, past the 30 s bound, so a warning fired on every
+    /// bridge start. NEW: the first unconverged tick requests the report now
+    /// (and the AckFold base re-reads on the short retry); the report confirms
+    /// inside the bound and NO warning is raised. A report that never confirms
+    /// still alerts at the bound, and a real key change still alerts.
+    #[test]
+    fn placement_stale_ack_fold_race_requests_the_report_and_raises_no_warning() {
+        let mut state = test_state(None);
+        let tx = fence_tx(&["c1", "c2"]);
+        let report = |key: &str| applied::AppliedGeneration {
+            generation: "g-confirm".to_string(),
+            content_key: key.to_string(),
+            desired_world_content_key: Some(key.to_string()),
+            slot_order: Some(vec!["c1".to_string(), "c2".to_string()]),
+            owners: Some(vec![0, 0]),
+            slot_numbers: Some(vec![1, 2]),
+        };
+        state.last_desired_world_key = Some("tx-b207".to_string());
+        // (1) The race: the ACK fold carries the identical desired key.
+        state.applied.fold_ack_with_desired(tx.clone(), Some("tx-b207".to_string()));
+        state.report_reread_due = false;
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.report_reread_due, "identical keys + an AckFold base request the report now");
+        assert!(!state.placement_stale_reported, "no warning before the bound");
+        assert_eq!(super::next_report_reread_delay(&state), REPORT_REREAD_RETRY, "an AckFold base re-reads on the short retry");
+        // (2) The requested report confirms inside the bound: converged, no warning.
+        state.applied.adopt(report("tx-b207"), tx.clone());
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_since.is_none(), "the report converges");
+        assert_eq!(state.placement_stale_episodes, 0, "NO warning for the race");
+        assert_eq!(super::next_report_reread_delay(&state), REPORT_REREAD_PERIOD, "a Report-confirmed base keeps the periodic cadence");
+        // (3) Semantics kept: a REAL desired change with no convergence alerts at 30 s.
+        state.last_desired_world_key = Some("tx-next".to_string());
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_since.is_some(), "a key change starts the timer");
+        state.placement_stale_since = Some(Instant::now() - Duration::from_secs(31));
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_reported, "an unconverged desired change alerts at the bound");
+        assert_eq!(state.placement_stale_episodes, 1);
+        assert_eq!(
+            super::placement_unconverged_reason(&state, Some("tx-b207"), Some("tx-next")),
+            "applied key differs from desired"
+        );
+        // (4) Semantics kept: identical keys but a report that NEVER confirms still alerts.
+        let mut stuck = test_state(None);
+        stuck.last_desired_world_key = Some("tx-b207".to_string());
+        stuck.applied.fold_ack_with_desired(tx.clone(), Some("tx-b207".to_string()));
+        super::refresh_placement_stale(&mut stuck, Some(&tx));
+        stuck.placement_stale_since = Some(Instant::now() - Duration::from_secs(31));
+        super::refresh_placement_stale(&mut stuck, Some(&tx));
+        assert!(stuck.placement_stale_reported, "an unconfirmed fold still alerts at the bound");
+        assert!(
+            super::placement_unconverged_reason(&stuck, Some("tx-b207"), Some("tx-b207")).starts_with("applied report pending"),
+            "the message names the failing term"
+        );
+    }
+
+    /// W3: the exact 2026-11-12 incident shape. Applied desired key
+    /// `tx-3c0cc72e`, current desired `tx-9023f427`: the tick must start the
+    /// stale timer, alert once at the bound (episode 1), keep the report
+    /// re-read due, and clear on adoption of the matching world. A second
+    /// mismatched tick must NOT raise a second episode.
+    #[test]
+    fn placement_stale_incident_keys_alert_once_and_clear_on_adopt() {
+        let mut state = test_state(None);
+        let tx = fence_tx(&["c1", "c2"]);
+        let report = |generation: &str,
+                      key: &str,
+                      names: &[&str],
+                      owners: &[u16],
+                      numbers: &[u64]| {
+            applied::AppliedGeneration {
+                generation: generation.to_string(),
+                content_key: key.to_string(),
+                desired_world_content_key: Some(key.to_string()),
+                slot_order: Some(names.iter().map(|n| (*n).to_string()).collect()),
+                owners: Some(owners.to_vec()),
+                slot_numbers: Some(numbers.to_vec()),
+            }
+        };
+        state.last_desired_world_key = Some("tx-9023f427".to_string());
+        // (1) The incident keys: applied tx-3c0cc72e vs desired tx-9023f427.
+        state.applied.adopt(
+            report("incident-applied", "tx-3c0cc72e", &["c1", "c2"], &[0, 0], &[1, 2]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_since.is_some(), "key mismatch starts the timer");
+        // (2) SAME content key but a DIFFERENT slot map (c2 missing) must NOT
+        // read converged — the card §3.2 placement identity.
+        state.applied.adopt(
+            report("same-key-stale-map", "tx-9023f427", &["c1"], &[0], &[1]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(
+            state.placement_stale_since.is_some(),
+            "same key + stale slot map must not converge"
+        );
+        assert!(!state.placement_stale_reported);
+        // Force the 30 s bound deterministically (no wall-clock sleep).
+        state.placement_stale_since = Some(Instant::now() - Duration::from_secs(31));
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_reported, "the bound raises STALE");
+        assert_eq!(state.placement_stale_episodes, 1, "one per episode");
+        assert!(state.report_reread_due, "the bound forces a report re-read");
+        // A second mismatched tick is still the SAME episode.
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert_eq!(state.placement_stale_episodes, 1, "no duplicate episode");
+        // (3) A new desired world (new key) with the matching slot map clears.
+        state.last_desired_world_key = Some("tx-9023f427-next".to_string());
+        state.applied.adopt(
+            report("matching", "tx-9023f427-next", &["c1", "c2"], &[0, 0], &[1, 2]),
+            tx.clone(),
+        );
+        super::refresh_placement_stale(&mut state, Some(&tx));
+        assert!(state.placement_stale_since.is_none(), "cleared on adopt");
+        assert!(!state.placement_stale_reported);
+        assert_eq!(state.placement_stale_episodes, 1, "history is kept");
     }
 }
 
@@ -5323,8 +4272,9 @@ mod wp5_seam_state_tests {
             "state",
             "written_at_unix",
             "desired_world_content_key",
-            "removal_capture",
-            "pending_non_suffix",
+            "last_removal",
+            "placement_stale_age_ms",
+            "placement_stale_episodes",
         ] {
             assert!(json.contains(f), "the snapshot JSON must carry `{f}` in: {json}");
         }
@@ -5335,7 +4285,7 @@ mod wp5_seam_state_tests {
     #[test]
     fn seam_state_carries_the_structural_remove_capture() {
         let snap = super::BridgeConvergenceSnapshot {
-            removal_capture: Some(super::RemovalCapture {
+            last_removal: Some(super::RemovalCapture {
                 removed: vec!["c2".to_string()],
                 slot_table_len: 3,
                 slot_order_available: true,
@@ -5347,7 +4297,7 @@ mod wp5_seam_state_tests {
         let json = serde_json::to_string(&snap).expect("serializes");
         let parsed: super::BridgeConvergenceSnapshot =
             serde_json::from_str(&json).expect("parses");
-        let capture = parsed.removal_capture.expect("the capture survives");
+        let capture = parsed.last_removal.expect("the capture survives");
         assert_eq!(capture.removed, vec!["c2".to_string()]);
         assert_eq!(capture.slot_table_len, 3);
         assert!(capture.slot_order_available);
@@ -5461,5 +4411,53 @@ mod r3s3b_routing_tests {
             ack_map::classify(lqos_dataplane_types::wire::AckOutcome::RebuildRequired.code()),
             ack_map::PublishOutcome::RebuildRequired
         );
+    }
+}
+
+#[cfg(test)]
+mod wire_name_table_tests {
+    use super::*;
+
+    /// S1 (`shared-wire-name-table`): broker routing and rendered names pinned to
+    /// literal wire-contract expectations, so a renamed table entry or a re-routed
+    /// outcome goes RED here, not only in the producer.
+    #[test]
+    fn the_broker_renders_every_contract_name() {
+        for (code, name) in [
+            (1u8, "APPLIED"),
+            (2, "REJECTED_INVALID_FRAME"),
+            (3, "REJECTED_MALFORMED_JSON"),
+            (4, "REJECTED_RESERVED_ROOT"),
+            (5, "REJECTED_STRUCTURAL_OP"),
+            (6, "REJECTED_LPM_PREPARE"),
+            (7, "ATTEMPT_EXHAUSTED"),
+            (8, "REJECTED_VERSION_MISMATCH"),
+            (9, "REJECTED_BATCH_ENVELOPE"),
+            (10, "REJECTED_OBSERVE_MODE"),
+            (11, "REBUILD_REQUIRED"),
+        ] {
+            let routed = match code {
+                1 => ack_map::PublishOutcome::Applied,
+                7 => ack_map::PublishOutcome::AttemptExhausted,
+                10 => ack_map::PublishOutcome::ObserveMode,
+                11 => ack_map::PublishOutcome::RebuildRequired,
+                _ => ack_map::PublishOutcome::Rejected(name),
+            };
+            let outcome = ack_map::classify(code);
+            assert_eq!(outcome, routed, "code {code} routes to its own class");
+            assert_eq!(
+                super::reject_reason(&outcome),
+                name,
+                "code {code} renders the contract name"
+            );
+        }
+        // A code this build cannot decode is broker-local and never borrows a
+        // contract name.
+        let unknown = ack_map::classify(99);
+        assert_eq!(
+            unknown,
+            ack_map::PublishOutcome::Rejected("UNKNOWN_OUTCOME")
+        );
+        assert_eq!(super::reject_reason(&unknown), "UNKNOWN_OUTCOME");
     }
 }

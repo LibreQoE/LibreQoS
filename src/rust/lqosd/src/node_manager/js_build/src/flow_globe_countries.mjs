@@ -1,3 +1,4 @@
+// translatable: false — "Polygon" is the GeoJSON geometry type this helper matches, not a label
 // `lqos-74t.50.7` Stage 2 — merged country-layer geometry helpers (pure; no THREE,
 // no DOM) so the node contract tests can exercise the winding / antimeridian
 // logic.

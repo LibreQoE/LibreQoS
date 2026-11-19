@@ -6,8 +6,16 @@ import {listenOnceMatchingWithTimeout as listenWsOnceMatchingWithTimeout} from "
 import {get_ws_client} from "./pubsub/ws";
 import {clearOperationalNetworkModeStorage} from "./config/network_mode_storage.mjs";
 import {schedulerDegradedReason as renderDegradedReason} from "./scheduler_summary_reason.mjs";
-import {clampSchedulerPercent, schedulerProgressPercent, schedulerTimingParts} from "./scheduler_progress.mjs";
+import {clampSchedulerPercent, schedulerProgressPercent} from "./scheduler_progress.mjs";
+import {schedulerDurationText, schedulerTimingText} from "./scheduler_timing.mjs";
 import {isAdminRole} from "./circuit_admin_actions.mjs";
+import {applyDomTranslations, t, tn} from "./i18n/index.js";
+import {initLanguageSwitcher} from "./i18n/switcher.mjs";
+import {formatDateTime, formatTime} from "./i18n/format.js";
+import {relativeTimeText} from "./i18n/relative_time.mjs";
+import {escapeAttr, escapeHtml} from "./i18n/escape.mjs";
+import {alertsAriaLabel} from "./i18n/alerts_aria_label.mjs";
+import {applyCancelCapNotice} from "./lts_cancel_notice.js";
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -17,20 +25,6 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
-
-function escapeAttr(text) {
-    if (text === undefined || text === null) return "";
-    return String(text)
-        .replaceAll('&', '&amp;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&apos;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
-}
-
-function escapeHtml(text) {
-    return escapeAttr(text);
-}
 
 const SCHEDULER_STATUS_POLL_MS = 2000;
 const SCHEDULER_STATUS_TIMEOUT_MS = 2500;
@@ -48,29 +42,16 @@ let schedulerModalInstance = null;
 let cachedSchedulerDetailsData = null;
 let cachedQueueModeConfig = null;
 
-// `.63.1` (#4): the elapsed/expected readout, formatted with the local
-// `schedulerDurationText`. The creep/weight logic lives in `scheduler_progress.mjs`.
-function schedulerTimingText(progress, nowMs = Date.now()) {
-    const parts = schedulerTimingParts(progress, nowMs);
-    if (!parts) {
-        return "";
-    }
-    const etaText = parts.elapsedMs < parts.expectedMs
-        ? ` · ~${schedulerDurationText(parts.expectedMs - parts.elapsedMs)} left`
-        : "";
-    return `elapsed ${schedulerDurationText(parts.elapsedMs)}${etaText}`;
-}
-
 function schedulerProgressSummary(progress) {
     if (!progress) return "";
-    const label = progress.phase_label || progress.phase || "System Health activity";
+    const label = progress.phase_label || progress.phase || t("scheduler.progress.fallback");
     const percent = schedulerProgressPercent(progress);
     const stepIndex = Number(progress.step_index);
     const stepCount = Number(progress.step_count);
     if (Number.isFinite(stepIndex) && Number.isFinite(stepCount) && stepCount > 0) {
-        return `${label} (${percent}%, step ${stepIndex}/${stepCount})`;
+        return t("scheduler.progress.with_step", {label, percent, step: stepIndex, count: stepCount});
     }
-    return `${label} (${percent}%)`;
+    return t("scheduler.progress.without_step", {label, percent});
 }
 
 function schedulerRingMarkup(progressPercent, tone, centerIcon) {
@@ -83,22 +64,6 @@ function schedulerRingMarkup(progressPercent, tone, centerIcon) {
             </svg>
             <span class="lqos-scheduler-ring-icon"><i class="fa ${centerIcon}"></i></span>
         </span>`;
-}
-
-function schedulerRelativeTime(updatedUnix) {
-    const unixSeconds = Number(updatedUnix);
-    if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) {
-        return "Update time unavailable";
-    }
-    const deltaSeconds = Math.max(0, Math.round((Date.now() / 1000) - unixSeconds));
-    if (deltaSeconds < 5) return "Updated just now";
-    if (deltaSeconds < 60) return `Updated ${deltaSeconds}s ago`;
-    const deltaMinutes = Math.round(deltaSeconds / 60);
-    if (deltaMinutes < 60) return `Updated ${deltaMinutes}m ago`;
-    const deltaHours = Math.round(deltaMinutes / 60);
-    if (deltaHours < 24) return `Updated ${deltaHours}h ago`;
-    const deltaDays = Math.round(deltaHours / 24);
-    return `Updated ${deltaDays}d ago`;
 }
 
 function schedulerErrorText(data) {
@@ -122,25 +87,27 @@ function schedulerSnapshotUpdatedUnix(data) {
 function schedulerUpdatedText(data) {
     const updatedUnix = schedulerSnapshotUpdatedUnix(data);
     if (!updatedUnix) {
-        return "Update time unavailable";
+        return null;
     }
-    return schedulerRelativeTime(updatedUnix);
+    // The prefix is catalog prose; the timestamp itself is Intl's, so it needs
+    // no catalog string and follows the active locale.
+    return t("scheduler.updated", {time: relativeTimeText(updatedUnix)});
 }
 
 function schedulerTransportWarningText(message, data) {
     const updatedText = schedulerUpdatedText(data);
-    if (updatedText === "Update time unavailable") {
-        return `${message} Retrying in the background.`;
+    if (!updatedText) {
+        return t("scheduler.transport.retrying", {message});
     }
-    return `${message} Showing cached scheduler data. ${updatedText}.`;
+    return t("scheduler.transport.cached", {message, updated: updatedText});
 }
 
 function schedulerStaleStatusLabel(data) {
     const updatedText = schedulerUpdatedText(data);
-    if (updatedText === "Update time unavailable") {
-        return "System Health is stale";
+    if (!updatedText) {
+        return t("scheduler.stale.title");
     }
-    return `System Health is stale. ${updatedText}.`;
+    return t("scheduler.stale.updated", {updated: updatedText});
 }
 
 function schedulerSummarySeverity(data) {
@@ -164,7 +131,7 @@ function schedulerWaitsForTopologyRuntime(data) {
 
 function schedulerIntegrationLabel(data) {
     const name = String(data?.integration_name || "").trim();
-    return name || "Integration";
+    return name || t("scheduler.integration.fallback");
 }
 
 function schedulerIntegrationSubtitle(data) {
@@ -173,10 +140,10 @@ function schedulerIntegrationSubtitle(data) {
     const detail = String(data?.integration_error_detail || "").trim();
     const cls = String(data?.integration_error_class || "").trim();
     const parts = [];
-    if (failures > 0) parts.push(`${failures} consecutive failure(s)`);
+    if (failures > 0) parts.push(tn("scheduler.integration.consecutive_failures", failures));
     if (cls && cls !== "none") parts.push(cls.replace(/_/g, " "));
     if (detail) parts.push(detail);
-    return parts.join(" · ") || `${name} import failing`;
+    return parts.join(" · ") || t("scheduler.integration.import_failing", {name});
 }
 
 // Render the SERVED `summary_reason` (backend-produced, paired with the
@@ -192,14 +159,14 @@ function schedulerDegraded(data) {
 
 function schedulerShapingSubtitle(data) {
     const detail = String(data?.error || "").trim();
-    return detail || "Shaping stopped — the scheduler has not run recently";
+    return detail || t("scheduler.down.subtitle");
 }
 
 function schedulerHealthySubtitle(data) {
     if (data?.last_import_ok === true) {
-        return `Shaping active · ${schedulerIntegrationLabel(data)} last import ok`;
+        return t("scheduler.healthy.subtitle", {name: schedulerIntegrationLabel(data)});
     }
-    return "Shaping active";
+    return t("scheduler.healthy.title");
 }
 
 function schedulerStateDescriptor(data) {
@@ -212,13 +179,13 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "secondary",
             badgeClass: "text-bg-secondary",
-            label: "Idle",
+            label: t("scheduler.badge.idle"),
             title: setupRequired
-                ? (data?.setup_message || "Choose a topology source")
-                : "No integration configured",
+                ? (data?.setup_message || t("scheduler.idle.setup_title"))
+                : t("scheduler.idle.title"),
             subtitle: setupRequired
-                ? (data?.setup_message || "LibreQoS needs subscriber data before the scheduler can run")
-                : "No integration configured.",
+                ? (data?.setup_message || t("scheduler.idle.setup_subtitle"))
+                : t("scheduler.idle.title"),
             ringTone: "tone-loading",
             icon: "fa-pause",
         };
@@ -227,9 +194,9 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "warning",
             badgeClass: "text-bg-warning",
-            label: "Stale",
-            title: "System Health is stale",
-            subtitle: "Showing the last snapshot older than five minutes",
+            label: t("scheduler.badge.stale"),
+            title: t("scheduler.stale.title"),
+            subtitle: t("scheduler.stale.subtitle"),
             ringTone: "tone-warning",
             icon: "fa-clock",
         };
@@ -238,8 +205,8 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "danger",
             badgeClass: "text-bg-danger",
-            label: "Down",
-            title: progress?.phase_label || progress?.phase || "Shaping stopped",
+            label: t("scheduler.badge.down"),
+            title: progress?.phase_label || progress?.phase || t("scheduler.down.title"),
             subtitle: schedulerShapingSubtitle(data),
             ringTone: "tone-danger",
             icon: "fa-triangle-exclamation",
@@ -249,9 +216,9 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "warning",
             badgeClass: "text-bg-warning",
-            label: "Deferred",
-            title: progress?.phase_label || "Waiting for topology runtime",
-            subtitle: "Shaping is waiting for topology runtime outputs",
+            label: t("scheduler.badge.deferred"),
+            title: progress?.phase_label || t("scheduler.deferred.title"),
+            subtitle: t("scheduler.deferred.subtitle"),
             ringTone: "tone-warning",
             icon: "fa-hourglass-half",
         };
@@ -260,9 +227,9 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "info",
             badgeClass: "text-bg-info",
-            label: "Running",
-            title: progress?.phase_label || progress?.phase || "Import in progress",
-            subtitle: "Work is in progress right now",
+            label: t("scheduler.badge.running"),
+            title: progress?.phase_label || progress?.phase || t("scheduler.running.title"),
+            subtitle: t("scheduler.running.subtitle"),
             ringTone: "tone-progress",
             icon: "fa-arrows-rotate",
         };
@@ -272,7 +239,7 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "warning",
             badgeClass: "text-bg-warning",
-            label: "Degraded",
+            label: t("scheduler.badge.degraded"),
             title: degraded.title,
             subtitle: degraded.subtitle,
             ringTone: "tone-warning",
@@ -283,8 +250,8 @@ function schedulerStateDescriptor(data) {
         return {
             tone: "success",
             badgeClass: "text-bg-success",
-            label: "Healthy",
-            title: "Shaping active",
+            label: t("scheduler.badge.healthy"),
+            title: t("scheduler.healthy.title"),
             subtitle: schedulerHealthySubtitle(data),
             ringTone: "tone-success",
             icon: "fa-check",
@@ -293,9 +260,9 @@ function schedulerStateDescriptor(data) {
     return {
         tone: "warning",
         badgeClass: "text-bg-warning",
-        label: "Starting",
-        title: "System Health is not ready yet",
-        subtitle: progress?.phase_label || progress?.phase || "Waiting for status",
+        label: t("scheduler.badge.starting"),
+        title: t("scheduler.starting.title"),
+        subtitle: progress?.phase_label || progress?.phase || t("scheduler.starting.subtitle"),
         ringTone: "tone-warning",
         icon: "fa-clock",
     };
@@ -317,7 +284,7 @@ function summarizeSchedulerOutput(output, error) {
         .map(line => line.trim())
         .filter(Boolean);
     if (!lines.length) {
-        return "No recent scheduler output recorded";
+        return t("scheduler.summary.no_output");
     }
     return lines[lines.length - 1];
 }
@@ -334,7 +301,7 @@ function schedulerActivityItems(output, error, data) {
     if (setupMessage.length > 0) {
         return [
             setupMessage,
-            "Open Complete Setup to choose an integration or provide manual subscriber data.",
+            t("scheduler.setup.open_hint"),
         ];
     }
     if (error && String(error).trim().length > 0) {
@@ -349,22 +316,8 @@ function schedulerActivityItems(output, error, data) {
 }
 
 function schedulerAgeText(unixTs) {
-    const ts = Number(unixTs);
-    if (!Number.isFinite(ts) || ts <= 0) return "time unknown";
-    const now = Math.floor(Date.now() / 1000);
-    const delta = now - ts;
-    if (delta < 5) return "just now";
-    if (delta < 60) return `${delta}s ago`;
-    if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
-    if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-    return `${Math.floor(delta / 86400)}d ago`;
-}
-
-function schedulerDurationText(ms) {
-    const n = Number(ms);
-    if (!Number.isFinite(n) || n < 0) return "—";
-    if (n < 1000) return `${Math.round(n)}ms`;
-    return `${(n / 1000).toFixed(1)}s`;
+    // "time unknown" stays the caller's wording; the age itself is Intl's.
+    return relativeTimeText(unixTs) || t("scheduler.time_unknown");
 }
 
 function schedulerSummaryLine(data, descriptor) {
@@ -376,12 +329,12 @@ function schedulerSummaryLine(data, descriptor) {
         return schedulerShapingSubtitle(data);
     }
     if (severity === "running") {
-        return "Import in progress";
+        return t("scheduler.running.title");
     }
     if (severity === "idle") {
         return data?.setup_required
-            ? (data?.setup_message || "Setup required")
-            : "No integration configured";
+            ? (data?.setup_message || t("scheduler.setup.title"))
+            : t("scheduler.idle.title");
     }
     return schedulerHealthySubtitle(data);
 }
@@ -395,11 +348,11 @@ function schedulerPanelRow(label, value) {
 
 function schedulerShapingStateText(data) {
     const severity = schedulerSummarySeverity(data);
-    if (severity === "down") return "Stopped";
-    if (severity === "running") return "Applying";
-    if (data?.topology_source === "last_known_good") return "Active (last-known-good)";
-    if (data?.topology_source === "fresh") return "Active (fresh topology)";
-    return "Active";
+    if (severity === "down") return t("scheduler.shaping.stopped");
+    if (severity === "running") return t("scheduler.shaping.applying");
+    if (data?.topology_source === "last_known_good") return t("scheduler.shaping.active_lkg");
+    if (data?.topology_source === "fresh") return t("scheduler.shaping.active_fresh");
+    return t("scheduler.shaping.active");
 }
 
 // AVAIL (CARD v3_availability_hardening_card §7 b4): the SEPARATE boot-world
@@ -407,11 +360,11 @@ function schedulerShapingStateText(data) {
 // `topology_source` (the import axis); "unknown" when no Supervisor report.
 function schedulerBootWorldTierText(data) {
     switch (data?.boot_world_tier) {
-        case "fresh": return "Fresh";
-        case "last_known_good": return "Last-known-good";
-        case "bootstrap_trunk": return "Bootstrap trunk (degraded)";
-        case "pass_through": return "Pass-through (DEGRADED)";
-        default: return "unknown";
+        case "fresh": return t("scheduler.boot_world.fresh");
+        case "last_known_good": return t("scheduler.boot_world.last_known_good");
+        case "bootstrap_trunk": return t("scheduler.boot_world.bootstrap_trunk");
+        case "pass_through": return t("scheduler.boot_world.pass_through");
+        default: return t("scheduler.boot_world.unknown");
     }
 }
 
@@ -423,24 +376,24 @@ function schedulerBootWorldLatchText() {
     if (Array.isArray(degraded) && degraded.length) {
         return degraded.join("/");
     }
-    return "none";
+    return t("scheduler.latched.none");
 }
 
 function schedulerShapingPanelMarkup(data) {
     const generation = String(data?.dataplane_generation || "").trim();
-    const genText = generation ? generation.slice(0, 12) : "unknown";
+    const genText = generation ? generation.slice(0, 12) : t("scheduler.value.unknown");
     const leaves = Number(data?.leaf_count);
     const leavesText = Number.isFinite(leaves) ? String(leaves) : "—";
-    const applied = data?.applied_at ? schedulerAgeText(data.applied_at) : "unknown";
+    const applied = data?.applied_at ? schedulerAgeText(data.applied_at) : t("scheduler.value.unknown");
     return `
         <div class="lqos-scheduler-panel border rounded p-3 h-100">
-            <h3 class="lqos-scheduler-section-title">SHAPING</h3>
-            ${schedulerPanelRow("State", schedulerShapingStateText(data))}
-            ${schedulerPanelRow("Boot world", schedulerBootWorldTierText(data))}
-            ${schedulerPanelRow("Latched", schedulerBootWorldLatchText())}
-            ${schedulerPanelRow("Generation", genText)}
-            ${schedulerPanelRow("Leaves", leavesText)}
-            ${schedulerPanelRow("Applied", applied)}
+            <h3 class="lqos-scheduler-section-title">${escapeHtml(t("scheduler.panel.shaping"))}</h3>
+            ${schedulerPanelRow(t("scheduler.panel.state"), schedulerShapingStateText(data))}
+            ${schedulerPanelRow(t("scheduler.panel.boot_world"), schedulerBootWorldTierText(data))}
+            ${schedulerPanelRow(t("scheduler.panel.latched"), schedulerBootWorldLatchText())}
+            ${schedulerPanelRow(t("scheduler.panel.generation"), genText)}
+            ${schedulerPanelRow(t("scheduler.panel.leaves"), leavesText)}
+            ${schedulerPanelRow(t("scheduler.panel.applied"), applied)}
         </div>`;
 }
 
@@ -450,35 +403,40 @@ function schedulerIntegrationPanelMarkup(data) {
     if (!hasIntegration) {
         return `
         <div class="lqos-scheduler-panel border rounded p-3 h-100">
-            <h3 class="lqos-scheduler-section-title">INTEGRATION</h3>
-            <p class="text-secondary mb-0">No integration configured.</p>
+            <h3 class="lqos-scheduler-section-title">${escapeHtml(t("scheduler.panel.integration"))}</h3>
+            <p class="text-secondary mb-0">${escapeHtml(t("scheduler.idle.title"))}</p>
         </div>`;
     }
     const ok = data?.last_import_ok;
-    const stateText = ok === true ? "Import ok" : ok === false ? "Import failing" : "No import yet";
+    const stateText = ok === true
+        ? t("scheduler.integration.ok")
+        : ok === false ? t("scheduler.integration.failing") : t("scheduler.integration.no_import");
     const ageText = data?.last_import_at ? schedulerAgeText(data.last_import_at) : "—";
     const durationText = schedulerDurationText(data?.last_import_ms);
     const cls = String(data?.integration_error_class || "").trim();
-    const classText = cls && cls !== "none" ? cls.replace(/_/g, " ") : "none";
+    const classText = cls && cls !== "none" ? cls.replace(/_/g, " ") : t("scheduler.integration.none");
     const failures = Number(data?.consecutive_failures) || 0;
     return `
         <div class="lqos-scheduler-panel border rounded p-3 h-100">
-            <h3 class="lqos-scheduler-section-title">INTEGRATION · ${escapeHtml(name)}</h3>
-            ${schedulerPanelRow("State", stateText)}
-            ${schedulerPanelRow("Last import", ageText)}
-            ${schedulerPanelRow("Duration", durationText)}
-            ${schedulerPanelRow("Consecutive failures", String(failures))}
-            ${schedulerPanelRow("Cause", classText)}
+            <h3 class="lqos-scheduler-section-title">${escapeHtml(t("scheduler.panel.integration_named", {name}))}</h3>
+            ${schedulerPanelRow(t("scheduler.panel.state"), stateText)}
+            ${schedulerPanelRow(t("scheduler.panel.last_import"), ageText)}
+            ${schedulerPanelRow(t("scheduler.panel.duration"), durationText)}
+            ${schedulerPanelRow(t("scheduler.panel.consecutive_failures"), String(failures))}
+            ${schedulerPanelRow(t("scheduler.panel.cause"), classText)}
         </div>`;
 }
 
-const SCHEDULER_ERROR_HINTS = {
-    redirect_loop: "The portal returned a redirect loop. Verify the portal URL in Configuration ▶ UISP.",
-    auth: "The portal rejected the credentials (401/403). Re-check the API token / credentials in Configuration ▶ UISP.",
-    unreachable: "The portal was unreachable (timeout/DNS). Check the URL, DNS, and reachability from this host.",
-    exited_unknown: "The integration exited with an unclassified error. Open the full log for the raw output.",
-    none: "No integration error is recorded.",
-};
+function schedulerErrorHint(cls, runtimeError) {
+    switch (cls) {
+        case "redirect_loop": return t("scheduler.error_hint.redirect_loop");
+        case "auth": return t("scheduler.error_hint.auth");
+        case "unreachable": return t("scheduler.error_hint.unreachable");
+        case "exited_unknown": return t("scheduler.error_hint.exited_unknown");
+        case "none": return t("scheduler.error_hint.none");
+        default: return runtimeError ? t("scheduler.error_hint.runtime") : "";
+    }
+}
 
 function schedulerWhatToCheckMarkup(data) {
     const detail = String(data?.integration_error_detail || "").trim();
@@ -486,19 +444,18 @@ function schedulerWhatToCheckMarkup(data) {
     const runtimeError = String(data?.error || "").trim();
     const failing = data?.last_import_ok === false;
     if (!failing && !runtimeError) return "";
-    const hint = SCHEDULER_ERROR_HINTS[cls]
-        || (runtimeError ? "Shaping reported a runtime error. Open the full log for details." : "");
+    const hint = schedulerErrorHint(cls, runtimeError);
     const detailMarkup = detail
         ? `<pre class="lqos-scheduler-what-detail small mb-2">${escapeHtml(detail)}</pre>`
         : "";
     return `
         <div class="lqos-scheduler-whatcard border rounded p-3 mt-3">
-            <h3 class="lqos-scheduler-section-title">WHAT TO CHECK</h3>
+            <h3 class="lqos-scheduler-section-title">${escapeHtml(t("scheduler.what_to_check.title"))}</h3>
             ${detailMarkup}
             ${hint ? `<p class="mb-2">${escapeHtml(hint)}</p>` : ""}
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-primary" disabled title="Retry is not available yet — the scheduler retries on its next cadence.">Retry import</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="schedulerOpenLog">Open full log</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled title="${escapeAttr(t("scheduler.what_to_check.retry_unavailable"))}">${escapeHtml(t("scheduler.what_to_check.retry"))}</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="schedulerOpenLog">${escapeHtml(t("scheduler.what_to_check.open_log"))}</button>
             </div>
         </div>`;
 }
@@ -508,9 +465,9 @@ function schedulerRecentRunsMarkup(data) {
     const body = runs.length
         ? runs.map(run => {
             const when = run?.at
-                ? new Date(Number(run.at) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                ? formatTime(Number(run.at) * 1000)
                 : "—";
-            const result = run?.ok ? "ok" : "failed";
+            const result = run?.ok ? t("scheduler.runs.ok") : t("scheduler.runs.failed");
             const tone = run?.ok ? "text-success" : "text-danger";
             return `<div class="lqos-scheduler-run-row d-flex justify-content-between py-1">
                 <span>${escapeHtml(when)}</span>
@@ -518,19 +475,19 @@ function schedulerRecentRunsMarkup(data) {
                 <span class="text-secondary">${escapeHtml(schedulerDurationText(run?.ms))}</span>
             </div>`;
         }).join("")
-        : `<p class="text-secondary mb-0">No runs recorded yet.</p>`;
+        : `<p class="text-secondary mb-0">${escapeHtml(t("scheduler.runs.empty"))}</p>`;
     return `
         <div class="lqos-scheduler-runs-card border rounded p-3 mt-3">
-            <h3 class="lqos-scheduler-section-title">RECENT RUNS</h3>
+            <h3 class="lqos-scheduler-section-title">${escapeHtml(t("scheduler.runs.title"))}</h3>
             ${body}
         </div>`;
 }
 
 function schedulerIdleLine(data) {
     if (data?.last_import_ms !== null && data?.last_import_ms !== undefined && Number.isFinite(Number(data.last_import_ms))) {
-        return `Last run completed in ${schedulerDurationText(data.last_import_ms)}.`;
+        return t("scheduler.runs.last_completed", {duration: schedulerDurationText(data.last_import_ms)});
     }
-    return "No active scheduler work at the moment.";
+    return t("scheduler.runs.idle");
 }
 
 function renderSchedulerDetails(data, options = {}) {
@@ -542,25 +499,24 @@ function renderSchedulerDetails(data, options = {}) {
     const stepCount = Number(progress?.step_count);
     const stepIndex = Number(progress?.step_index);
     const stepText = Number.isFinite(stepIndex) && Number.isFinite(stepCount) && stepCount > 0
-        ? `Step ${stepIndex} of ${stepCount}`
-        : "No active step reported";
-    const updatedText = schedulerUpdatedText(data);
-    let progressMeta = "Waiting for activity";
+        ? t("scheduler.progress.step", {step: stepIndex, count: stepCount})
+        : t("scheduler.progress.no_step");
+    const updatedText = schedulerUpdatedText(data) || t("scheduler.updated.unavailable");
+    let progressMeta = t("scheduler.progress.waiting");
     if (options.transportWarning) {
-        progressMeta = "Showing cached System Health while the UI reconnects";
+        progressMeta = t("scheduler.progress.cached");
     } else if (data?.setup_required) {
-        progressMeta = "Complete runtime setup to enable scheduler work";
+        progressMeta = t("scheduler.progress.setup");
     } else if (schedulerWaitsForTopologyRuntime(data)) {
-        progressMeta = "The next shaping update is waiting for topology runtime outputs";
+        progressMeta = t("scheduler.progress.topology_wait");
     } else if (progress?.active) {
-        progressMeta = `${percent}% complete`;
         const timing = schedulerTimingText(progress, nowMs);
-        if (timing) {
-            progressMeta += ` · ${timing}`;
-        }
+        progressMeta = timing
+            ? t("scheduler.progress.active", {percent, timing})
+            : t("scheduler.progress.percent_complete", {percent});
     }
     const setupAlert = data?.setup_required
-        ? `<div class="alert alert-warning mt-3 mb-0" role="alert"><i class="fa fa-list-check me-2"></i>${escapeHtml(schedulerSetupMessage(data) || "Choose a topology source in Complete Setup before expecting scheduler activity.")}</div>`
+        ? `<div class="alert alert-warning mt-3 mb-0" role="alert"><i class="fa fa-list-check me-2"></i>${escapeHtml(schedulerSetupMessage(data) || t("scheduler.setup.choose_before"))}</div>`
         : "";
     const transportWarningMarkup = options.transportWarning
         ? `<div class="alert alert-warning mt-3 mb-0" role="alert"><i class="fa fa-wifi me-2"></i>${escapeHtml(options.transportWarning)}</div>`
@@ -582,7 +538,7 @@ function renderSchedulerDetails(data, options = {}) {
                 </div>
                 <div class="fw-semibold">${escapeHtml(`${percent}%`)}</div>
             </div>
-            <div class="progress lqos-scheduler-progress-bar" role="progressbar" aria-label="Import progress" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress lqos-scheduler-progress-bar" role="progressbar" aria-label="${escapeAttr(t("scheduler.progress.aria"))}" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
                 <div class="progress-bar ${schedulerProgressBarClass(descriptor)}" style="width: ${percent}%"></div>
             </div>
         </div>`
@@ -613,8 +569,8 @@ function renderSchedulerDetails(data, options = {}) {
         ${runsMarkup}
         ${progressMarkup}
         <details class="lqos-scheduler-debug-card">
-            <summary class="lqos-scheduler-debug-toggle">Show raw scheduler details</summary>
-            <pre class="lqos-scheduler-debug-pre">${escapeHtml(data?.details || "No raw scheduler details available.")}</pre>
+            <summary class="lqos-scheduler-debug-toggle">${escapeHtml(t("scheduler.modal.show_raw"))}</summary>
+            <pre class="lqos-scheduler-debug-pre">${escapeHtml(data?.details || t("scheduler.modal.no_raw"))}</pre>
         </details>`;
 }
 
@@ -645,21 +601,21 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
     if (!container) return;
 
     let color = "text-secondary";
-    let label = "System Health is loading";
+    let label = t("scheduler.nav.loading");
     const buttonText = "LibreQoS";
     let indicator = schedulerRingMarkup(12, "tone-loading", "fa-circle-notch fa-spin");
 
     if (state === "healthy") {
         color = "text-success";
-        label = "Shaping active and healthy";
+        label = t("scheduler.nav.healthy");
         indicator = schedulerRingMarkup(100, "tone-success", "fa-check");
     } else if (state === "degraded") {
         color = "text-warning";
-        label = "Shaping active on last-known-good topology; integration failing";
+        label = t("scheduler.nav.degraded");
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-triangle-exclamation");
     } else if (state === "idle") {
         color = "text-secondary";
-        label = "No integration configured";
+        label = t("scheduler.idle.title");
         indicator = schedulerRingMarkup(100, "tone-loading", "fa-pause");
     } else if (state === "progress") {
         color = "text-info";
@@ -671,19 +627,19 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
         );
     } else if (state === "unavailable") {
         color = "text-warning";
-        label = "System Health is still unavailable";
+        label = t("scheduler.nav.unavailable");
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-clock");
     } else if (state === "error") {
         color = "text-danger";
-        label = "Shaping has an internal error";
+        label = t("scheduler.nav.error");
         indicator = schedulerRingMarkup(100, "tone-danger", "fa-triangle-exclamation");
     } else if (state === "stale") {
         color = "text-warning";
-        label = "System Health is stale";
+        label = t("scheduler.stale.title");
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-clock");
     } else if (state === "deferred") {
         color = "text-warning";
-        label = labelOverride || "Shaping is waiting for topology runtime";
+        label = labelOverride || t("scheduler.deferred.label");
         indicator = schedulerRingMarkup(
             schedulerProgressPercent(progress),
             "tone-warning",
@@ -691,7 +647,7 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
         );
     } else if (state === "setup") {
         color = "text-warning";
-        label = "System Health needs topology setup";
+        label = t("scheduler.nav.setup");
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-list-check");
     }
     if (labelOverride) {
@@ -741,7 +697,7 @@ function loadSchedulerStatus(force = false) {
                     container,
                     "stale",
                     cachedSchedulerStatusData.progress || null,
-                    schedulerTransportWarningText("System Health response was empty.", cachedSchedulerStatusData)
+                    schedulerTransportWarningText(t("scheduler.transport.status_empty"), cachedSchedulerStatusData)
                 );
             } else {
                 renderSchedulerStatus(container, "unavailable", null);
@@ -787,7 +743,7 @@ function loadSchedulerStatus(force = false) {
                 container,
                 "deferred",
                 progress,
-                progress?.phase_label || "Shaping is waiting for topology runtime"
+                progress?.phase_label || t("scheduler.deferred.label")
             );
             scheduleNextSchedulerStatusPoll();
             return;
@@ -823,7 +779,7 @@ function loadSchedulerStatus(force = false) {
                 container,
                 "stale",
                 cachedSchedulerStatusData.progress || null,
-                schedulerTransportWarningText("System Health refresh timed out.", cachedSchedulerStatusData)
+                schedulerTransportWarningText(t("scheduler.transport.status_timeout"), cachedSchedulerStatusData)
             );
         } else if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
             renderSchedulerStatus(container, "loading", null);
@@ -861,23 +817,23 @@ let lastBridgeHealthData = null;
 function bridgeHealthDetailText(data) {
     const parts = [];
     if (data.report) {
-        parts.push("status: " + (data.report.status || "?"));
+        parts.push(t("bridge.health.status", {status: data.report.status || "?"}));
         if (data.report.version) parts.push("v" + data.report.version);
-        parts.push("uptime " + Math.round((data.report.uptime_ms || 0) / 1000) + "s");
+        parts.push(t("bridge.health.uptime", {seconds: Math.round((data.report.uptime_ms || 0) / 1000)}));
         const workers = Array.isArray(data.report.workers) ? data.report.workers.length : 0;
-        parts.push(workers + " worker(s)");
+        parts.push(tn("bridge.health.workers", workers));
         const ackDrops = data.report.channel ? (data.report.channel.ack_drops || 0) : 0;
-        parts.push("ack drops " + ackDrops);
+        parts.push(t("bridge.health.ack_drops", {count: ackDrops}));
         // AVAIL (CARD v3_availability_hardening_card §7 R1/b4): NAME the
         // latched degraded subsystems and the live boot world, so a degraded
         // stats-collector/publish-driver is distinguishable by name.
         const degraded = Array.isArray(data.report.degraded_subsystems)
             ? data.report.degraded_subsystems : [];
-        if (degraded.length) parts.push("degraded: " + degraded.join("/"));
-        if (data.report.topology_tier) parts.push("boot world: " + data.report.topology_tier);
+        if (degraded.length) parts.push(t("bridge.health.degraded_subsystems", {names: degraded.join("/")}));
+        if (data.report.topology_tier) parts.push(t("bridge.health.boot_world", {tier: data.report.topology_tier}));
     }
-    parts.push("fail streak " + (data.consecutive_failures || 0) + "/" + (data.fails_to_down || 3));
-    if (data.last_success_unix) parts.push("last ok " + new Date(data.last_success_unix * 1000).toLocaleTimeString());
+    parts.push(t("bridge.health.fail_streak", {count: data.consecutive_failures || 0, threshold: data.fails_to_down || 3}));
+    if (data.last_success_unix) parts.push(t("bridge.health.last_ok", {time: formatTime(data.last_success_unix * 1000)}));
     return parts.join(", ");
 }
 
@@ -892,23 +848,23 @@ function renderBridgeHealthStatus(container, data) {
     const verdict = String(data.verdict || "pending");
     let color = "text-secondary";
     let icon = "fa-circle-notch fa-spin";
-    let label = "Bridge status pending";
+    let label = t("bridge.health.pending");
     if (verdict === "healthy") {
         color = "text-success";
         icon = "fa-check";
-        label = "Bridge is healthy";
+        label = t("bridge.health.healthy");
     } else if (verdict === "starting") {
         color = "text-info";
         icon = "fa-hourglass-half";
-        label = "Bridge is starting";
+        label = t("bridge.health.starting");
     } else if (verdict === "degraded") {
         color = "text-warning";
         icon = "fa-triangle-exclamation";
-        label = "Bridge is degraded";
+        label = t("bridge.health.degraded");
     } else if (verdict === "down") {
         color = "text-danger";
         icon = "fa-xmark";
-        label = "Bridge is down";
+        label = t("bridge.health.down");
     }
     const detail = bridgeHealthDetailText(data);
     // L4 (§5b): the sidebar Bridge item LINKS to the Bridge page. The server
@@ -917,7 +873,7 @@ function renderBridgeHealthStatus(container, data) {
     // navigating.
     container.innerHTML = `
         <a class="nav-link" href="bridge.html" id="bridgeStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(detail)}">
-            <i class="fa fa-fw fa-centerline ${icon} ${color}"></i> <span class="${color}">Bridge</span>
+            <i class="fa fa-fw fa-centerline ${icon} ${color}"></i> <span class="${color}">${escapeHtml(t("common.nav.bridge"))}</span>
         </a>`;
 }
 
@@ -986,7 +942,7 @@ function renderSchedulerModalLoading() {
     updateSchedulerModalBody(`
         <div class="d-flex align-items-center gap-2 text-secondary">
             <i class='fa fa-spinner fa-spin'></i>
-            <span>Loading scheduler status...</span>
+            <span>${escapeHtml(t("scheduler.modal.loading"))}</span>
         </div>`);
 }
 
@@ -1019,14 +975,14 @@ function refreshSchedulerModalDetails(showLoading = false) {
             if (cachedSchedulerDetailsData) {
                 updateSchedulerModalBody(renderSchedulerDetails(cachedSchedulerDetailsData, {
                     transportWarning: schedulerTransportWarningText(
-                        "System Health details response was empty.",
+                        t("scheduler.transport.details_empty"),
                         cachedSchedulerDetailsData
                     ),
                 }));
             } else {
                 updateSchedulerModalBody(`
                     <div class="alert alert-warning mb-0" role="alert">
-                        <i class="fa fa-wifi me-2"></i>${escapeHtml("Failed to load scheduler details. Retrying in the background.")}
+                        <i class="fa fa-wifi me-2"></i>${escapeHtml(t("scheduler.modal.load_failed"))}
                     </div>`);
             }
             scheduleNextSchedulerModalPoll(SCHEDULER_MODAL_IDLE_POLL_MS);
@@ -1045,14 +1001,14 @@ function refreshSchedulerModalDetails(showLoading = false) {
         if (cachedSchedulerDetailsData) {
             updateSchedulerModalBody(renderSchedulerDetails(cachedSchedulerDetailsData, {
                 transportWarning: schedulerTransportWarningText(
-                    "System Health details refresh timed out.",
+                    t("scheduler.transport.details_timeout"),
                     cachedSchedulerDetailsData
                 ),
             }));
         } else {
             updateSchedulerModalBody(`
                 <div class="alert alert-warning mb-0" role="alert">
-                    <i class="fa fa-wifi me-2"></i>${escapeHtml("Timed out while loading scheduler details. Retrying in the background.")}
+                    <i class="fa fa-wifi me-2"></i>${escapeHtml(t("scheduler.modal.timeout"))}
                 </div>`);
         }
         scheduleNextSchedulerModalPoll(SCHEDULER_MODAL_IDLE_POLL_MS);
@@ -1099,6 +1055,7 @@ function initLogout() {
             const cookie = cookies[i];
             const eqPos = cookie.indexOf("=");
             const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
+            // translatable: false — "=;expires=Thu, 01 Jan 1970 00:00:00 GMT" is the cookie expiry, not UI text
             document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT";
         }
         window.location.reload();
@@ -1258,10 +1215,12 @@ function setupSearch() {
 
     // Add this new key handler for '/' to focus search
     $(document).on('keydown', (e) => {
+        // translatable: false — "input, textarea, select" is a jQuery selector, not a label
         if (e.key === '/' && !$(e.target).is('input, textarea, select')) {
             e.preventDefault();
             $('#txtSearch').focus();
             showResults();
+        // translatable: false — "Escape" is the keyboard event key compared against, not a label
         } else if (e.key === 'Escape') {
             hideResults();
             if ($(e.target).is('#txtSearch')) {
@@ -1272,6 +1231,7 @@ function setupSearch() {
 
     // Click-away to close results
     $(document).on('click', (e) => {
+        // translatable: false — "#searchResults, #txtSearch, #btnSearch" is a DOM selector, not a label
         if ($(e.target).closest('#searchResults, #txtSearch, #btnSearch').length === 0) {
             hideResults();
         }
@@ -1300,17 +1260,19 @@ function renderQueueModeState(mode, busy = false) {
     shapeBtn.className = `btn btn-sm ${mode === "shape" ? "btn-success" : "btn-outline-secondary"}`;
     const summary = document.getElementById("queueModeSummary");
     if (summary) {
-        summary.textContent = mode === "observe" ? "Observe" : "Shape";
+        // The row's label, buttons and value all read from the catalog; the
+        // English text matches the markup the server renders pre-translation.
+        summary.textContent = mode === "observe" ? t("common.nav.observe") : t("common.nav.shape");
     }
 }
 
 function triggerReloadLibreQoS(loadingMessage) {
     const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
     myModal.show();
-    $("#reloadLibreResult").html(`<i class='fa fa-spinner fa-spin'></i> ${loadingMessage}`);
+    $("#reloadLibreResult").html(`<i class='fa fa-spinner fa-spin'></i> ${escapeHtml(loadingMessage)}`);
     listenOnce("ReloadResult", (msg) => {
         if (!msg) {
-            $("#reloadLibreResult").text("Failed to reload LibreQoS");
+            $("#reloadLibreResult").text(t("common.reload.failed"));
             return;
         }
         $("#reloadLibreResult").text(msg.message || "");
@@ -1348,7 +1310,7 @@ function loadObserveShapeControl() {
 
 function saveQueueModeAndReload(nextMode) {
     if (!cachedQueueModeConfig || !cachedQueueModeConfig.queues) {
-        alert("Unable to load current configuration");
+        alert(t("queue_mode.load_failed"));
         return;
     }
 
@@ -1359,8 +1321,8 @@ function saveQueueModeAndReload(nextMode) {
 
     const confirmed = window.confirm(
         nextMode === "observe"
-            ? "Switch LibreQoS to Observe mode? LibreQoS will reload without the active shaping tree so you can gather a true baseline. The bridge keeps shaping; traffic is not interrupted."
-            : "Switch LibreQoS to Shape mode? This reload will apply the LibreQoS shaping tree and begin active shaping. The bridge keeps shaping; traffic is not interrupted."
+            ? t("queue_mode.confirm.observe")
+            : t("queue_mode.confirm.shape")
     );
     if (!confirmed) {
         return;
@@ -1373,6 +1335,7 @@ function saveQueueModeAndReload(nextMode) {
     let done = false;
     const cleanup = () => {
         wsClient.off("UpdateConfigResult", onSuccess);
+        // translatable: false — "Error" is a websocket event name, not UI text
         wsClient.off("Error", onError);
     };
     const onSuccess = (msg) => {
@@ -1381,19 +1344,19 @@ function saveQueueModeAndReload(nextMode) {
         cleanup();
         if (!msg || !msg.ok) {
             renderQueueModeState(currentMode, false);
-            alert((msg && msg.message) ? msg.message : "Failed to update configuration");
+            alert((msg && msg.message) ? msg.message : t("queue_mode.update_failed"));
             return;
         }
         cachedQueueModeConfig = updated;
         renderQueueModeState(nextMode, false);
-        triggerReloadLibreQoS(`Saving queue mode '${nextMode}' and reloading LibreQoS...`);
+        triggerReloadLibreQoS(t("common.reload.saving_queue_mode", {mode: nextMode}));
     };
     const onError = (msg) => {
         if (done) return;
         done = true;
         cleanup();
         renderQueueModeState(currentMode, false);
-        alert((msg && msg.message) ? msg.message : "Failed to update configuration");
+        alert((msg && msg.message) ? msg.message : t("queue_mode.update_failed"));
     };
     wsClient.on("UpdateConfigResult", onSuccess);
     wsClient.on("Error", onError);
@@ -1458,9 +1421,11 @@ function initUrgentIssues() {
         if (!cont) return;
         const cls = count > 0 ? 'text-danger' : 'text-secondary';
         const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
+        const label = t("common.nav.alerts");
+        const ariaLabel = alertsAriaLabel(count);
         cont.innerHTML = `
-            <button class="nav-link btn btn-link text-start w-100 border-0 ${cls}" type="button" id="${linkId}" aria-label="Alerts${count > 0 ? `: ${count} active` : ': none active'}" title="Alerts">
-                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Alerts
+            <button class="nav-link btn btn-link text-start w-100 border-0 ${cls}" type="button" id="${linkId}" aria-label="${escapeAttr(ariaLabel)}" title="${escapeAttr(label)}">
+                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> ${escapeHtml(label)}
                 <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
             </button>`;
         $("#" + containerId).off("click").on("click", `#${linkId}`, (e) => {
@@ -1545,7 +1510,7 @@ function initUrgentIssues() {
         if (!holder) return;
         holder.querySelector('.urgent-action-error')?.remove();
         const retryButton = retry
-            ? '<button type="button" class="btn btn-link btn-sm urgent-refresh">Retry</button>'
+            ? `<button type="button" class="btn btn-link btn-sm urgent-refresh">${escapeHtml(t("common.action.retry"))}</button>`
             : '';
         holder.insertAdjacentHTML('afterbegin', `
             <div class="alert alert-warning mb-2 urgent-action-error" role="alert" tabindex="-1">
@@ -1601,6 +1566,7 @@ function initUrgentIssues() {
     function focusUrgentModalFallback() {
         const modalEl = document.getElementById('urgentModal');
         if (!modalEl || !urgentModalIsOpen()) return;
+        // translatable: false — '.urgent-clear:not(:disabled), #urgentClearAll:not(:disabled), .btn-close:not(:disabled), [data-bs-dismiss="modal"]:not(:disabled)' is a CSS selector
         modalEl
             .querySelector('.urgent-clear:not(:disabled), #urgentClearAll:not(:disabled), .btn-close:not(:disabled), [data-bs-dismiss="modal"]:not(:disabled)')
             ?.focus();
@@ -1684,7 +1650,7 @@ function initUrgentIssues() {
         urgentListActiveRequestId = requestId;
         setClearControlsDisabled(true);
         clearUrgentBusyState(holder);
-        holder.innerHTML = `<div class="text-center text-muted urgent-loading" role="status" aria-live="polite" tabindex="-1"><i class='fa fa-spinner fa-spin'></i> Loading...</div>`;
+        holder.innerHTML = `<div class="text-center text-muted urgent-loading" role="status" aria-live="polite" tabindex="-1"><i class='fa fa-spinner fa-spin'></i> ${escapeHtml(t("common.state.loading"))}</div>`;
         holder.querySelector('.urgent-loading')?.focus();
         urgentListCancel = listenWsOnceMatchingWithTimeout(
             wsClient,
@@ -1698,7 +1664,7 @@ function initUrgentIssues() {
                 const items = msg && msg.data ? msg.data.items || [] : [];
                 clearUrgentBusyState(holder);
                 if (items.length === 0) {
-                    holder.innerHTML = '<div class="text-center text-success" role="status" aria-live="polite" tabindex="-1">No alerts.</div>';
+                    holder.innerHTML = `<div class="text-center text-success" role="status" aria-live="polite" tabindex="-1">${escapeHtml(t("common.alerts.empty"))}</div>`;
                     attachPendingUrgentActionError(holder);
                     setClearControlsDisabled(true);
                     holder.querySelector('[role="status"]')?.focus();
@@ -1710,21 +1676,25 @@ function initUrgentIssues() {
                 items.forEach((it) => {
                     const tr = document.createElement('tr');
                     const td = document.createElement('td');
-                    const when = new Date(it.ts * 1000).toLocaleString();
+                    const alertTime = Number(it.ts) * 1000;
+                    const when = Number.isFinite(alertTime) ? formatDateTime(alertTime) : "—";
                     const sev = it.severity === 'Error' ? 'danger' : 'warning';
                     const clearControl = it.clearable === false
-                        ? '<span class="badge bg-secondary-subtle text-secondary border float-end ms-3">Active</span>'
-                        : `<button type="button" class="btn btn-link btn-sm text-secondary float-end ms-3 p-0 urgent-clear" data-id="${it.id}" title="Acknowledge issue" aria-label="Acknowledge issue ${escapeAttr(it.code)}"><i class="fa fa-times" aria-hidden="true"></i></button>`;
+                        ? `<span class="badge bg-secondary-subtle text-secondary border float-end ms-3">${escapeHtml(t("common.alerts.active"))}</span>`
+                        : `<button type="button" class="btn btn-link btn-sm text-secondary float-end ms-3 p-0 urgent-clear" data-id="${escapeAttr(it.id)}" title="${escapeAttr(t("common.alerts.acknowledge"))}" aria-label="${escapeAttr(t("common.alerts.acknowledge_code", {code: it.code}))}"><i class="fa fa-times" aria-hidden="true"></i></button>`;
+                    // Severity, code, source, message and context are the server's
+                    // (alert messages are composed from node and circuit names, and
+                    // the server only strips ANSI), so every one of them is escaped.
                     td.innerHTML = `
                     <div>
-                        <span class="badge bg-${sev}">${it.severity}</span>
-                        <strong class="ms-2">${it.code}</strong>
-                        <span class="text-muted ms-2">(${it.source})</span>
+                        <span class="badge bg-${sev}">${escapeHtml(it.severity)}</span>
+                        <strong class="ms-2">${escapeHtml(it.code)}</strong>
+                        <span class="text-muted ms-2">(${escapeHtml(it.source)})</span>
                         <span class="text-muted float-end">${when}</span>
                         ${clearControl}
                     </div>
-                    <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
-                    ${it.context ? `<pre class="mt-2">${it.context}</pre>` : ''}
+                    <div class="mt-1" style="white-space: pre-wrap;">${escapeHtml(it.message)}</div>
+                    ${it.context ? `<pre class="mt-2">${escapeHtml(it.context)}</pre>` : ''}
                     `;
                     tr.appendChild(td);
                     tbody.appendChild(tr);
@@ -1742,9 +1712,9 @@ function initUrgentIssues() {
                     startUrgentClear({
                         responseEvent: 'UrgentClearResult',
                         requestPayload: (requestId) => ({ UrgentClear: { id, request_id: requestId } }),
-                        busyMessage: 'Acknowledging alert...',
-                        failureMessage: 'Unable to acknowledge alert.',
-                        timeoutMessage: 'Timed out while acknowledging alert.',
+                        busyMessage: t("common.alerts.acknowledging"),
+                        failureMessage: t("common.alerts.acknowledge_failed"),
+                        timeoutMessage: t("common.alerts.acknowledge_timeout"),
                     });
                 });
                 setClearControlsDisabled(clearActionInFlight());
@@ -1759,7 +1729,7 @@ function initUrgentIssues() {
                     setClearControlsDisabled(clearActionInFlight());
                     return;
                 }
-                showUrgentRetryState('Unable to refresh alerts.');
+                showUrgentRetryState(t("common.alerts.refresh_failed"));
                 setClearControlsDisabled(true);
             }
         );
@@ -1767,6 +1737,7 @@ function initUrgentIssues() {
     }
 
     if (!document.getElementById(containerId)) {
+        // translatable: false — '.sidebar .navbar-nav' is a DOM selector, not a label
         const ul = document.querySelector('.sidebar .navbar-nav');
         if (ul) {
             const li = document.createElement('li');
@@ -1780,9 +1751,9 @@ function initUrgentIssues() {
         startUrgentClear({
             responseEvent: 'UrgentClearAllResult',
             requestPayload: (requestId) => ({ UrgentClearAll: { request_id: requestId } }),
-            busyMessage: 'Acknowledging alerts...',
-            failureMessage: 'Unable to acknowledge alerts.',
-            timeoutMessage: 'Timed out while acknowledging alerts.',
+            busyMessage: t("common.alerts.acknowledging_all"),
+            failureMessage: t("common.alerts.acknowledge_all_failed"),
+            timeoutMessage: t("common.alerts.acknowledge_all_timeout"),
         });
     });
 
@@ -1820,6 +1791,7 @@ function updateMaintenanceNav() {
 
 function markActiveNav() {
     const page = (window.location.pathname.split("/").pop() || "index.html").toLowerCase();
+    // translatable: false — ".sidebar .nav-link[href]" is a DOM selector, not a label
     document.querySelectorAll(".sidebar .nav-link[href]").forEach((link) => {
         if (link.classList.contains("lqos-brand-link")) {
             return;
@@ -1851,10 +1823,14 @@ function initReloadLibreQoS() {
     updateMaintenanceNav();
     link.addEventListener("click", (event) => {
         event.preventDefault();
-        if (!window.confirm("Reload LibreQoS? This re-syncs the integration and applies now. The bridge keeps shaping; traffic is not interrupted.")) {
+        // The sentence about the bridge lives in `common.reload.bridge_note`,
+        // which the modal body also renders; the prompt composes it rather than
+        // keeping a second copy that a translator can drift from.
+        const message = `${t("common.reload.confirm")} ${t("common.reload.bridge_note")}`;
+        if (!window.confirm(message)) {
             return;
         }
-        triggerReloadLibreQoS("Re-syncing integration and applying…");
+        triggerReloadLibreQoS(t("common.reload.resyncing"));
     });
 }
 
@@ -1865,6 +1841,17 @@ function initSchedulerTooltips() {
         new bootstrap.Tooltip(element);
     });
 }
+
+// The sidebar's language options are built by `i18n/switcher.mjs` from the
+// generated `i18n/locales.js` list, so the tags are never repeated in this file.
+
+// The frame is translated once, before any page code re-renders a status item.
+initLanguageSwitcher();
+applyDomTranslations();
+// The cancellation notice is filled here because one of its placements, the
+// post-signup trial page, ships no bundle of its own; every other page that
+// marks the element is filled by the same call.
+applyCancelCapNotice();
 
 initLogout();
 initDayNightMode();

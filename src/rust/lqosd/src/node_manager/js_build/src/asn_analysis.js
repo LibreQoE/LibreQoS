@@ -9,14 +9,20 @@ import {
     sumBlocks,
 } from "./executive_utils";
 import {get_ws_client} from "./pubsub/ws";
+import {formatNumber} from "./i18n/format.js";
+import {t} from "./i18n/index.js";
+import {relativeTimeText} from "./i18n/relative_time.mjs";
 
 const wsClient = get_ws_client();
 const TOP_LABEL_COUNT = 4;
 const TOP_ROW_LIMIT = 20;
 const HEATMAP_BLOCK_SECONDS = 60;
 const EXECUTIVE_PAGE_SIZE = 250;
-const LIVE_INTERVAL_TEXT = "Executive data auto-refreshes about every 5 seconds";
 const NEUTRAL_CHART_COLOR = "#94a3b8";
+// Retransmit percentages keep two decimals on the rows and one on the chart's
+// value axis; `Intl` percent style places the mark for the active locale.
+const RETRANS_PERCENT = {style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2};
+const RETRANS_AXIS_PERCENT = {style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1};
 const RTT_THRESHOLDS = (() => {
     const configured = window.rttThresholds || window.rtt_thresholds || window.config?.rtt_thresholds || {};
     const greenMs = Math.max(0, Math.round(toNumber(configured.greenMs ?? configured.green_ms ?? configured.green, 0)));
@@ -64,14 +70,18 @@ function formatRttMs(rttMs) {
     if (!Number.isFinite(rttMs) || rttMs <= 0) {
         return "—";
     }
-    return `${rttMs.toFixed(rttMs >= 100 ? 0 : 1)} ms`;
+    // One decimal below 100 ms, whole milliseconds from there up.
+    const digits = rttMs >= 100 ? 0 : 1;
+    return `${formatNumber(rttMs, {minimumFractionDigits: digits, maximumFractionDigits: digits})} ms`;
 }
 
 function formatRetransPct(value) {
+    // `value` is already a percentage (2.5 means 2.50 %), so the ratio Intl's
+    // percent style expects is formed here and not in the sentence.
     if (!Number.isFinite(value) || value <= 0) {
-        return "0.00%";
+        return formatNumber(0, RETRANS_PERCENT);
     }
-    return `${value.toFixed(2)}%`;
+    return formatNumber(value / 100, RETRANS_PERCENT);
 }
 
 function formatFlowCount(value) {
@@ -85,42 +95,54 @@ function formatTrafficRateMbps(mbps) {
     if (!Number.isFinite(mbps) || mbps <= 0) {
         return "—";
     }
-    return `${mbps.toFixed(mbps >= 100 ? 0 : 1)} Mbps avg`;
+    // The rate keeps the scale the tooltip already used: one decimal below
+    // 100 Mb/s, whole Mb/s from there up.
+    const digits = mbps >= 100 ? 0 : 1;
+    return t("asn_analysis.rate_avg", {
+        rate: formatNumber(mbps, {minimumFractionDigits: digits, maximumFractionDigits: digits}),
+    });
 }
 
 function formatAgo(date) {
     if (!(date instanceof Date)) {
-        return "Waiting for executive ASN heatmaps…";
+        return t("asn_analysis.waiting");
     }
     const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
     if (diffSeconds < 5) {
-        return "Updated just now";
+        return t("asn_analysis.updated_just_now");
     }
-    if (diffSeconds < 60) {
-        return `Updated ${diffSeconds}s ago`;
-    }
-    const minutes = Math.floor(diffSeconds / 60);
-    if (minutes < 60) {
-        return `Updated ${minutes}m ago`;
-    }
-    const hours = Math.floor(minutes / 60);
-    return `Updated ${hours}h ago`;
+    // "5 sec. ago" / "hace 5 s" comes from Intl.RelativeTimeFormat; the frame
+    // around it is the shared update message, as everywhere else in the UI.
+    return t("common.state.updated", {time: relativeTimeText(Math.round(date.getTime() / 1000))});
 }
 
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
+/** The QoO band as a catalog token; `qooStatusLabel` renders it. */
 function qooStatus(score) {
     if (!Number.isFinite(score)) {
-        return "Unknown";
+        return "unknown";
     }
-    if (score >= 90) return "Optimal";
-    if (score >= 75) return "Good";
-    if (score >= 50) return "Degraded";
-    return "Critical";
+    if (score >= 90) return "optimal";
+    if (score >= 75) return "good";
+    if (score >= 50) return "degraded";
+    return "critical";
 }
 
+function qooStatusLabel(status) {
+    // One literal call per branch: the extractor reads keys, it does not run code.
+    switch (status) {
+        case "optimal": return t("asn_analysis.qoo.optimal");
+        case "good": return t("asn_analysis.qoo.good");
+        case "degraded": return t("asn_analysis.qoo.degraded");
+        case "critical": return t("asn_analysis.qoo.critical");
+        default: return t("asn_analysis.qoo.unknown");
+    }
+}
+
+// translatable: false — "rgba(148, 163, 184, 0.14)" "rgba(148, 163, 184, 0.26)" "rgba(16, 185, 129, 0.14)" "rgba(52, 211, 153, 0.24)" "rgba(59, 130, 246, 0.14)" "rgba(96, 165, 250, 0.24)" "rgba(245, 158, 11, 0.14)" "rgba(251, 191, 36, 0.24)" "rgba(239, 68, 68, 0.16)" "rgba(248, 113, 113, 0.26)" — the QoO badge's background and border colours per band, not labels
 function qooBadgeClass(score) {
     if (!Number.isFinite(score)) {
         return {
@@ -237,7 +259,7 @@ function buildExecutiveRows() {
             trafficSeverity: 0,
             impactScore: 0,
             qooScore: 0,
-            qooStatus: "Unknown",
+            qooStatus: "unknown",
         };
     });
 
@@ -311,7 +333,7 @@ function updateLiveClock() {
     const cadence = document.getElementById("asnAnalysisCadence");
     const lastRefresh = document.getElementById("asnAnalysisLastRefresh");
     if (cadence) {
-        cadence.innerText = LIVE_INTERVAL_TEXT;
+        cadence.innerText = t("asn_analysis.live_interval");
     }
     if (lastRefresh) {
         lastRefresh.innerText = formatAgo(state.lastExecutiveUpdate);
@@ -337,9 +359,11 @@ function asnDisplayName(asn) {
     const row = state.executiveRows.find((entry) => entry.asn === asn);
     if (!row) {
         const fallback = state.asnList.find((entry) => entry.asn === asn);
-        return fallback ? `${fallback.name} (ASN ${asn})` : `ASN ${asn}`;
+        return fallback
+            ? t("asn_analysis.label_with_asn", {name: fallback.name, asn: String(asn)})
+            : `ASN ${asn}`;
     }
-    return `${row.asnName} (ASN ${row.asn})`;
+    return t("asn_analysis.label_with_asn", {name: row.asnName, asn: String(row.asn)});
 }
 
 
@@ -352,7 +376,7 @@ function renderLeaderboard() {
 
     const rows = sortedLeaderboardRows();
     if (!rows.length) {
-        tbody.innerHTML = "<tr><td colspan='7' class='asn-analysis-empty'>No ASN heatmap data — the ASN aggregate feed is not available in this build.</td></tr>";
+        tbody.innerHTML = `<tr><td colspan='7' class='asn-analysis-empty'>${t("asn_analysis.no_heatmap_data")}</td></tr>`;
         return;
     }
 
@@ -366,6 +390,7 @@ function renderLeaderboard() {
         }
         tr.addEventListener("click", () => setSelectedAsn(row.asn));
         tr.addEventListener("keydown", (event) => {
+            // translatable: false — "Enter" is the keyboard event key compared against, not a label
             if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 setSelectedAsn(row.asn);
@@ -375,6 +400,7 @@ function renderLeaderboard() {
         const badgeStyle = qooBadgeClass(row.qooScore);
         const trafficSummary = `${formatVolume(row.totalBytes)} · ${formatTrafficRateMbps(row.avgMbps)}`;
 
+        // translatable: false — "ASN ·" is the ASN abbreviation and the middle dot of the leaderboard row template; ASN is invariable and the dot is punctuation
         tr.innerHTML = `
             <td class="asn-analysis-leaderboard-rank"><span class="asn-analysis-rank-chip">${index + 1}</span></td>
             <td>
@@ -389,7 +415,7 @@ function renderLeaderboard() {
             <td><span style="color:${colorByRetransmitPct(toNumber(row.medianRetrans, 0))}">${formatRetransPct(toNumber(row.medianRetrans, 0))}</span></td>
             <td>
                 <span class="asn-analysis-qoo-badge" style="background:${badgeStyle.background};color:${badgeStyle.color};border-color:${badgeStyle.borderColor}">
-                    ${row.qooStatus} · ${row.qooScore}
+                    ${qooStatusLabel(row.qooStatus)} · ${row.qooScore}
                 </span>
             </td>
         `;
@@ -408,49 +434,50 @@ function renderSelectedAsnSummary() {
 
     const row = state.executiveRows.find((entry) => entry.asn === state.selectedAsn) || null;
     if (!row) {
-        title.innerText = "No ASN selected";
+        title.innerText = t("asn_analysis.no_asn_selected");
         qooBadge.className = "asn-analysis-qoo-badge asn-analysis-qoo-badge--empty";
         qooBadge.innerText = "—";
         qooBadge.style.background = "";
         qooBadge.style.color = "";
         qooBadge.style.borderColor = "";
         kpis.innerHTML = `
-            <div class="asn-analysis-selected-metric"><label>Median RTT</label><strong>—</strong></div>
-            <div class="asn-analysis-selected-metric"><label>Retransmit</label><strong>—</strong></div>
-            <div class="asn-analysis-selected-metric"><label>Recent Flows</label><strong>—</strong></div>
-            <div class="asn-analysis-selected-metric"><label>Recent Traffic</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>${t("asn_analysis.metric.median_rtt")}</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>${t("asn_analysis.metric.retransmit")}</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>${t("asn_analysis.metric.recent_flows")}</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>${t("asn_analysis.metric.recent_traffic")}</label><strong>—</strong></div>
         `;
         return;
     }
 
-    title.innerText = `${row.asnName} (ASN ${row.asn})`;
+    title.innerText = t("asn_analysis.label_with_asn", {name: row.asnName, asn: String(row.asn)});
 
     const badgeStyle = qooBadgeClass(row.qooScore);
     qooBadge.className = "asn-analysis-qoo-badge";
-    qooBadge.innerText = `${row.qooStatus} · ${row.qooScore}`;
+    qooBadge.innerText = `${qooStatusLabel(row.qooStatus)} · ${row.qooScore}`;
     qooBadge.style.background = badgeStyle.background;
     qooBadge.style.color = badgeStyle.color;
     qooBadge.style.borderColor = badgeStyle.borderColor;
 
     const rttValue = toNumber(row.medianRtt, 0);
+    // translatable: false — "color:" is the CSS declaration prefix the metric row inlines
     const rttStyle = rttValue > 0 ? `color:${colorByRttMs(rttValue)}` : "";
     const retransStyle = `color:${colorByRetransmitPct(toNumber(row.medianRetrans, 0))}`;
 
     kpis.innerHTML = `
         <div class="asn-analysis-selected-metric">
-            <label>Median RTT</label>
+            <label>${t("asn_analysis.metric.median_rtt")}</label>
             <strong style="${rttStyle}">${formatRttMs(row.medianRtt)}</strong>
         </div>
         <div class="asn-analysis-selected-metric">
-            <label>Retransmit</label>
+            <label>${t("asn_analysis.metric.retransmit")}</label>
             <strong style="${retransStyle}">${formatRetransPct(toNumber(row.medianRetrans, 0))}</strong>
         </div>
         <div class="asn-analysis-selected-metric">
-            <label>Recent Flows</label>
+            <label>${t("asn_analysis.metric.recent_flows")}</label>
             <strong>${formatFlowCount(row.flowCount)}</strong>
         </div>
         <div class="asn-analysis-selected-metric">
-            <label>Recent Traffic</label>
+            <label>${t("asn_analysis.metric.recent_traffic")}</label>
             <strong>${formatVolume(row.totalBytes)}</strong>
             <small>${formatTrafficRateMbps(row.avgMbps)}</small>
         </div>
@@ -491,7 +518,7 @@ function renderBubbleChart() {
         state.bubbleChart.clear();
         state.bubbleChart.setOption({
             title: {
-                text: "Waiting for executive ASN heatmaps…",
+                text: t("asn_analysis.waiting"),
                 left: "center",
                 top: "middle",
                 textStyle: { color: NEUTRAL_CHART_COLOR, fontSize: 14, fontWeight: 500 },
@@ -520,6 +547,7 @@ function renderBubbleChart() {
             borderColor: row.asn === state.selectedAsn ? (isDarkMode() ? "#ffffff" : "#0f172a") : "rgba(255,255,255,0.35)",
             borderWidth: row.asn === state.selectedAsn ? 2 : 1,
             shadowBlur: row.asn === state.selectedAsn ? 10 : 0,
+            // translatable: false — "rgba(96, 165, 250, 0.35)" "rgba(0, 0, 0, 0)" — the selected bubble's glow colour and the transparent no-glow, not labels
             shadowColor: row.asn === state.selectedAsn ? "rgba(96, 165, 250, 0.35)" : "rgba(0, 0, 0, 0)",
         },
         symbolSize: bubbleSizeForFlows(row.flowCount),
@@ -535,12 +563,12 @@ function renderBubbleChart() {
                 if (!row) return "";
                 return `
                     <div class="small">
-                        <div class="fw-semibold">${escapeHtml(row.asnName)} (ASN ${row.asn})</div>
-                        <div>Traffic: ${formatVolume(row.totalBytes)} (${formatTrafficRateMbps(row.avgMbps)})</div>
-                        <div>Median RTT: ${formatRttMs(row.medianRtt)}</div>
-                        <div>Median Retransmit: ${formatRetransPct(toNumber(row.medianRetrans, 0))}</div>
-                        <div>Recent Flows: ${formatFlowCount(row.flowCount)}</div>
-                        <div>QoO: ${row.qooStatus} · ${row.qooScore}</div>
+                        <div class="fw-semibold">${t("asn_analysis.label_with_asn", {name: escapeHtml(row.asnName), asn: String(row.asn)})}</div>
+                        <div>${t("asn_analysis.tooltip.traffic", {volume: formatVolume(row.totalBytes), rate: formatTrafficRateMbps(row.avgMbps)})}</div>
+                        <div>${t("asn_analysis.tooltip.median_rtt", {rtt: formatRttMs(row.medianRtt)})}</div>
+                        <div>${t("asn_analysis.tooltip.median_retransmit", {retransmit: formatRetransPct(toNumber(row.medianRetrans, 0))})}</div>
+                        <div>${t("asn_analysis.tooltip.recent_flows", {flows: formatFlowCount(row.flowCount)})}</div>
+                        <div>${t("asn_analysis.tooltip.qoo", {status: qooStatusLabel(row.qooStatus), score: row.qooScore})}</div>
                     </div>
                 `;
             },
@@ -550,7 +578,7 @@ function renderBubbleChart() {
             logBase: 10,
             min: 1e6,
             max: 2e11,
-            name: "Traffic (15m total)",
+            name: t("asn_analysis.axis.traffic_15m"),
             nameGap: 28,
             axisLabel: {
                 formatter: (value) => formatVolume(value),
@@ -559,7 +587,7 @@ function renderBubbleChart() {
         },
         yAxis: {
             type: "value",
-            name: "Median RTT",
+            name: t("asn_analysis.metric.median_rtt"),
             nameGap: 18,
             axisLabel: {
                 formatter: (value) => value > 0 ? `${Math.round(value)} ms` : "—",
@@ -613,7 +641,7 @@ function renderRetransmitChart() {
         state.retransmitChart.clear();
         state.retransmitChart.setOption({
             title: {
-                text: "No retransmits in the current top 20",
+                text: t("asn_analysis.no_retransmits_top20"),
                 left: "center",
                 top: "middle",
                 textStyle: { color: NEUTRAL_CHART_COLOR, fontSize: 13, fontWeight: 500 },
@@ -647,11 +675,11 @@ function renderRetransmitChart() {
                 if (!row) return "";
                 return `
                     <div class="small">
-                        <div class="fw-semibold">${escapeHtml(row.asnName)} (ASN ${row.asn})</div>
-                        <div>Retransmit: ${formatRetransPct(toNumber(row.medianRetrans, 0))}</div>
-                        <div>Traffic: ${formatVolume(row.totalBytes)} (${formatTrafficRateMbps(row.avgMbps)})</div>
-                        <div>Median RTT: ${formatRttMs(row.medianRtt)}</div>
-                        <div>QoO: ${row.qooStatus} · ${row.qooScore}</div>
+                        <div class="fw-semibold">${t("asn_analysis.label_with_asn", {name: escapeHtml(row.asnName), asn: String(row.asn)})}</div>
+                        <div>${t("asn_analysis.tooltip.retransmit", {retransmit: formatRetransPct(toNumber(row.medianRetrans, 0))})}</div>
+                        <div>${t("asn_analysis.tooltip.traffic", {volume: formatVolume(row.totalBytes), rate: formatTrafficRateMbps(row.avgMbps)})}</div>
+                        <div>${t("asn_analysis.tooltip.median_rtt", {rtt: formatRttMs(row.medianRtt)})}</div>
+                        <div>${t("asn_analysis.tooltip.qoo", {status: qooStatusLabel(row.qooStatus), score: row.qooScore})}</div>
                     </div>
                 `;
             },
@@ -659,7 +687,7 @@ function renderRetransmitChart() {
         xAxis: {
             type: "value",
             axisLabel: {
-                formatter: (value) => `${toNumber(value, 0).toFixed(1)}%`,
+                formatter: (value) => formatNumber(toNumber(value, 0) / 100, RETRANS_AXIS_PERCENT),
             },
         },
         yAxis: {
@@ -810,6 +838,7 @@ function initExecutiveFeed() {
         updateLiveClock();
     };
 
+    // translatable: false — "Download" "Asn" "Retransmit" "Label" — the executive heatmap request's metric, entity-kind and sort tokens the server matches, not labels
     state.executivePollHandles = [
         pollExecutiveLeaderboardPage({
             kind: "TopAsnsByTraffic",

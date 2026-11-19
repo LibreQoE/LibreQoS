@@ -36,6 +36,8 @@ import {
     summarizeStormguardHistory,
 } from "./tree_stormguard.mjs";
 import {setTreeDetailTabsVisibility} from "./tree_detail_tabs.mjs";
+import {formatNumber} from "./i18n/format.js";
+import {t, tn} from "./i18n/index.js";
 
 var tree = null;
 var parent = 0;
@@ -55,7 +57,6 @@ var treeQooGauge = null;
 var lastAttachedCircuitsPage = null;
 var attachedCircuitsWatchSignature = null;
 var currentSelectionIdentity = null;
-var rootGaugeConfigMax = null;
 var selectionLocator = {
     nodeId: null,
     nodePath: null,
@@ -76,12 +77,30 @@ var nodeTopologyOverrideState = {
 var nodeOverrideInputsDirty = false;
 var nodeOverrideLastSeedSignature = null;
 const wsClient = get_ws_client();
-const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
-    "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
-    "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
-    "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
-const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
-const TOPOLOGY_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator topology override. The selected parent will be applied on the next scheduler run.";
+// The QoO tooltip is the same three sentences the shaped-devices page renders,
+// so it reads that page's keys (GLOSSARY §6 keeps the draft URL literal) instead of
+// forking a second copy of the text; a catalog-only rename moves both pages.
+function qooTooltipHtml() {
+    return "<h5>" + t("shaped_devices.qoo.title") + "</h5>" +
+        "<p>" + t("shaped_devices.qoo.intro") + "<br>" +
+        "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
+        t("shaped_devices.qoo.model") + "</p>";
+}
+
+// A table header's rich tooltip: one heading, one sentence.
+function tableTooltip(title, body) {
+    return "<h5>" + title + "</h5><p>" + body + "</p>";
+}
+
+// Resolved at render time, not at import: the catalog is a page global, and a
+// module-level `t()` would freeze whichever locale was loaded first.
+function nodeOverridePendingTooltip() {
+    return t("tree.override.pending_tooltip");
+}
+
+function topologyOverridePendingTooltip() {
+    return t("tree.topology.pending_tooltip");
+}
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
@@ -105,6 +124,7 @@ function sendWsRequest(responseEvent, request) {
             if (done) return;
             done = true;
             wsClient.off(responseEvent, responseHandler);
+            // translatable: false — "Error" is the pubsub client's websocket event name
             wsClient.off("Error", errorHandler);
             resolve(msg);
         };
@@ -123,26 +143,6 @@ function sendWsRequest(responseEvent, request) {
 
 function sendPrivateRequest(command) {
     wsClient.send({Private: command});
-}
-
-async function loadRootGaugeConfigMax() {
-    try {
-        const msg = await sendWsRequest("GetConfig", {GetConfig: {}});
-        const queues = msg?.data?.config?.queues;
-        if (!queues) {
-            return;
-        }
-        rootGaugeConfigMax = [
-            toNumber(queues.downlink_bandwidth_mbps, 0),
-            toNumber(queues.uplink_bandwidth_mbps, 0),
-        ];
-        const node = currentNode();
-        if (node && isSyntheticRootNode(node)) {
-            updateTreeGauges(node);
-        }
-    } catch (_error) {
-        // If config load fails, keep the existing node-derived gauge behavior.
-    }
 }
 
 function formatDeviceIp(ip) {
@@ -236,8 +236,15 @@ function formatEthernetTooltip(badge) {
     if (!badge) {
         return "";
     }
-    return `Requested plan ${toNumber(badge.requested_download_mbps, 0)} / ${toNumber(badge.requested_upload_mbps, 0)} Mbps exceeded detected Ethernet speed. ` +
-        `Shaping auto-capped to ${toNumber(badge.applied_download_mbps, 0)} / ${toNumber(badge.applied_upload_mbps, 0)} Mbps.`;
+    const requested = t("common.ethernet.requested_exceeded", {
+        down: `${toNumber(badge.requested_download_mbps, 0)} Mbps`,
+        up: `${toNumber(badge.requested_upload_mbps, 0)} Mbps`,
+    });
+    const applied = t("common.ethernet.auto_capped", {
+        down: `${toNumber(badge.applied_download_mbps, 0)} Mbps`,
+        up: `${toNumber(badge.applied_upload_mbps, 0)} Mbps`,
+    });
+    return `${requested} ${applied}`;
 }
 
 function ethernetBadgeClass(tierLabel) {
@@ -246,26 +253,9 @@ function ethernetBadgeClass(tierLabel) {
     return "text-bg-info";
 }
 
-function rootGaugeMaxAvailable() {
-    return Array.isArray(rootGaugeConfigMax)
-        && rootGaugeConfigMax.length === 2
-        && Number.isFinite(Number(rootGaugeConfigMax[0]))
-        && Number.isFinite(Number(rootGaugeConfigMax[1]));
-}
-
-function nodeSnapshotGaugeMax(node) {
-    if (isSyntheticRootNode(node) && rootGaugeMaxAvailable()) {
-        return [
-            toNumber(rootGaugeConfigMax[0], 0),
-            toNumber(rootGaugeConfigMax[1], 0),
-        ];
-    }
-    return effectiveMax(node);
-}
-
 function formatLimitValue(mbps) {
     if (toNumber(mbps, 0) === 0) {
-        return "Unlimited";
+        return t("tree.limit.unlimited");
     }
     return scaleNumber(toNumber(mbps, 0) * 1000 * 1000, 1);
 }
@@ -286,6 +276,7 @@ function formatRatePair(downMbps, upMbps) {
 }
 
 function isSyntheticRootNode(node) {
+    // translatable: false — "Root" is the synthetic root node's name: compared here and sent as node_path
     return !!node
         && (node.id === null || node.id === undefined)
         && node.immediate_parent === null
@@ -311,12 +302,17 @@ function stormguardRuntimeBadgeClass(phase) {
 }
 
 function formatAttempt(direction) {
-    if (!direction?.last_attempt_outcome) return "No action attempted yet";
+    if (!direction?.last_attempt_outcome) return t("tree.stormguard.no_attempt");
+    // The action, outcome and error are bridge values (GLOSSARY §6), so they are
+    // inserted as they arrive; the rate keeps its own unit and the former
+    // English preposition is a separator now.
+    // translatable: false — " · Mbps" is the separator and unit of the rate the StormGuard formatter produced
     const target = direction.last_attempt_target_mbps === null || direction.last_attempt_target_mbps === undefined
         ? ""
-        : ` at ${formatStormguardMbps(direction.last_attempt_target_mbps)} Mbps`;
+        : ` · ${formatStormguardMbps(direction.last_attempt_target_mbps)} Mbps`;
     const error = direction.last_attempt_error ? ` — ${direction.last_attempt_error}` : "";
-    return `${direction.last_attempt_action || "action"}${target}: ${direction.last_attempt_outcome}${error}`;
+    const action = direction.last_attempt_action || t("tree.stormguard.attempt_action");
+    return `${action}${target}: ${direction.last_attempt_outcome}${error}`;
 }
 
 function ensureTreeStormguardGraph() {
@@ -335,6 +331,12 @@ function ensureTreeStormguardGraph() {
     return treeStormguardGraph;
 }
 
+// GLOSSARY §6: the direction arrives as a machine token (the radio value) and is
+// labelled at the presentation edge.
+function stormguardDirectionLabel() {
+    return stormguardDirection === "upload" ? t("common.table.upload") : t("common.table.download");
+}
+
 function renderTreeStormguard() {
     const visible = shouldShowStormguardTab(stormguardRuntime);
     setTreeDetailTabsVisibility(document, window.bootstrap, visible);
@@ -349,8 +351,8 @@ function renderTreeStormguard() {
     }
     const runtimeParts = [
         stormguardRuntime.message,
-        `Bakery ${stormguardRuntime.bakeryReady ? "ready" : "not ready"}`,
-        stormguardRuntime.cleanupPending ? "cleanup pending" : "cleanup clear",
+        stormguardRuntime.bakeryReady ? t("tree.stormguard.bakery_ready") : t("tree.stormguard.bakery_not_ready"),
+        stormguardRuntime.cleanupPending ? t("tree.stormguard.cleanup_pending") : t("tree.stormguard.cleanup_clear"),
         stormguardRuntime.lastError,
     ].filter(Boolean);
     setText("treeStormguardRuntimeMessage", runtimeParts.join(" · "));
@@ -370,7 +372,12 @@ function renderTreeStormguard() {
     );
     setText(
         "treeStormguardBounds",
-        `D ${formatStormguardMbps(entry.download?.min_mbps)}–${formatStormguardMbps(entry.download?.max_mbps)} · U ${formatStormguardMbps(entry.upload?.min_mbps)}–${formatStormguardMbps(entry.upload?.max_mbps)} Mbps`,
+        t("tree.stormguard.bounds", {
+            down_min: formatStormguardMbps(entry.download?.min_mbps),
+            down_max: formatStormguardMbps(entry.download?.max_mbps),
+            up_min: formatStormguardMbps(entry.upload?.min_mbps),
+            up_max: formatStormguardMbps(entry.upload?.max_mbps),
+        }),
     );
     setText(
         "treeStormguardMode",
@@ -378,38 +385,53 @@ function renderTreeStormguard() {
     );
     setText("treeStormguardSettings", formatStormguardSettings(stormguardRuntime));
     if (!direction) {
-        setText("treeStormguardDecision", `${stormguardDirection}: diagnostics unavailable`);
+        setText("treeStormguardDecision", t("tree.stormguard.decision_unavailable", {direction: stormguardDirectionLabel()}));
         setText("treeStormguardCooldown", "—");
-        setText("treeStormguardReason", `No ${stormguardDirection} diagnostics are available.`);
+        setText("treeStormguardReason", t("tree.stormguard.no_diagnostics", {direction: stormguardDirectionLabel()}));
         setText("treeStormguardRttSource", "—");
-        setText("treeStormguardOutcome", "No action data available");
-        setText("treeStormguardGraphSummary", `No ${stormguardDirection} graph history is available yet.`);
+        setText("treeStormguardOutcome", t("tree.stormguard.no_action_data"));
+        setText("treeStormguardGraphSummary", t("tree.stormguard.no_history_for", {direction: stormguardDirectionLabel()}));
         ensureTreeStormguardGraph()?.render([]);
         return;
     }
     const candidate = direction.candidate_action
-        ? `${direction.candidate_action}${direction.candidate_target_mbps ? ` → ${direction.candidate_target_mbps} Mbps` : ""}`
-        : "hold";
-    setText("treeStormguardDecision", `${stormguardDirection}: ${candidate}`);
+        ? (direction.candidate_target_mbps
+            ? t("tree.stormguard.candidate", {
+                action: direction.candidate_action,
+                rate: direction.candidate_target_mbps,
+            })
+            : direction.candidate_action)
+        : t("tree.stormguard.hold");
+    setText("treeStormguardDecision", `${stormguardDirectionLabel()}: ${candidate}`);
     setText(
         "treeStormguardCooldown",
         direction.cooldown_remaining_secs === null || direction.cooldown_remaining_secs === undefined
             ? direction.state || "—"
-            : `${Number(direction.cooldown_remaining_secs).toFixed(1)} seconds remaining`,
+            : t("tree.stormguard.cooldown_remaining", {
+                seconds: formatNumber(Number(direction.cooldown_remaining_secs), {maximumFractionDigits: 1}),
+            }),
     );
     setText(
         "treeStormguardReason",
-        [direction.decision_reason, direction.decision_blocker].filter(Boolean).join(" · ") || "No decision details yet",
+        [direction.decision_reason, direction.decision_blocker].filter(Boolean).join(" · ")
+            || t("tree.stormguard.no_decision_details"),
     );
     const flowIndex = stormguardDirection === "download" ? 0 : 1;
     const flowCount = entry.passiveRttFlowCounts[flowIndex];
-    const pingDetail = entry.activePingTarget
-        ? `; active target ${entry.activePingTarget} at weight ${entry.activePingWeight ?? 0}`
-        : "";
-    setText(
-        "treeStormguardRttSource",
-        `${direction.rtt_source || "none"}; ${flowCount} passive RTT flow${flowCount === 1 ? "" : "s"}${pingDetail}; effective ${formatStormguardMs(direction.rtt)}`,
-    );
+    const rttParts = [
+        t("tree.stormguard.rtt_source", {
+            source: direction.rtt_source || t("tree.stormguard.rtt_source_none"),
+        }),
+        tn("tree.stormguard.passive_flows", flowCount),
+        entry.activePingTarget
+            ? t("tree.stormguard.active_target", {
+                target: entry.activePingTarget,
+                weight: entry.activePingWeight ?? 0,
+            })
+            : "",
+        t("tree.stormguard.effective_rtt", {rtt: formatStormguardMs(direction.rtt)}),
+    ].filter(Boolean);
+    setText("treeStormguardRttSource", rttParts.join(" · "));
     setText("treeStormguardOutcome", formatAttempt(direction));
     const historyPoints = stormguardHistory.points(siteName, stormguardDirection, Date.now());
     setText(
@@ -468,18 +490,6 @@ function buildConfiguredLimitCellHtml(node) {
     return `<div class="lqos-limit-block"><div class="${secondaryClass}">${configuredValue}</div></div>`;
 }
 
-function buildDirectionalLimitHtml(primaryMbps, configuredMbps, showConfigured) {
-    const primary = formatLimitValue(primaryMbps);
-    if (!showConfigured) {
-        return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div></div>`;
-    }
-    const match = ratesApproximatelyEqual(primaryMbps, configuredMbps);
-    const secondaryClass = match
-        ? "lqos-limit-line lqos-limit-secondary is-match"
-        : "lqos-limit-line lqos-limit-secondary";
-    return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div><div class="${secondaryClass}">Cfg ${formatLimitValue(configuredMbps)}</div></div>`;
-}
-
 function subtreeSiteCount(node) {
     return toNumber(node.subtree_site_count, 0);
 }
@@ -492,11 +502,11 @@ function branchSizeParts(node) {
     const parts = [];
     const circuitCount = subtreeCircuitCount(node);
     if (circuitCount > 0) {
-        parts.push(`${circuitCount} ${circuitCount === 1 ? "circuit" : "circuits"}`);
+        parts.push(tn("tree.branch.circuits", circuitCount));
     }
     const siteCount = subtreeSiteCount(node);
     if (siteCount > 0) {
-        parts.push(`${siteCount} ${siteCount === 1 ? "site" : "sites"}`);
+        parts.push(tn("tree.branch.sites", siteCount));
     }
     return parts;
 }
@@ -504,7 +514,7 @@ function branchSizeParts(node) {
 function formatBranchSize(node) {
     const parts = branchSizeParts(node);
     if (parts.length === 0) {
-        return "No descendant sites or circuits";
+        return t("tree.branch.none");
     }
     return parts.join(" / ");
 }
@@ -514,6 +524,7 @@ function buildStatusIcon(iconName, textClass, title) {
     icon.classList.add("fa", "fa-fw", iconName, textClass);
     icon.setAttribute("data-bs-toggle", "tooltip");
     icon.setAttribute("data-bs-placement", "top");
+    // translatable: false — "hover focus" is a Bootstrap tooltip trigger list, not text
     icon.setAttribute("data-bs-trigger", "hover focus");
     icon.setAttribute("data-bs-container", "body");
     icon.setAttribute("tabindex", "0");
@@ -538,7 +549,7 @@ function renderHeaderStatusIcons(node) {
         target.appendChild(buildStatusIcon(
             "fa-cloud-bolt",
             "text-primary",
-            "StormGuard-managed node (dynamic queue limits active)."
+            t("tree.stormguard.managed_node")
         ));
     }
     enableTooltipsWithin(target);
@@ -617,6 +628,7 @@ function selectionIdentityForNode(nodeId, node = tree?.[nodeId]?.[1]) {
     if (!node) {
         return null;
     }
+    // translatable: false — "id:" "path:" "index:" are selection-identity prefixes, never rendered
     if (typeof node.id === "string" && node.id.length > 0) {
         return `id:${node.id}`;
     }
@@ -833,7 +845,7 @@ function renderContextMeta(node) {
     if (branchSize) {
         metaItems.push(branchSize);
     }
-    metaItems.push(`Max ${formatRatePair(...effectiveMax(node))}`);
+    metaItems.push(t("tree.meta.max", {rate: formatRatePair(...effectiveMax(node))}));
 
     metaItems.forEach((text) => {
         const pill = document.createElement("span");
@@ -901,7 +913,7 @@ function renderCompatibilityWarningsIndicator(messages) {
     icon.setAttribute("data-bs-html", "true");
     icon.setAttribute("tabindex", "0");
     icon.setAttribute("title", tooltipHtml);
-    icon.setAttribute("aria-label", `Compatibility warnings: ${visibleMessages.length}`);
+    icon.setAttribute("aria-label", t("tree.override.compat_aria", {count: visibleMessages.length}));
     icon.innerHTML = `<i class="fa fa-triangle-exclamation"></i><span class="lqos-tree-compat-count">${visibleMessages.length}</span>`;
     target.appendChild(icon);
 }
@@ -1002,7 +1014,7 @@ function renderOverrideValue(node, overrideData) {
         pending.setAttribute("data-bs-trigger", "hover focus");
         pending.setAttribute("data-bs-container", "body");
         pending.setAttribute("tabindex", "0");
-        pending.setAttribute("title", NODE_OVERRIDE_PENDING_TOOLTIP);
+        pending.setAttribute("title", nodeOverridePendingTooltip());
 
         const symbol = document.createElement("span");
         symbol.classList.add("lqos-tree-pending-symbol");
@@ -1010,7 +1022,7 @@ function renderOverrideValue(node, overrideData) {
         pending.appendChild(symbol);
 
         const label = document.createElement("span");
-        label.textContent = "Pending";
+        label.textContent = t("tree.override.pending");
         pending.appendChild(label);
         wrap.appendChild(pending);
     }
@@ -1081,13 +1093,13 @@ function renderTopologyOverrideValue(overrideData) {
     const value = document.createElement("span");
     const node = currentNode();
     if (node && isSyntheticRootNode(node)) {
-        value.textContent = "Not applicable for Root";
+        value.textContent = t("tree.topology.not_applicable_root");
         wrap.appendChild(value);
         target.appendChild(wrap);
         return;
     }
     if (!overrideData?.has_override) {
-        value.textContent = "None";
+        value.textContent = t("tree.topology.none");
         wrap.appendChild(value);
         target.appendChild(wrap);
         return;
@@ -1097,7 +1109,7 @@ function renderTopologyOverrideValue(overrideData) {
     const parentNames = (overrideData.override_parent_node_ids || [])
         .map((id) => nameById.get(id) || id)
         .filter(Boolean);
-    value.textContent = `Pinned: ${parentNames[0] || "-"}`;
+    value.textContent = t("tree.topology.pinned", {parent: parentNames[0] || "-"});
     wrap.appendChild(value);
 
     if (isTopologyPendingApply(overrideData)) {
@@ -1108,7 +1120,7 @@ function renderTopologyOverrideValue(overrideData) {
         pending.setAttribute("data-bs-trigger", "hover focus");
         pending.setAttribute("data-bs-container", "body");
         pending.setAttribute("tabindex", "0");
-        pending.setAttribute("title", TOPOLOGY_OVERRIDE_PENDING_TOOLTIP);
+        pending.setAttribute("title", topologyOverridePendingTooltip());
 
         const symbol = document.createElement("span");
         symbol.classList.add("lqos-tree-pending-symbol");
@@ -1116,7 +1128,7 @@ function renderTopologyOverrideValue(overrideData) {
         pending.appendChild(symbol);
 
         const label = document.createElement("span");
-        label.textContent = "Pending";
+        label.textContent = t("tree.override.pending");
         pending.appendChild(label);
         wrap.appendChild(pending);
     }
@@ -1145,7 +1157,7 @@ function renderNodeTopologySettings(node) {
     const statusTarget = document.getElementById("nodeTopologyStatus");
     if (statusTarget) {
         if (nodeTopologyOverrideState.loading) {
-            statusTarget.textContent = "Loading topology override...";
+            statusTarget.textContent = t("tree.topology.loading");
         } else if (nodeTopologyOverrideState.error) {
             statusTarget.textContent = nodeTopologyOverrideState.error;
         } else {
@@ -1180,9 +1192,9 @@ function renderNodeSettings() {
     const statusTarget = document.getElementById("nodeOverrideStatus");
     if (statusTarget) {
         if (nodeRateOverrideState.loading) {
-            statusTarget.textContent = "Loading operator override...";
+            statusTarget.textContent = t("tree.override.loading");
         } else if (nodeRateOverrideState.saving) {
-            statusTarget.textContent = "Saving operator override...";
+            statusTarget.textContent = t("tree.override.saving");
         } else if (nodeRateOverrideState.error) {
             statusTarget.textContent = nodeRateOverrideState.error;
         } else {
@@ -1301,7 +1313,7 @@ async function loadNodeRateOverrideState() {
         nodeRateOverrideState.error = null;
     } catch (errorMsg) {
         nodeRateOverrideState.data = null;
-        nodeRateOverrideState.error = errorMsg?.message || "Unable to load override state";
+        nodeRateOverrideState.error = errorMsg?.message || t("tree.override.load_failed");
     } finally {
         nodeRateOverrideState.loading = false;
         renderNodeSettings();
@@ -1325,7 +1337,7 @@ async function loadNodeTopologyOverrideState() {
         nodeTopologyOverrideState.error = null;
     } catch (errorMsg) {
         nodeTopologyOverrideState.data = null;
-        nodeTopologyOverrideState.error = errorMsg?.message || "Unable to load topology override state";
+        nodeTopologyOverrideState.error = errorMsg?.message || t("tree.topology.load_failed");
     } finally {
         nodeTopologyOverrideState.loading = false;
         renderNodeSettings();
@@ -1345,7 +1357,7 @@ async function saveNodeRateOverride() {
     if ((download !== null && (!Number.isFinite(download) || download < 0))
         || (upload !== null && (!Number.isFinite(upload) || upload < 0))
         || (download === null && upload === null)) {
-        setNodeOverrideFlash("Enter valid non-negative download and upload rates before saving.", "danger");
+        setNodeOverrideFlash(t("tree.override.invalid_rates"), "danger");
         return;
     }
 
@@ -1364,17 +1376,17 @@ async function saveNodeRateOverride() {
             },
         });
         if (!response.ok) {
-            setNodeOverrideFlash(response.message || "Unable to save override.", "danger");
+            setNodeOverrideFlash(response.message || t("tree.override.save_failed"), "danger");
             nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
         } else {
             nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
-            setNodeOverrideFlash(response.message || "Override saved.", "success");
+            setNodeOverrideFlash(response.message || t("tree.override.saved"), "success");
             nodeOverrideInputsDirty = false;
             nodeOverrideLastSeedSignature = null;
             maybeSeedOverrideInputs(node, nodeRateOverrideState.data, true);
         }
     } catch (errorMsg) {
-        setNodeOverrideFlash(errorMsg?.message || "Unable to save override.", "danger");
+        setNodeOverrideFlash(errorMsg?.message || t("tree.override.save_failed"), "danger");
     } finally {
         nodeRateOverrideState.saving = false;
         renderNodeSettings();
@@ -1397,17 +1409,17 @@ async function clearNodeRateOverride() {
             },
         });
         if (!response.ok) {
-            setNodeOverrideFlash(response.message || "Unable to clear override.", "danger");
+            setNodeOverrideFlash(response.message || t("tree.override.clear_failed"), "danger");
             nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
         } else {
             nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
             nodeOverrideInputsDirty = false;
             nodeOverrideLastSeedSignature = null;
             maybeSeedOverrideInputs(node, nodeRateOverrideState.data, true);
-            setNodeOverrideFlash(response.message || "Override cleared.", "success");
+            setNodeOverrideFlash(response.message || t("tree.override.cleared"), "success");
         }
     } catch (errorMsg) {
-        setNodeOverrideFlash(errorMsg?.message || "Unable to clear override.", "danger");
+        setNodeOverrideFlash(errorMsg?.message || t("tree.override.clear_failed"), "danger");
     } finally {
         nodeRateOverrideState.saving = false;
         renderNodeSettings();
@@ -1443,7 +1455,7 @@ function representativeNodeQoo(node) {
 
 function ensureTreeGauges() {
     if (!treeBitsGauge) {
-        treeBitsGauge = new BitsPerSecondGauge("treeBitsGauge", "Max");
+        treeBitsGauge = new BitsPerSecondGauge("treeBitsGauge", t("tree.gauge.max"));
     }
     if (!treeQooGauge) {
         treeQooGauge = new QooScoreGauge("treeQooGauge");
@@ -1455,7 +1467,7 @@ function updateTreeGauges(node) {
         return;
     }
     ensureTreeGauges();
-    const gaugeMax = nodeSnapshotGaugeMax(node);
+    const gaugeMax = effectiveMax(node);
     treeBitsGauge.update(
         toNumber(node.current_throughput?.[0], 0) * 8,
         toNumber(node.current_throughput?.[1], 0) * 8,
@@ -1514,18 +1526,18 @@ function renderTree() {
     let treeTable = document.createElement("table");
     treeTable.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead");
-    thead.appendChild(theading("Node"));
-    thead.appendChild(theading("Circuits"));
-    thead.appendChild(theading("Nodes"));
-    thead.appendChild(theading("Effective"));
-    thead.appendChild(theading("Configured"));
+    thead.appendChild(theading(t("tree.table.node")));
+    thead.appendChild(theading(t("common.table.circuits")));
+    thead.appendChild(theading(t("tree.table.nodes")));
+    thead.appendChild(theading(t("tree.table.effective")));
+    thead.appendChild(theading(t("tree.table.configured")));
     thead.appendChild(theading("⬇️"));
     thead.appendChild(theading("⬆️"));
-    thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
-    thead.appendChild(theading("QoO", 2, QOO_TOOLTIP_HTML, "tts_qoo"));
-    thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
-    thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
-    thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
+    thead.appendChild(theading("RTT", 2, tableTooltip(t("tree.rtt.tooltip_title"), t("tree.rtt.tooltip_body")), "tts_retransmits"));
+    thead.appendChild(theading("QoO", 2, qooTooltipHtml(), "tts_qoo"));
+    thead.appendChild(theading(t("tree.table.retr"), 2, tableTooltip(t("common.table.tcp_retransmits"), t("tree.rxmit.tooltip_body")), "tts_retransmits"));
+    thead.appendChild(theading(t("tree.table.marks"), 2, tableTooltip(t("tree.marks.tooltip_title"), t("tree.marks.tooltip_body")), "tts_marks"));
+    thead.appendChild(theading(t("tree.table.drops"), 2, tableTooltip(t("tree.drops.tooltip_title"), t("tree.drops.tooltip_body")), "tts_drops"));
 
     treeTable.appendChild(thead);
     let tbody = document.createElement("tbody");
@@ -1656,7 +1668,7 @@ function buildRow(i, depth=0) {
         let icon = document.createElement("i");
         icon.classList.add("fa", "fa-fw", expandedNodes.has(nodeId) ? "fa-minus" : "fa-plus");
         toggle.appendChild(icon);
-        toggle.title = expandedNodes.has(nodeId) ? "Collapse" : "Expand";
+        toggle.title = expandedNodes.has(nodeId) ? t("tree.row.collapse") : t("tree.row.expand");
         toggle.setAttribute("aria-label", toggle.title);
         toggle.addEventListener("click", (event) => {
             event.preventDefault();
@@ -1677,8 +1689,8 @@ function buildRow(i, depth=0) {
     statusWrap.appendChild(buildTreeRowStatusIcon(
         "fa-cloud-bolt",
         isStormguardNode(node),
-        "StormGuard: Active",
-        "StormGuard: Inactive",
+        t("tree.stormguard.active"),
+        t("tree.stormguard.inactive"),
     ));
     nameWrap.appendChild(statusWrap);
     col.appendChild(nameWrap);
@@ -2003,7 +2015,9 @@ function renderAttachedCircuitsRows(rows) {
                 const badge = document.createElement("a");
                 badge.className = `badge rounded-pill ms-2 text-decoration-none ${ethernetBadgeClass(circuit.ethernet_cap_badge.tier_label)}`;
                 badge.href = ethernetCapsPageHref(circuit.ethernet_cap_badge);
-                badge.setAttribute("aria-label", `Review ${circuit.ethernet_cap_badge.tier_label} Ethernet-limited circuits`);
+                badge.setAttribute("aria-label", t("common.ethernet.review_aria", {
+                    tier: circuit.ethernet_cap_badge.tier_label,
+                }));
                 badge.setAttribute("data-bs-toggle", "tooltip");
                 badge.setAttribute("data-bs-placement", "top");
                 badge.setAttribute("data-bs-trigger", "hover focus");
@@ -2046,7 +2060,7 @@ function renderAttachedCircuitsRows(rows) {
     table.appendChild(tbody);
     const sectionLabel = document.createElement("div");
     sectionLabel.classList.add("lqos-tree-section-label");
-    sectionLabel.innerHTML = "<i class='fa fa-network-wired'></i> Attached Circuits";
+    sectionLabel.innerHTML = "<i class='fa fa-network-wired'></i> " + t("tree.attached.title");
     const tableWrap = document.createElement("div");
     tableWrap.classList.add("lqos-table-wrap");
     tableWrap.appendChild(table);
@@ -2167,5 +2181,4 @@ wsClient.on("join", () => {
     loadNodeTopologyOverrideState();
 });
 
-loadRootGaugeConfigMax();
 getInitialTree();

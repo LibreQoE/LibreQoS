@@ -1,7 +1,14 @@
+# The release wheelhouse is built on Ubuntu 24.04 (CPython 3.12) but the
+# package supports Ubuntu 24.04+ including 26.04 (CPython 3.14). Keep these
+# pins on releases that publish portable `py3-none-any` wheels; do not bump
+# to a version whose only wheel is CPython-ABI-specific. build_dpkg.sh fails
+# the build if the wheelhouse contains a CPython-version-specific wheel.
 psutil
 requests
 urllib3
 apscheduler
-deepdiff
+# >=8.6.2: safety advisory 89820 affects <=8.6.1 (shipped import, LibreQoS.py)
+deepdiff==8.6.2
 routeros_api
-chardet
+chardet==5.2.0
+charset-normalizer==3.4.0

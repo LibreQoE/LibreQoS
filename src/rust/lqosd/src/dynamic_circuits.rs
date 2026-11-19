@@ -12,13 +12,15 @@ fn dynamic_circuits_enabled() -> bool {
         .is_some_and(|cfg| cfg.enabled)
 }
 
-/// K1 §1.5: the bakery overlay leg is DELETED. A dynamic circuit is written to
-/// the store only; shaping rides the store's fold + publish trigger to the
-/// bridge.
+/// The dynamic-circuit write path: every create/remove is a store write.
 ///
-/// Dynamic-ranges H2: a RADIUS Start for an IP that the promotion scanner
-/// already promoted must UPGRADE that row in place, not mint a second row with
-/// a session-derived id (which would emit a duplicate /32 Map). Every dynamic
+/// The topology fold turns the store into shaping rows, and the store's publish
+/// trigger carries that fold to the bridge, so this module never talks to the
+/// bakery or the bridge itself.
+///
+/// Dynamic-ranges: a RADIUS Start for an IP that the promotion scanner already
+/// promoted must UPGRADE that row in place, not mint a second row with a
+/// session-derived id (which would emit a duplicate /32 Map). Every dynamic
 /// circuit write therefore goes through the replace-by-IP RMW.
 pub(crate) fn create_dynamic_circuit(shaped_device: ShapedDevice) -> BusResponse {
     if !dynamic_circuits_enabled() {

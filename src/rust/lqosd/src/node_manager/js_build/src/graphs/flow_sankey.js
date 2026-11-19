@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
+import {t} from "../i18n/index.js";
 
 const SANKEY_RECENT_FLOW_WINDOW_NANOS = 10_000_000_000;
 
@@ -23,7 +24,7 @@ export class FlowsSankey extends DashboardGraph {
     constructor(id) {
         super(id);
         this.option = {
-            title: { text: 'Flows Sankey' },
+            title: { text: t("graph.sankey.flows_title") },
             series: [
                 {
                     type: 'sankey',
@@ -89,6 +90,7 @@ export class FlowsSankey extends DashboardGraph {
         });
 
         const redact = isRedacted();
+        // translatable: false — "Illegible" is the font family that redacted labels render in, not a label
         const localLabel = redact ? { color: 'magenta', fontFamily: "Illegible" } : { color: 'magenta' };
 
         // Accumulate the graph information.

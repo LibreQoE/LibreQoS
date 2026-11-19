@@ -1,15 +1,16 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {t} from "../i18n/index.js";
 
 export class FlowDurationsGraph extends DashboardGraph {
     constructor(id) {
         super(id);
         this.option = {
             xAxis: {
-                name: "Seconds",
+                name: t("graph.axis.seconds"),
                 type: 'value',
             },
             yAxis: {
-                name: "Samples",
+                name: t("graph.axis.samples"),
                 type: 'log',
             },
             series: {

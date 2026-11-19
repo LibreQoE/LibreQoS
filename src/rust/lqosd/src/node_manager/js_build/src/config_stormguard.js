@@ -4,6 +4,7 @@ import {
     renderConfigMenu,
     saveConfig,
 } from "./config/config_helper";
+import {t, tHtml} from "./i18n/index.js";
 
 let siteRows = [];
 let selectedTargets = [];
@@ -97,8 +98,9 @@ function loadNetworkData() {
                 resolve();
             },
             (err) => {
+                // translatable: false — "Error loading node directory:" is a console diagnostic, never rendered
                 console.error('Error loading node directory:', err);
-                alert('Topology data is not ready yet. Run the integration or scheduler refresh and try again.');
+                alert(t("config.stormguard.topology_not_ready"));
                 reject(err);
             },
         );
@@ -107,7 +109,11 @@ function loadNetworkData() {
 
 function setSelectorOptions(selectorId) {
     const selector = document.getElementById(selectorId);
-    selector.innerHTML = '<option value="">Select a site...</option>';
+    selector.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t("config.stormguard.sites.select");
+    selector.appendChild(placeholder);
 
     siteRows.forEach((entry) => {
         const name = displayName(entry);
@@ -144,11 +150,11 @@ function addTargetFromSelector() {
     const selectedSite = selector.value;
 
     if (!selectedSite) {
-        alert('Please select a site to add');
+        alert(t("config.stormguard.sites.select_to_add"));
         return;
     }
 
-    if (addItemToList("targets", selectedSite, 'This site is already in the allowlist')) {
+    if (addItemToList("targets", selectedSite, t("config.stormguard.sites.already_allowlisted"))) {
         selector.value = '';
         updateTargetsList();
     }
@@ -158,11 +164,11 @@ function addTargetFromManual() {
     const input = document.getElementById("targetSiteManual");
     const siteName = input.value.trim();
     if (!siteName) {
-        alert('Please enter a site name');
+        alert(t("config.stormguard.sites.enter_name"));
         return;
     }
 
-    if (addItemToList("targets", siteName, 'This site is already in the allowlist')) {
+    if (addItemToList("targets", siteName, t("config.stormguard.sites.already_allowlisted"))) {
         input.value = '';
         updateTargetsList();
     }
@@ -172,11 +178,11 @@ function addExcludeFromSelector() {
     const selector = document.getElementById("excludeSiteSelector");
     const selectedSite = selector.value;
     if (!selectedSite) {
-        alert('Please select a site to exclude');
+        alert(t("config.stormguard.sites.select_to_exclude"));
         return;
     }
 
-    if (addItemToList("exclude", selectedSite, 'This site is already excluded')) {
+    if (addItemToList("exclude", selectedSite, t("config.stormguard.sites.already_excluded"))) {
         selector.value = '';
         updateExcludedSitesList();
     }
@@ -186,11 +192,11 @@ function addExcludeFromManual() {
     const input = document.getElementById("excludeSiteManual");
     const siteName = input.value.trim();
     if (!siteName) {
-        alert('Please enter a site name');
+        alert(t("config.stormguard.sites.enter_name"));
         return;
     }
 
-    if (addItemToList("exclude", siteName, 'This site is already excluded')) {
+    if (addItemToList("exclude", siteName, t("config.stormguard.sites.already_excluded"))) {
         input.value = '';
         updateExcludedSitesList();
     }
@@ -243,11 +249,11 @@ function updateList(listId, emptyMessage, items, removeHandler) {
 }
 
 function updateTargetsList() {
-    updateList("selectedTargetsList", "No allowlisted sites", selectedTargets, removeTarget);
+    updateList("selectedTargetsList", t("config.stormguard.sites.none_allowlisted"), selectedTargets, removeTarget);
 }
 
 function updateExcludedSitesList() {
-    updateList("excludedSitesList", "No excluded sites", excludedSites, removeExcludedSite);
+    updateList("excludedSitesList", t("config.stormguard.sites.none_excluded"), excludedSites, removeExcludedSite);
 }
 
 function parseNumber(id) {
@@ -256,7 +262,7 @@ function parseNumber(id) {
 
 function validatePercent(name, value) {
     if (Number.isNaN(value) || value < 1 || value > 100) {
-        alert(`${name} must be between 1 and 100`);
+        alert(t("config.stormguard.validation.between_1_100", {field: name}));
         return false;
     }
     return true;
@@ -264,7 +270,7 @@ function validatePercent(name, value) {
 
 function validatePositiveNumber(name, value, min, relationText) {
     if (Number.isNaN(value) || value < min) {
-        alert(`${name} must be ${relationText}`);
+        alert(t("config.stormguard.validation.must_be", {field: name, relation: relationText}));
         return false;
     }
     return true;
@@ -277,17 +283,20 @@ function validateConfig() {
     const minDownloadPct = parseNumber('minDownloadPct');
     const minUploadPct = parseNumber('minUploadPct');
     const strategy = document.getElementById('strategy').value;
+    // The relation clause is shared: each message reads "<field> must be <relation>".
+    const greaterThanOne = t("config.stormguard.relation.greater_than_1_0");
+    const greaterThanZero = t("config.stormguard.relation.greater_than_0");
 
-    if (!validatePercent('Minimum Download Percentage', minDownloadPct)) {
+    if (!validatePercent(t("config.stormguard.minimum.download"), minDownloadPct)) {
         return false;
     }
 
-    if (!validatePercent('Minimum Upload Percentage', minUploadPct)) {
+    if (!validatePercent(t("config.stormguard.minimum.upload"), minUploadPct)) {
         return false;
     }
 
     if (enabled && !allSites && selectedTargets.length === 0) {
-        alert('Please select at least one site to monitor when StormGuard is enabled');
+        alert(t("config.stormguard.validation.requires_target"));
         return false;
     }
 
@@ -296,40 +305,52 @@ function validateConfig() {
     const decreaseMultiplier = parseNumber('decreaseMultiplier');
     const decreaseFastMultiplier = parseNumber('decreaseFastMultiplier');
 
-    if (!validatePositiveNumber('Increase Fast Multiplier', increaseFastMultiplier, 0.01, 'greater than 1.0')) return false;
-    if (!validatePositiveNumber('Increase Multiplier', increaseMultiplier, 0.01, 'greater than 1.0')) return false;
-    if (!validatePositiveNumber('Decrease Multiplier', decreaseMultiplier, 0.01, 'greater than 0')) return false;
-    if (!validatePositiveNumber('Decrease Fast Multiplier', decreaseFastMultiplier, 0.01, 'greater than 0')) return false;
+    if (!validatePositiveNumber(t("config.stormguard.multipliers.increase_fast"), increaseFastMultiplier, 0.01, greaterThanOne)) return false;
+    if (!validatePositiveNumber(t("config.stormguard.multipliers.increase"), increaseMultiplier, 0.01, greaterThanOne)) return false;
+    if (!validatePositiveNumber(t("config.stormguard.multipliers.decrease"), decreaseMultiplier, 0.01, greaterThanZero)) return false;
+    if (!validatePositiveNumber(t("config.stormguard.multipliers.decrease_fast"), decreaseFastMultiplier, 0.01, greaterThanZero)) return false;
 
     if (increaseFastMultiplier <= 1) {
-        alert('Increase Fast Multiplier must be greater than 1.0');
+        alert(t("config.stormguard.validation.must_be", {
+            field: t("config.stormguard.multipliers.increase_fast"),
+            relation: greaterThanOne,
+        }));
         return false;
     }
 
     if (increaseMultiplier <= 1) {
-        alert('Increase Multiplier must be greater than 1.0');
+        alert(t("config.stormguard.validation.must_be", {
+            field: t("config.stormguard.multipliers.increase"),
+            relation: greaterThanOne,
+        }));
         return false;
     }
 
     if (decreaseMultiplier > 1) {
-        alert('Decrease Multiplier must be less than or equal to 1.0');
+        alert(t("config.stormguard.validation.must_be", {
+            field: t("config.stormguard.multipliers.decrease"),
+            relation: t("config.stormguard.relation.less_or_equal_1_0"),
+        }));
         return false;
     }
 
     if (decreaseFastMultiplier > 1) {
-        alert('Decrease Fast Multiplier must be less than or equal to 1.0');
+        alert(t("config.stormguard.validation.must_be", {
+            field: t("config.stormguard.multipliers.decrease_fast"),
+            relation: t("config.stormguard.relation.less_or_equal_1_0"),
+        }));
         return false;
     }
 
     const cooldownFields = [
-        ['Increase Fast Cooldown', 'increaseFastCooldownSeconds'],
-        ['Increase Cooldown', 'increaseCooldownSeconds'],
-        ['Decrease Cooldown', 'decreaseCooldownSeconds'],
-        ['Decrease Fast Cooldown', 'decreaseFastCooldownSeconds'],
+        [t("config.stormguard.cooldowns.increase_fast"), 'increaseFastCooldownSeconds'],
+        [t("config.stormguard.cooldowns.increase"), 'increaseCooldownSeconds'],
+        [t("config.stormguard.cooldowns.decrease"), 'decreaseCooldownSeconds'],
+        [t("config.stormguard.cooldowns.decrease_fast"), 'decreaseFastCooldownSeconds'],
     ];
 
     for (const [name, id] of cooldownFields) {
-        if (!validatePositiveNumber(name, parseNumber(id), 0.01, 'greater than 0 seconds')) {
+        if (!validatePositiveNumber(name, parseNumber(id), 0.01, greaterThanZero)) {
             return false;
         }
     }
@@ -337,35 +358,41 @@ function validateConfig() {
     const fallbackEnabled = document.getElementById('circuitFallbackEnabled').checked;
     const fallbackSqm = document.getElementById('circuitFallbackSqm').value.trim();
     if (fallbackEnabled && !VALID_FALLBACK_SQMS.includes(fallbackSqm)) {
-        alert('Circuit Fallback SQM must be one of: fq_codel, cake');
+        alert(t("config.stormguard.validation.fallback_sqm"));
         return false;
     }
 
     if (strategy === 'delay_probe' || strategy === 'delay_probe_active') {
-        if (!validatePositiveNumber('Delay Threshold (ms)', parseNumber('delayThresholdMs'), 0.01, 'greater than 0 ms')) {
+        if (!validatePositiveNumber(t("config.stormguard.delay.threshold"), parseNumber('delayThresholdMs'), 0.01, greaterThanZero)) {
             return false;
         }
         const delayRatio = parseNumber('delayThresholdRatio');
         if (Number.isNaN(delayRatio) || delayRatio <= 1.0) {
-            alert('Delay Threshold Ratio must be greater than 1.0');
+            alert(t("config.stormguard.validation.must_be", {
+                field: t("config.stormguard.delay.ratio"),
+                relation: greaterThanOne,
+            }));
             return false;
         }
         const alphaUp = parseNumber('baselineAlphaUp');
         if (Number.isNaN(alphaUp) || alphaUp <= 0 || alphaUp > 1) {
-            alert('Baseline Alpha Up must be > 0 and <= 1');
+            alert(t("config.stormguard.validation.between_0_and_1", {field: t("config.stormguard.delay.alpha_up")}));
             return false;
         }
         const alphaDown = parseNumber('baselineAlphaDown');
         if (Number.isNaN(alphaDown) || alphaDown <= 0 || alphaDown > 1) {
-            alert('Baseline Alpha Down must be > 0 and <= 1');
+            alert(t("config.stormguard.validation.between_0_and_1", {field: t("config.stormguard.delay.alpha_down")}));
             return false;
         }
-        if (!validatePositiveNumber('Probe Interval (seconds)', parseNumber('probeIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+        if (!validatePositiveNumber(t("config.stormguard.delay.probe_interval"), parseNumber('probeIntervalSeconds'), 0.01, greaterThanZero)) {
             return false;
         }
         const minThroughput = parseNumber('minThroughputMbpsForRtt');
         if (Number.isNaN(minThroughput) || minThroughput < 0) {
-            alert('Min Throughput (Mbps) must be >= 0');
+            alert(t("config.stormguard.validation.must_be", {
+                field: t("config.stormguard.delay.min_throughput"),
+                relation: t("config.stormguard.relation.greater_or_equal_0"),
+            }));
             return false;
         }
     }
@@ -373,18 +400,18 @@ function validateConfig() {
     if (strategy === 'delay_probe_active') {
         const pingTarget = document.getElementById('activePingTarget').value.trim();
         if (!pingTarget) {
-            alert('Ping Target must not be empty');
+            alert(t("config.stormguard.validation.not_empty", {field: t("config.stormguard.active_ping.target")}));
             return false;
         }
-        if (!validatePositiveNumber('Ping Interval (seconds)', parseNumber('activePingIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+        if (!validatePositiveNumber(t("config.stormguard.active_ping.interval"), parseNumber('activePingIntervalSeconds'), 0.01, greaterThanZero)) {
             return false;
         }
-        if (!validatePositiveNumber('Ping Timeout (seconds)', parseNumber('activePingTimeoutSeconds'), 0.01, 'greater than 0 seconds')) {
+        if (!validatePositiveNumber(t("config.stormguard.active_ping.timeout"), parseNumber('activePingTimeoutSeconds'), 0.01, greaterThanZero)) {
             return false;
         }
         const weightPct = parseNumber('activePingWeight');
         if (Number.isNaN(weightPct) || weightPct < 0 || weightPct > 100) {
-            alert('Active Ping Weight must be between 0 and 100');
+            alert(t("config.stormguard.validation.between_0_100", {field: t("config.stormguard.active_ping.weight")}));
             return false;
         }
     }
@@ -430,8 +457,17 @@ function updateConfig() {
     };
 }
 
+// The strategy help paragraph wraps three literal strategy tokens in <code>, so a
+// `data-i18n` attribute cannot carry it (that applier writes text): the element
+// ships empty and the message supplies the markup.
+function renderStrategyHelp() {
+    const help = document.getElementById("strategyHelp");
+    if (help) help.innerHTML = tHtml("config.stormguard.strategy.help");
+}
+
 // Initialize page
 renderConfigMenu('stormguard');
+renderStrategyHelp();
 
 // Load both network data and configuration
 Promise.all([
@@ -440,6 +476,7 @@ Promise.all([
         loadConfig(() => resolve());
     })
 ]).then(() => {
+    // translatable: false — "Both network data and config loaded" is a console diagnostic, never rendered
     console.log('Both network data and config loaded');
 
     const sg = ensureStormguardConfig(window.config?.stormguard);
@@ -498,6 +535,7 @@ Promise.all([
     document.getElementById('addExcludeBtn').addEventListener('click', addExcludeFromSelector);
     document.getElementById('addExcludeManualBtn').addEventListener('click', addExcludeFromManual);
 
+    // translatable: false — "Enter" is the KeyboardEvent.key token compared in the four listeners below, never rendered
     document.getElementById('targetSiteSelector').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -530,7 +568,7 @@ Promise.all([
         if (validateConfig()) {
             updateConfig();
             saveConfig(() => {
-                alert('StormGuard configuration saved successfully!');
+                alert(t("config.stormguard.saved"));
             });
         }
     });

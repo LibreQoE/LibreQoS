@@ -4,20 +4,25 @@
 // request. Normalizing here keeps the DOM code thin and lets the node test
 // suite pin the honest-empty / kind-label contract without a browser.
 
-/** Provenance class labels (must mirror `DpdkStatusKind` on the Rust side). */
-export const DPDK_KIND_LABELS = Object.freeze({
-    running: "Running",
-    effective: "Effective",
-    configured: "Configured",
-});
+import {t} from "../i18n/index.js";
 
 /**
- * Human label for a status kind.
+ * Human label for a status kind. The cases mirror `DpdkStatusKind` on the Rust
+ * side; anything unrecognized is reported as unknown instead of echoed.
  * @param {unknown} kind Raw kind from the payload.
- * @returns {string} A label; "Unknown" for anything unrecognized.
+ * @returns {string} The localized provenance label.
  */
 export function dpdkKindLabel(kind) {
-    return DPDK_KIND_LABELS[kind] || "Unknown";
+    switch (kind) {
+        case "running":
+            return t("config.tuning.dpdk.kind.running");
+        case "effective":
+            return t("config.tuning.dpdk.kind.effective");
+        case "configured":
+            return t("config.tuning.dpdk.kind.configured");
+        default:
+            return t("config.tuning.dpdk.kind.unknown");
+    }
 }
 
 /**
@@ -32,11 +37,11 @@ export function normalizeWorkerCount(raw) {
         return {ok: true, value: null};
     }
     if (!/^\d+$/.test(trimmed)) {
-        return {ok: false, value: null, error: "Worker count must be a whole number of 1 or more."};
+        return {ok: false, value: null, error: t("config.tuning.validation.dpdk_workers_whole")};
     }
     const value = Number.parseInt(trimmed, 10);
     if (value < 1) {
-        return {ok: false, value: null, error: "Worker count must be 1 or more."};
+        return {ok: false, value: null, error: t("config.tuning.validation.dpdk_workers_minimum")};
     }
     return {ok: true, value};
 }

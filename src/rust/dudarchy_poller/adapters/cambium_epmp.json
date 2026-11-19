@@ -1,0 +1,93 @@
+{
+  "schema_version": 2,
+  "id": "cambium_epmp",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.17713.21"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "identity",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "model", "oid": "1.3.6.1.2.1.1.2.0", "parser": "oid" },
+          { "name": "sys_name", "oid": "1.3.6.1.2.1.1.5.0", "parser": "utf8" },
+          { "name": "frequency_mhz", "oid": "1.3.6.1.4.1.17713.21.1.2.1.0", "parser": "u32" },
+          { "name": "channel_width_mhz", "oid": "1.3.6.1.4.1.17713.21.1.2.2.0", "parser": "channel_width_mhz" },
+          { "name": "tx_power_dbm", "oid": "1.3.6.1.4.1.17713.21.1.2.5.0", "parser": "i64" },
+          { "name": "sm_count", "oid": "1.3.6.1.4.1.17713.21.1.2.10.0", "parser": "u32" },
+          { "name": "lan_speed_mbps", "oid": "1.3.6.1.4.1.17713.21.1.4.12.0", "parser": "u32" }
+        ]
+      }
+    },
+    {
+      "id": "stations",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.1", "parser": "display_mac" },
+            { "name": "channel", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.3", "parser": "u32" },
+            { "name": "ul_rssi", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.4", "parser": "i64" },
+            { "name": "dl_rssi", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.5", "parser": "i64" },
+            { "name": "ul_snr", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.6", "parser": "i64" },
+            { "name": "dl_snr", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.7", "parser": "i64" },
+            { "name": "ip", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.10", "parser": "ip_address" },
+            { "name": "tx_capacity", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.19", "parser": "u32" },
+            { "name": "tx_quality", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.20", "parser": "u32" },
+            { "name": "dl_rate_mbps", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.28", "parser": "rate_suffix" },
+            { "name": "model", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.38", "parser": "utf8" },
+            { "name": "software_version", "oid": "1.3.6.1.4.1.17713.21.1.2.30.1.43", "parser": "utf8" }
+          ],
+          "index": { "kind": "station" }
+        }
+      }
+    },
+    {
+      "id": "bridge",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "bridge", "oid": "1.3.6.1.4.1.17713.21.1.2.40.1.1", "parser": "utf8" },
+            { "name": "mac", "oid": "1.3.6.1.4.1.17713.21.1.2.40.1.2", "parser": "display_mac" },
+            { "name": "kind", "oid": "1.3.6.1.4.1.17713.21.1.2.40.1.3", "parser": "utf8" },
+            { "name": "sm_mac", "oid": "1.3.6.1.4.1.17713.21.1.2.40.1.4", "parser": "utf8" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["identity.sys_name"] }
+    ],
+    "details": {
+      "radio": "identity",
+      "stations": "stations",
+      "bridge_hosts": "bridge"
+    },
+    "residuals": [
+      {
+        "name": "bridge-host-flags",
+        "source": "cambiumAPBridgeTable: the bridge name, learned MAC, and SM MAC are mapped to bridge_hosts (bridge/mac/on_interface); the own/WLAN kind and the age counter have no generic bridge-host slot and stay unreported"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 128,
+    "max_rows": 512,
+    "max_bytes": 131072,
+    "deadline_ms": 8000
+  }
+}

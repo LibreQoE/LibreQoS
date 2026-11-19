@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "id": "command-duplicate-field",
+  "detect": {
+    "sys_descr_contains": [
+      "X"
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "api",
+      "transport": "routeros_api",
+      "credential_ref": "api"
+    }
+  ],
+  "probes": [
+    {
+      "id": "identity",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_identity",
+          "fields": [
+            {
+              "name": "name",
+              "from": "name"
+            },
+            {
+              "name": "name",
+              "from": "identity"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

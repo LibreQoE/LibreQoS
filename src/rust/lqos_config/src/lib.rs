@@ -13,6 +13,7 @@ pub mod authentication;
 mod circuit_anchors;
 mod circuit_ethernet_metadata;
 mod cpu_topology;
+mod device_ref;
 mod dynamic_circuits;
 mod etc;
 mod ethernet_port_limits;
@@ -47,21 +48,22 @@ pub use circuit_ethernet_metadata::{
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
+pub use device_ref::DeviceRef;
 pub use dynamic_circuits::{
-    DYNAMIC_CIRCUITS_FILENAME, DynamicCircuit, DynamicCircuitsFile, dynamic_circuits_path,
+    DYNAMIC_CIRCUITS_FILENAME, DYNAMIC_CIRCUITS_STATE_FILENAME, DynamicCircuit,
+    DynamicCircuitsFile, dynamic_circuits_path, dynamic_circuits_state_path,
 };
 pub use etc::{
-    BridgeConfig, Config, DEFAULT_ANALYTICS_SOCKET, DEFAULT_CONFIG_PATH, DataplaneBridgeConfig,
-    DynamicCircuitRangeRule, DynamicCircuitsConfig, LocalApiKeyConfig,
-    MAX_LOCAL_API_KEYS, MikrotikIpv6Config, PowerConfig, PowerProfile, QueueMode,
-    RadiusAccountingClient,
-    RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
-    RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
-    RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    MaintenanceWindowConfig, TopologyConfig, TopologySource, TopologySourceConflict,
+    ApPollingConfig, BridgeConfig, Config, DEFAULT_ANALYTICS_SOCKET, DEFAULT_CONFIG_PATH,
+    DataplaneBridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, LocalApiKeyConfig,
+    MAX_LOCAL_API_KEYS, MaintenanceWindowConfig, MikrotikIpv6Config, PowerConfig, PowerProfile,
+    QueueMode, RadiusAccountingClient, RadiusAccountingConfig, RadiusClientSource,
+    RadiusDynamicCircuitApplicationConfig, RadiusFallbackSpeedProfile, RadiusSharedSecretSource,
+    RateProfileValidationError, RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig, TopologySource, TopologySourceConflict,
     TopologySourceOrigin, TopologySourceRuntime, Tunables, clear_cached_config, config_path,
-    topology_source_is, validate_topology_selection,
-    load_config, normalize_external_hostname, update_config, validate_rate_profile_mbps,
+    load_config, normalize_external_hostname, topology_source_is, update_config,
+    validate_rate_profile_mbps, validate_topology_selection,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,

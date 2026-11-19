@@ -6,12 +6,14 @@ import {
     cakeCommonXAxis,
     cakeHistoryWindow,
     cakeScatterSeries,
+    cakeLegendFormatter,
     cakeTooltip,
     formatCakeBytes,
     CAKE_TIN_LEGEND_PAIRS,
     attachLegendPairMirror,
     cakeTinIndexFor,
 } from "./cake_history";
+import {t} from "../i18n/index.js";
 
 export class CakeBacklog extends DashboardGraph {
     constructor(id) {
@@ -20,18 +22,20 @@ export class CakeBacklog extends DashboardGraph {
         attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
-            title: cakeChartTitle("Backlog", "Bytes"),
+            title: cakeChartTitle(t("graph.cake.backlog"), t("graph.axis.bytes")),
             grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
                 // do NOT set selectedMode:false — it disables the legend + the mirror
+                formatter: cakeLegendFormatter,
                 textStyle: {
                     color: '#aaa'
                 },
                 data: [
                     {
+            // translatable: false — "Bulk" "Best Effort" "RT Video" "Voice" "Bulk Up" "Best Effort Up" "RT Video Up" "RT Voice Up" — CAKE tin series identifiers the legend formatter and the paired-upload mirror match on
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {

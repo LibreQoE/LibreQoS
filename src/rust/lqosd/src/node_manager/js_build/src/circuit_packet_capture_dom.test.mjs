@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {dirname, resolve} from "node:path";
 import test from "node:test";
+import {fileURLToPath} from "node:url";
 
 import {
     appendRedactableText,
     setIconText,
     setPacketCaptureDownloadButton,
 } from "./circuit_packet_capture_dom.mjs";
+
+// The button label comes from the catalog; install the English fallback the
+// page loads so the assertions read the operator's text, not a key.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const EN = JSON.parse(readFileSync(resolve(HERE, "../../static2/i18n/en.json"), "utf8"));
+globalThis.window = {LQOS_I18N_EN: EN};
+globalThis.localStorage = {getItem: () => null, setItem: () => {}};
+if (!globalThis.document) {
+    globalThis.document = {documentElement: {lang: "en"}, cookie: ""};
+}
 
 class FakeClassList {
     constructor() {

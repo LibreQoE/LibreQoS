@@ -1,8 +1,9 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 export class BitsPerSecondGauge extends DashboardGraph {
-    constructor(id, thresholdLabel = 'Plan') {
+    constructor(id, thresholdLabel = t("graph.gauge.plan")) {
         super(id);
         this.thresholdLabel = thresholdLabel;
         this.option = {
@@ -187,7 +188,7 @@ export class BitsPerSecondGauge extends DashboardGraph {
             if (!this.option.graphic) this.option.graphic = [];
             if (this.option.graphic.length > 0 && this.option.graphic[0].type === 'text') {
                 this.option.graphic[0].style.fill = labelColor;
-                this.option.graphic[0].style.text = this.thresholdLabel || 'Plan';
+                this.option.graphic[0].style.text = this.thresholdLabel || t("graph.gauge.plan");
             }
 
             this.chart.setOption(this.option);

@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "id": "command-interface-vlan",
+  "detect": { "sys_descr_contains": ["X"] },
+  "surfaces": [{ "id": "api", "transport": "routeros_api", "credential_ref": "api" }],
+  "probes": [
+    {
+      "id": "vlans",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "interface_vlan",
+          "fields": [{ "name": "vlan_id", "from": "vlan-id" }]
+        }
+      }
+    }
+  ]
+}

@@ -5,19 +5,19 @@
     <div id="networkRecoveryPanel" class="alert alert-warning d-none" role="alert">
         <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
             <div>
-                <div class="fw-semibold mb-1">Network Change In Progress</div>
-                <div id="networkRecoverySummary" class="mb-1">
+                <div class="fw-semibold mb-1" data-i18n="config.interface.recovery.title">Network Change In Progress</div>
+                <div id="networkRecoverySummary" class="mb-1" data-i18n="config.interface.recovery.summary">
                     LibreQoS is waiting for you to confirm or revert the pending network change.
                 </div>
-                <div id="networkRecoveryDetail" class="small mb-0">
+                <div id="networkRecoveryDetail" class="small mb-0" data-i18n="config.interface.recovery.detail">
                     Your browser may disconnect while the network change is being tested. This page will keep waiting for the box to come back.
                 </div>
             </div>
             <div class="d-flex flex-column align-items-lg-end gap-2">
-                <div id="networkRecoveryCountdown" class="small text-secondary">Waiting for pending change details...</div>
+                <div id="networkRecoveryCountdown" class="small text-secondary" data-i18n="config.interface.recovery.waiting_details">Waiting for pending change details...</div>
                 <div class="d-flex gap-2">
-                    <button type="button" id="recoveryConfirmButton" class="btn btn-success btn-sm" disabled>Confirm Network Change</button>
-                    <button type="button" id="recoveryRevertButton" class="btn btn-outline-danger btn-sm" disabled>Revert Network Change</button>
+                    <button type="button" id="recoveryConfirmButton" class="btn btn-success btn-sm" disabled data-i18n="config.interface.recovery.confirm">Confirm Network Change</button>
+                    <button type="button" id="recoveryRevertButton" class="btn btn-outline-danger btn-sm" disabled data-i18n="config.interface.recovery.revert">Revert Network Change</button>
                 </div>
             </div>
         </div>
@@ -27,25 +27,25 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Bridge &amp; Interface Mode</h5>
-                    <div class="lqos-config-panel-subtitle">Choose how LibreQoS connects to the network, then inspect the detected netplan state before applying a managed bridge workflow.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.title">Bridge &amp; Interface Mode</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.subtitle">Choose how LibreQoS connects to the network, then inspect the detected netplan state before applying a managed bridge workflow.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
-                <h6 class="lqos-config-section-title">Operating Mode</h6>
-                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs (on-a-stick).</div>
+                <h6 class="lqos-config-section-title" data-i18n="config.interface.mode.title">Operating Mode</h6>
+                <div class="lqos-config-section-subtitle" data-i18n="config.interface.mode.subtitle">Select either a two-interface bridge or a single trunk interface using VLANs (on-a-stick).</div>
 
                 <div class="mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="bridgeMode" value="bridge">
-                        <label class="form-check-label" for="bridgeMode">Bridge Mode</label>
-                        <div class="form-text">Two physical interfaces: one facing the Internet and one facing the LAN. Linux bridge mode is the managed netplan path.</div>
+                        <label class="form-check-label" for="bridgeMode" data-i18n="config.interface.mode.bridge">Bridge Mode</label>
+                        <div class="form-text" data-i18n="config.interface.mode.bridge_help">Two physical interfaces: one facing the Internet and one facing the LAN. Linux bridge mode is the managed netplan path.</div>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="singleInterfaceMode" value="single">
-                        <label class="form-check-label" for="singleInterfaceMode">Single Interface Mode</label>
-                        <div class="form-text">Single physical interface using VLANs (on-a-stick). Managed netplan preview disables DHCP on the selected interface.</div>
+                        <label class="form-check-label" for="singleInterfaceMode" data-i18n="config.interface.mode.single">Single Interface Mode</label>
+                        <div class="form-text" data-i18n="config.interface.mode.single_help">Single physical interface using VLANs (on-a-stick). Managed netplan preview disables DHCP on the selected interface.</div>
                     </div>
                 </div>
             </div>
@@ -54,29 +54,29 @@
         <div id="bridgeConfig" style="display: none;">
             <section class="lqos-config-panel">
                 <div class="lqos-config-section">
-                    <h6 class="lqos-config-section-title">Bridge Mode Configuration</h6>
-                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan and apply the dataplane / jumbo MTU.</div>
+                    <h6 class="lqos-config-section-title" data-i18n="config.interface.bridge.title">Bridge Mode Configuration</h6>
+                    <div class="lqos-config-section-subtitle" data-i18n="config.interface.bridge.subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan and apply the dataplane / jumbo MTU.</div>
 
                     <div class="mb-3">
-                        <label for="toInternet" class="form-label">Internet-Facing Interface</label>
+                        <label for="toInternet" class="form-label" data-i18n="config.interface.bridge.internet">Internet-Facing Interface</label>
                         <select class="form-select" id="toInternet">
-                            <option value="">Select an eligible interface</option>
+                            <option value="" data-i18n="config.interface.select.interface">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Eligible non-management interfaces with LibreQoS-friendly queue support.</div>
+                        <div class="form-text" data-i18n="config.interface.bridge.internet_help">Eligible non-management interfaces with LibreQoS-friendly queue support.</div>
                     </div>
 
                     <div class="mb-2">
-                        <label for="toNetwork" class="form-label">LAN-Facing Interface</label>
+                        <label for="toNetwork" class="form-label" data-i18n="config.interface.bridge.lan">LAN-Facing Interface</label>
                         <select class="form-select" id="toNetwork">
-                            <option value="">Select an eligible interface</option>
+                            <option value="" data-i18n="config.interface.select.interface">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Pick a different eligible interface for the LAN side.</div>
+                        <div class="form-text" data-i18n="config.interface.bridge.lan_help">Pick a different eligible interface for the LAN side.</div>
                     </div>
 
                     <div class="mb-2">
-                        <label for="bridgeMtu" class="form-label">Dataplane / Jumbo MTU</label>
+                        <label for="bridgeMtu" class="form-label" data-i18n="config.interface.bridge.mtu">Dataplane / Jumbo MTU</label>
                         <input type="number" class="form-control" id="bridgeMtu" aria-describedby="bridgeMtuHelp bridgeMtuError">
-                        <div id="bridgeMtuHelp" class="form-text">Applies to the bridge members and br0. Use a jumbo value (for example 9000) only when every link on the path supports it.</div>
+                        <div id="bridgeMtuHelp" class="form-text" data-i18n="config.interface.bridge.mtu_help">Applies to the bridge members and br0. Use a jumbo value (for example 9000) only when every link on the path supports it.</div>
                         <div id="bridgeMtuError" class="invalid-feedback" role="alert"></div>
                     </div>
                     <div id="bridgeInterfaceHelp" class="small text-secondary"></div>
@@ -87,33 +87,33 @@
         <div id="singleInterfaceConfig" style="display: none;">
             <section class="lqos-config-panel">
                 <div class="lqos-config-section">
-                    <h6 class="lqos-config-section-title">Single Interface Mode Configuration</h6>
-                    <div class="lqos-config-section-subtitle">Pick the trunk interface and VLAN IDs for managed Netplan.</div>
+                    <h6 class="lqos-config-section-title" data-i18n="config.interface.single.title">Single Interface Mode Configuration</h6>
+                    <div class="lqos-config-section-subtitle" data-i18n="config.interface.single.subtitle">Pick the trunk interface and VLAN IDs for managed Netplan.</div>
 
                     <div class="mb-3">
-                        <label for="interface" class="form-label">Interface Name</label>
+                        <label for="interface" class="form-label" data-i18n="config.interface.single.interface">Interface Name</label>
                         <select class="form-select" id="interface">
-                            <option value="">Select an eligible interface</option>
+                            <option value="" data-i18n="config.interface.select.interface">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Eligible non-management physical interface for the trunk.</div>
+                        <div class="form-text" data-i18n="config.interface.single.interface_help">Eligible non-management physical interface for the trunk.</div>
                     </div>
 
                     <div class="mb-3">
-                        <label for="internetVlan" class="form-label">Internet VLAN ID</label>
+                        <label for="internetVlan" class="form-label" data-i18n="config.interface.single.internet_vlan">Internet VLAN ID</label>
                         <input type="number" class="form-control" id="internetVlan" min="1" max="4094">
-                        <div class="form-text">VLAN ID for Internet traffic.</div>
+                        <div class="form-text" data-i18n="config.interface.single.internet_vlan_help">VLAN ID for Internet traffic.</div>
                     </div>
 
                     <div class="mb-0">
-                        <label for="networkVlan" class="form-label">LAN VLAN ID</label>
+                        <label for="networkVlan" class="form-label" data-i18n="config.interface.single.lan_vlan">LAN VLAN ID</label>
                         <input type="number" class="form-control" id="networkVlan" min="1" max="4094">
-                        <div class="form-text">VLAN ID for LAN traffic.</div>
+                        <div class="form-text" data-i18n="config.interface.single.lan_vlan_help">VLAN ID for LAN traffic.</div>
                     </div>
 
                     <div class="mb-0 mt-3">
-                        <label for="singleInterfaceMtu" class="form-label">Single Interface Dataplane / Jumbo MTU</label>
+                        <label for="singleInterfaceMtu" class="form-label" data-i18n="config.interface.single.mtu">Single Interface Dataplane / Jumbo MTU</label>
                         <input type="number" class="form-control" id="singleInterfaceMtu" aria-describedby="singleInterfaceMtuHelp singleInterfaceMtuError">
-                        <div id="singleInterfaceMtuHelp" class="form-text">Applies to the trunk interface. Use a jumbo value only when every link on the path supports it.</div>
+                        <div id="singleInterfaceMtuHelp" class="form-text" data-i18n="config.interface.single.mtu_help">Applies to the trunk interface. Use a jumbo value only when every link on the path supports it.</div>
                         <div id="singleInterfaceMtuError" class="invalid-feedback" role="alert"></div>
                     </div>
                     <div id="singleInterfaceHelp" class="small text-secondary mt-2"></div>
@@ -123,21 +123,21 @@
 
         <div class="lqos-config-actions lqos-config-actions-network-mode">
             <div class="lqos-config-action-group">
-                <div class="lqos-config-action-label">Draft</div>
+                <div class="lqos-config-action-label" data-i18n="config.interface.actions.draft">Draft</div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" id="saveButton" class="btn btn-outline-primary btn-sm">Save Bridge &amp; Interface Mode</button>
-                    <button type="button" id="inspectButton" class="btn btn-outline-secondary btn-sm">Inspect Current Netplan</button>
+                    <button type="button" id="saveButton" class="btn btn-outline-primary btn-sm" data-i18n="config.interface.actions.save">Save Bridge &amp; Interface Mode</button>
+                    <button type="button" id="inspectButton" class="btn btn-outline-secondary btn-sm" data-i18n="config.interface.actions.inspect">Inspect Current Netplan</button>
                 </div>
             </div>
             <div class="lqos-config-action-group lqos-config-action-group-primary">
-                <div class="lqos-config-action-label">Commit Candidate</div>
-                <button type="button" id="applyButton" class="btn btn-primary">Apply Network Changes</button>
+                <div class="lqos-config-action-label" data-i18n="config.interface.actions.commit">Commit Candidate</div>
+                <button type="button" id="applyButton" class="btn btn-primary" data-i18n="config.interface.actions.apply">Apply Network Changes</button>
             </div>
             <div class="lqos-config-action-group">
-                <div class="lqos-config-action-label">Import Existing Netplan</div>
+                <div class="lqos-config-action-label" data-i18n="config.interface.actions.import">Import Existing Netplan</div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" id="adoptButton" class="btn btn-outline-primary btn-sm" disabled>Adopt into libreqos.yaml</button>
-                    <button type="button" id="takeoverButton" class="btn btn-outline-primary btn-sm" disabled>Take Over libreqos.yaml</button>
+                    <button type="button" id="adoptButton" class="btn btn-outline-primary btn-sm" disabled data-i18n="config.interface.actions.adopt">Adopt into libreqos.yaml</button>
+                    <button type="button" id="takeoverButton" class="btn btn-outline-primary btn-sm" disabled data-i18n="config.interface.actions.take_over">Take Over libreqos.yaml</button>
                 </div>
             </div>
         </div>
@@ -147,16 +147,16 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header d-flex justify-content-between align-items-start gap-2">
                 <div>
-                    <h5 class="lqos-config-panel-title">Shaping Status</h5>
-                    <div class="lqos-config-panel-subtitle">Current shaping runtime state, degraded-mode detail, and whether manual intervention is still needed.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.shaping.title">Shaping Status</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.shaping.subtitle">Current shaping runtime state, degraded-mode detail, and whether manual intervention is still needed.</div>
                 </div>
-                <span id="shapingStatusBadge" class="badge text-bg-secondary">Loading</span>
+                <span id="shapingStatusBadge" class="badge text-bg-secondary" data-i18n="config.interface.badge.loading">Loading</span>
             </div>
             <div class="lqos-config-section">
-                <p id="shapingStatusSummary" class="mb-2 text-secondary">Loading shaping status...</p>
+                <p id="shapingStatusSummary" class="mb-2 text-secondary" data-i18n="config.interface.shaping.loading">Loading shaping status...</p>
                 <pre id="shapingStatusDetail" class="small mb-0 d-none"></pre>
                 <div class="mt-3 d-flex justify-content-start">
-                    <button type="button" id="retryShapingButton" class="btn btn-outline-warning btn-sm d-none" disabled>Retry Shaping</button>
+                    <button type="button" id="retryShapingButton" class="btn btn-outline-warning btn-sm d-none" disabled data-i18n="config.interface.shaping.retry">Retry Shaping</button>
                 </div>
             </div>
         </section>
@@ -164,13 +164,13 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header d-flex justify-content-between align-items-start gap-2">
                 <div>
-                    <h5 class="lqos-config-panel-title">Bridge Status</h5>
-                    <div class="lqos-config-panel-subtitle">Detected Netplan ownership, compatibility warnings, and whether the current mode can be managed safely by LibreQoS.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.netplan.title">Bridge Status</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.netplan.subtitle">Detected Netplan ownership, compatibility warnings, and whether the current mode can be managed safely by LibreQoS.</div>
                 </div>
-                <span id="netplanStateBadge" class="badge text-bg-secondary">Loading</span>
+                <span id="netplanStateBadge" class="badge text-bg-secondary" data-i18n="config.interface.badge.loading">Loading</span>
             </div>
             <div class="lqos-config-section">
-                <p id="netplanSummary" class="mb-2 text-secondary">Loading netplan inspection...</p>
+                <p id="netplanSummary" class="mb-2 text-secondary" data-i18n="config.interface.netplan.loading">Loading netplan inspection...</p>
                 <div id="netplanWarnings"></div>
                 <div id="netplanConflicts"></div>
             </div>
@@ -179,20 +179,20 @@
         <section class="lqos-config-panel lqos-config-panel-wide">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Review Candidate</h5>
-                    <div class="lqos-config-panel-subtitle">Use the tabs below to review detected files, the managed candidate LibreQoS will write, and the exact diff before you commit a network change.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.review.title">Review Candidate</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.review.subtitle">Use the tabs below to review detected files, the managed candidate LibreQoS will write, and the exact diff before you commit a network change.</div>
                 </div>
             </div>
             <div class="lqos-config-section">
-                <div class="nav nav-pills lqos-config-tabbar mb-3" role="tablist" aria-label="Network mode review sections">
-                    <button type="button" class="nav-link active" data-review-tab="files" aria-selected="true">Detected Files</button>
-                    <button type="button" class="nav-link" data-review-tab="managed" aria-selected="false">Managed Preview</button>
-                    <button type="button" class="nav-link" data-review-tab="diff" aria-selected="false">Diff Preview</button>
+                <div class="nav nav-pills lqos-config-tabbar mb-3" role="tablist" aria-label="Network mode review sections" data-i18n-aria-label="config.interface.review.tabs_aria">
+                    <button type="button" class="nav-link active" data-review-tab="files" aria-selected="true" data-i18n="config.interface.review.tab.files">Detected Files</button>
+                    <button type="button" class="nav-link" data-review-tab="managed" aria-selected="false" data-i18n="config.interface.review.tab.managed">Managed Preview</button>
+                    <button type="button" class="nav-link" data-review-tab="diff" aria-selected="false" data-i18n="config.interface.review.tab.diff">Diff Preview</button>
                 </div>
 
                 <div class="lqos-config-tabpanel" data-review-pane="files">
-                    <div class="small text-secondary mb-2">Each relevant file is classified so you can see whether LibreQoS can adopt it, must leave it alone, or treats it as conflicting.</div>
-                    <div id="netplanFiles" class="small text-secondary">Loading detected netplan files...</div>
+                    <div class="small text-secondary mb-2" data-i18n="config.interface.review.files_note">Each relevant file is classified so you can see whether LibreQoS can adopt it, must leave it alone, or treats it as conflicting.</div>
+                    <div id="netplanFiles" class="small text-secondary" data-i18n="config.interface.review.files_loading">Loading detected netplan files...</div>
                 </div>
 
                 <div class="lqos-config-tabpanel d-none" data-review-pane="managed">
@@ -203,7 +203,7 @@
 
                 <div class="lqos-config-tabpanel d-none" data-review-pane="diff">
                     <div id="diffPreviewMeta" class="small text-secondary mb-2"></div>
-                    <pre id="diffPreview" class="mb-0 text-secondary">No diff preview available.</pre>
+                    <pre id="diffPreview" class="mb-0 text-secondary" data-i18n="config.interface.diff.none">No diff preview available.</pre>
                 </div>
             </div>
         </section>
@@ -211,15 +211,15 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Pending Change</h5>
-                    <div class="lqos-config-panel-subtitle">Use these controls to explicitly confirm or revert a staged network change before the rollback window expires.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.pending.title">Pending Change</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.pending.subtitle">Use these controls to explicitly confirm or revert a staged network change before the rollback window expires.</div>
                 </div>
             </div>
             <div class="lqos-config-section">
-                <div id="pendingChange" class="text-secondary">No pending network change.</div>
+                <div id="pendingChange" class="text-secondary" data-i18n="config.interface.pending.none">No pending network change.</div>
                 <div class="mt-3 lqos-config-button-row">
-                    <button type="button" id="confirmPendingButton" class="btn btn-success btn-sm" disabled>Confirm Pending Change</button>
-                    <button type="button" id="revertPendingButton" class="btn btn-outline-danger btn-sm" disabled>Revert Pending Change</button>
+                    <button type="button" id="confirmPendingButton" class="btn btn-success btn-sm" disabled data-i18n="config.interface.pending.confirm">Confirm Pending Change</button>
+                    <button type="button" id="revertPendingButton" class="btn btn-outline-danger btn-sm" disabled data-i18n="config.interface.pending.revert">Revert Pending Change</button>
                 </div>
             </div>
         </section>
@@ -227,14 +227,14 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Last Backup</h5>
-                    <div class="lqos-config-panel-subtitle">Restore the most recent LibreQoS-managed backup if you need to return to the previous committed network configuration.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.interface.backup.title">Last Backup</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.interface.backup.subtitle">Restore the most recent LibreQoS-managed backup if you need to return to the previous committed network configuration.</div>
                 </div>
             </div>
             <div class="lqos-config-section">
-                <div id="lastBackup" class="text-secondary">No helper backup recorded yet.</div>
+                <div id="lastBackup" class="text-secondary" data-i18n="config.interface.backup.none">No helper backup recorded yet.</div>
                 <div class="mt-3 lqos-config-button-row">
-                    <button type="button" id="restoreLatestBackupButton" class="btn btn-outline-secondary btn-sm" disabled>Restore Previous Managed Config</button>
+                    <button type="button" id="restoreLatestBackupButton" class="btn btn-outline-secondary btn-sm" disabled data-i18n="config.interface.backup.restore">Restore Previous Managed Config</button>
                 </div>
             </div>
         </section>

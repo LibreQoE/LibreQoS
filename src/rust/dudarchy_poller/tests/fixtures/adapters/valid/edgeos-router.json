@@ -1,0 +1,93 @@
+{
+  "schema_version": 2,
+  "id": "edgeos-router",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.41112.1.5"],
+    "sys_descr_contains": ["EdgeOS"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "sys_descr", "oid": "1.3.6.1.2.1.1.1.0", "parser": "utf8" },
+          { "name": "sys_name", "oid": "1.3.6.1.2.1.1.5.0", "parser": "utf8" },
+          { "name": "sys_object_id", "oid": "1.3.6.1.2.1.1.2.0", "parser": "oid" }
+        ]
+      }
+    },
+    {
+      "id": "if_table",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "description", "oid": "1.3.6.1.2.1.2.2.1.2", "parser": "utf8" },
+            { "name": "raw_type", "oid": "1.3.6.1.2.1.2.2.1.3", "parser": "u32" },
+            { "name": "mac", "oid": "1.3.6.1.2.1.2.2.1.6", "parser": "octet_mac" },
+            { "name": "admin_state", "oid": "1.3.6.1.2.1.2.2.1.7", "parser": "u32" },
+            { "name": "oper_state", "oid": "1.3.6.1.2.1.2.2.1.8", "parser": "u32" },
+            { "name": "name", "oid": "1.3.6.1.2.1.31.1.1.1.1", "parser": "utf8" },
+            { "name": "alias", "oid": "1.3.6.1.2.1.31.1.1.1.18", "parser": "utf8" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    },
+    {
+      "id": "ip_addresses",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "if_index", "oid": "1.3.6.1.2.1.4.20.1.2", "parser": "u32" },
+            { "name": "netmask", "oid": "1.3.6.1.2.1.4.20.1.3", "parser": "ip_address" }
+          ],
+          "index": { "kind": "ip_address_v4" }
+        }
+      }
+    },
+    {
+      "id": "arp",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.22.1.2", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_v4" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["system.sys_name"] },
+      { "kind": "sysdescr", "fields": ["system.sys_descr"] }
+    ],
+    "details": {
+      "interfaces": "if_table",
+      "arp": "arp"
+    },
+    "residuals": [
+      {
+        "name": "lldp-absent",
+        "source": "docs/recon/edgeos.md: the agent exposes no LLDP-MIB tables"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 2048,
+    "max_rows": 2048
+  }
+}

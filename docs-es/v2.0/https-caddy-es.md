@@ -43,7 +43,7 @@ Si quiere revertir el cambio, abra `Configuration -> SSL Setup` y elija `Disable
 LibreQoS entonces:
 
 - elimina la configuración gestionada de Caddy
-- restaura el listener directo anterior de la WebUI, o el valor predeterminado normal `:::9123` si antes no había un listener personalizado
+- restaura el listener directo anterior de la WebUI, o el valor predeterminado de loopback `127.0.0.1:9123` si antes no había un listener personalizado
 - devuelve a los operadores el acceso HTTP directo por la IP de gestión y el puerto `9123`
 
 ## Páginas relacionadas

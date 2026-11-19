@@ -1,5 +1,7 @@
 import {toNumber} from "./lq_js_common/helpers/scaling.js";
 import {clearElement} from "./helpers/dom_clear.mjs";
+import {formatNumber} from "./i18n/format.js";
+import {t} from "./i18n/index.js";
 import {
     configuredMax,
     effectiveMax,
@@ -10,14 +12,32 @@ import {
 
 export {configuredMax, effectiveMax, ratePairsMatch, ratesApproximatelyEqual};
 
-const COMPACT_REASON_LABELS = {
-    attachment: "Est. Attachment",
-    base: "Base rate",
-    mixed: "Est. Mixed",
-    override: "Est. Override",
-    parent: "Est. Parent",
-    queue: "Est. Queue",
-};
+// The rate-source vocabulary: one entry per kind, holding the label and the
+// compact table word. A `kind` is a code the summary, the page and the tests
+// compare; only the words it renders come from the catalog, so a comparison can
+// never depend on the active locale. Every branch holds its literal `t()` call:
+// `extract.mjs` reads a key only where a call site names one, so a table of bare
+// keys would read as dead text and fail the gate.
+function kindWords(kind) {
+    switch (kind) {
+    case "attachment":
+        return {label: t("tree.limit.kind.attachment"), compact: t("tree.limit.compact.attachment")};
+    case "override":
+        return {label: t("tree.limit.kind.override"), compact: t("tree.limit.compact.override")};
+    case "parent":
+        return {label: t("tree.limit.kind.parent"), compact: t("tree.limit.compact.parent")};
+    case "queue":
+        return {label: t("tree.limit.kind.queue"), compact: t("tree.limit.compact.queue")};
+    case "mixed":
+        return {label: t("tree.limit.kind.mixed"), compact: t("tree.limit.compact.mixed")};
+    default:
+        return {label: t("tree.limit.kind.base"), compact: t("tree.limit.compact.base")};
+    }
+}
+
+function directionLabel(direction) {
+    return direction === 0 ? t("common.table.download") : t("common.table.upload");
+}
 
 function renderKey(target) {
     if (target?.getAttribute) {
@@ -46,9 +66,11 @@ export function immediateParentNodeFromTree(tree, node) {
 function formatMbps(value) {
     const numeric = toNumber(value, 0);
     if (numeric === 0) {
-        return "Unlimited";
+        return t("tree.limit.unlimited");
     }
-    return `${numeric.toFixed(1).replace(/\.0$/, "")}M`;
+    // The page's rate shorthand ("294.5M"): the decimal mark follows the active
+    // locale, the grouping separator does not (the value is a single rate).
+    return `${formatNumber(numeric, {maximumFractionDigits: 1, useGrouping: false})}M`;
 }
 
 function overrideValue(rateOverrideData, direction) {
@@ -79,7 +101,7 @@ function topologyOverrideParentIsActive(topologyOverrideData) {
 function parentDisplayName(parentNode, topologyOverrideData) {
     return topologyOverrideData?.current_parent_node_name
         || parentNode?.name
-        || "upstream parent";
+        || t("tree.limit.parent_unknown");
 }
 
 function reasonForDirection({node, parentNode, rateOverrideData, topologyOverrideData, direction}) {
@@ -89,7 +111,7 @@ function reasonForDirection({node, parentNode, rateOverrideData, topologyOverrid
     const effectiveValue = effective[direction];
     const override = overrideValue(rateOverrideData, direction);
     const parentEffective = parentNode ? effectiveMax(parentNode)[direction] : null;
-    const directionName = direction === 0 ? "Download" : "Upload";
+    const directionName = directionLabel(direction);
 
     if (
         parentEffective !== null
@@ -97,47 +119,84 @@ function reasonForDirection({node, parentNode, rateOverrideData, topologyOverrid
         && (rateBelow(effectiveValue, configuredValue) || (override !== null && rateBelow(effectiveValue, override)))
     ) {
         const parentName = parentDisplayName(parentNode, topologyOverrideData);
-        const suffix = topologyOverrideParentIsActive(topologyOverrideData)
-            ? " selected by topology override"
-            : "";
-        const attachment = node?.active_attachment_name
-            ? ` Active attachment: ${node.active_attachment_name}.`
-            : "";
+        const rate = formatMbps(effectiveValue);
+        if (topologyOverrideParentIsActive(topologyOverrideData)) {
+            return {
+                kind: "parent",
+                label: kindWords("parent").label,
+                detail: node?.active_attachment_name
+                    ? t("tree.limit.detail.parent_override_attachment", {
+                        direction: directionName,
+                        parent: parentName,
+                        rate,
+                        attachment: node.active_attachment_name,
+                    })
+                    : t("tree.limit.detail.parent_override", {
+                        direction: directionName,
+                        parent: parentName,
+                        rate,
+                    }),
+            };
+        }
         return {
             kind: "parent",
-            label: "Parent",
-            detail: `${directionName}: inherited from parent ${parentName}${suffix} at ${formatMbps(effectiveValue)}.${attachment}`,
+            label: kindWords("parent").label,
+            detail: node?.active_attachment_name
+                ? t("tree.limit.detail.parent_attachment", {
+                    direction: directionName,
+                    parent: parentName,
+                    rate,
+                    attachment: node.active_attachment_name,
+                })
+                : t("tree.limit.detail.parent", {
+                    direction: directionName,
+                    parent: parentName,
+                    rate,
+                }),
         };
     }
 
     if (override !== null && ratesApproximatelyEqual(effectiveValue, override)) {
         return {
             kind: "override",
-            label: "Override",
-            detail: `${directionName}: matches operator rate override at ${formatMbps(effectiveValue)}.`,
+            label: kindWords("override").label,
+            detail: t("tree.limit.detail.override", {
+                direction: directionName,
+                rate: formatMbps(effectiveValue),
+            }),
         };
     }
 
     if (node?.active_attachment_name && rateBelow(effectiveValue, configuredValue)) {
         return {
             kind: "attachment",
-            label: "Attachment",
-            detail: `${directionName}: capped by active attachment ${node.active_attachment_name} at ${formatMbps(effectiveValue)}.`,
+            label: kindWords("attachment").label,
+            detail: t("tree.limit.detail.attachment", {
+                direction: directionName,
+                attachment: node.active_attachment_name,
+                rate: formatMbps(effectiveValue),
+            }),
         };
     }
 
     if (rateBelow(effectiveValue, configuredValue)) {
         return {
             kind: "queue",
-            label: "Queue",
-            detail: `${directionName}: effective queue rate is below the configured rate at ${formatMbps(effectiveValue)}.`,
+            label: kindWords("queue").label,
+            detail: t("tree.limit.detail.queue", {
+                direction: directionName,
+                rate: formatMbps(effectiveValue),
+            }),
         };
     }
 
     return {
         kind: "base",
-        label: "Base",
-        detail: `${directionName}: uses configured rate at ${formatMbps(effectiveValue)}.`,
+        label: kindWords("base").label,
+        detail: t("tree.limit.detail.base", {
+            direction: directionName,
+            rate: formatMbps(effectiveValue),
+        }),
     };
 }
 
@@ -155,12 +214,12 @@ export function buildNodeLimitSummary({
         direction,
     }));
     const sameKind = directions[0].kind === directions[1].kind;
-    const label = sameKind ? directions[0].label : "Mixed";
+    const label = sameKind ? directions[0].label : kindWords("mixed").label;
     return {
         label,
         kind: sameKind ? directions[0].kind : "mixed",
         title: directions.map((direction) => direction.detail).join(" "),
-        compactReason: COMPACT_REASON_LABELS[sameKind ? directions[0].kind : "mixed"],
+        compactReason: kindWords(sameKind ? directions[0].kind : "mixed").compact,
         directions,
     };
 }
@@ -170,7 +229,9 @@ export function renderEffectiveNowDisplay({target, effective, formatRatePair}) {
         return;
     }
     const display = formatRatePair(effective[0], effective[1]);
-    const key = `effective:${display}`;
+    // The render-cache key: internal, never displayed, so it is built from parts
+    // rather than spelled as text a reader might mistake for a label.
+    const key = ["effective", display].join(":");
     if (renderKey(target) === key) {
         return;
     }
@@ -188,8 +249,9 @@ export function renderLimitedByDisplay({target, summary}) {
         return;
     }
     const display = summary.compactReason || summary.label;
-    const title = `Estimated effective-rate source. ${summary.title}`;
-    const key = `limited:${display}:${title}`;
+    const title = t("tree.limit.source_tooltip", {details: summary.title});
+    // The render-cache key: internal, never displayed.
+    const key = ["limited", display, title].join(":");
     if (renderKey(target) === key) {
         return;
     }
@@ -200,6 +262,7 @@ export function renderLimitedByDisplay({target, summary}) {
     source.classList.add("lqos-tree-limit-source");
     source.setAttribute("data-bs-toggle", "tooltip");
     source.setAttribute("data-bs-placement", "top");
+    // translatable: false — "hover focus" is a Bootstrap tooltip trigger token, not a label
     source.setAttribute("data-bs-trigger", "hover focus");
     source.setAttribute("data-bs-container", "body");
     source.setAttribute("tabindex", "0");

@@ -1,0 +1,136 @@
+{
+  "supported": true,
+  "probes": [
+    { "probe": "system", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "if_table", "outcome": "present", "reason": null, "rows": 3 },
+    { "probe": "lldp", "outcome": "absent", "reason": null, "rows": 0 },
+    { "probe": "arp_media", "outcome": "absent", "reason": null, "rows": 0 },
+    { "probe": "arp_physical", "outcome": "absent", "reason": null, "rows": 0 },
+    { "probe": "fdb", "outcome": "present", "reason": null, "rows": 4 },
+    { "probe": "vendor", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "temperatures", "outcome": "present", "reason": null, "rows": 2 }
+  ],
+  "lldp": [],
+  "arp": [],
+  "fdb": {
+    "qbridge": null,
+    "bridge": [
+      { "mac": "00:23:47:00:00:01", "port": 23, "status": 3 },
+      { "mac": "00:23:47:00:00:02", "port": 23, "status": 3 },
+      { "mac": "6c:3b:6b:00:00:03", "port": 23, "status": 3 },
+      { "mac": "80:2a:a8:00:00:04", "port": 10, "status": 3 }
+    ],
+    "port_if_index": [[10, 10], [23, 23]]
+  },
+  "stations": [],
+  "interfaces": [
+    {
+      "index": 10,
+      "name": "Port 10",
+      "descr": "Port 10",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:23:47:00:00:0a",
+      "admin_status": 1,
+      "oper_status": 1
+    },
+    {
+      "index": 23,
+      "name": "Port 23",
+      "descr": "Port 23",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:23:47:00:00:17",
+      "admin_status": 1,
+      "oper_status": 1
+    },
+    {
+      "index": 24,
+      "name": "Port 24",
+      "descr": "Port 24",
+      "alias": null,
+      "raw_type": 6,
+      "phys_address": "00:23:47:00:00:18",
+      "admin_status": 1,
+      "oper_status": 2
+    }
+  ],
+  "claims": [
+    { "probe": "system", "row": null, "kind": "name", "value": "xzl-switch", "source": "snmp-system" },
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "sysdescr",
+      "value": "Netonix WS-26-400-AC 1.5.14",
+      "source": "snmp-system"
+    }
+  ],
+  "details": {
+    "nat": null,
+    "dhcp_leases": null,
+    "interfaces": [
+      {
+        "id": "10",
+        "name": "Port 10",
+        "description": "Port 10",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:23:47:00:00:0a",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["snmp-interfaces"]
+      },
+      {
+        "id": "23",
+        "name": "Port 23",
+        "description": "Port 23",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:23:47:00:00:17",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["snmp-interfaces"]
+      },
+      {
+        "id": "24",
+        "name": "Port 24",
+        "description": "Port 24",
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "6",
+        "mac": "00:23:47:00:00:18",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "down",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["snmp-interfaces"]
+      }
+    ],
+    "system": {
+      "version": "1.5.14",
+      "board_name": null,
+      "platform": null,
+      "uptime": null,
+      "provenance": ["snmp-vendor"]
+    },
+    "temperatures": [
+      { "sensor_name": "Board Temp", "celsius": 64.0, "provenance": ["snmp-vendor"] },
+      { "sensor_name": "CPU Temp", "celsius": 94.0, "provenance": ["snmp-vendor"] }
+    ],
+    "stations": [],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": null
+  },
+  "residuals": []
+}

@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.1.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.1.1.0",
+          "value": { "type": "octet_string", "text": "RouterOS 6.49.18" }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.5.0",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.1.5.0", "value": { "type": "octet_string", "text": "cr1" } }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.2.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.1.2.0",
+          "value": { "type": "oid", "value": "1.3.6.1.4.1.14988.1" }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.4.1.14988.1.1.7.3.0",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.4.1.14988.1.1.7.3.0",
+          "value": { "type": "octet_string", "text": "6F5506551282" }
+        }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.2.2.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.2.16",
+          "value": { "type": "octet_string", "text": "sfp-sfpplus1" }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.2.17",
+          "value": { "type": "octet_string", "text": "ether2" }
+        },
+        { "oid": "1.3.6.1.2.1.2.2.1.3.16", "value": { "type": "integer", "value": 6 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.3.17", "value": { "type": "integer", "value": 6 } },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.6.16",
+          "value": { "type": "octet_string", "hex": "00:0c:42:00:00:10" }
+        },
+        {
+          "oid": "1.3.6.1.2.1.2.2.1.6.17",
+          "value": { "type": "octet_string", "hex": "00:0c:42:00:00:11" }
+        },
+        { "oid": "1.3.6.1.2.1.2.2.1.7.16", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.7.17", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.8.16", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.8.17", "value": { "type": "integer", "value": 2 } }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.31.1.1.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.31.1.1.1.1.16",
+          "value": { "type": "octet_string", "text": "sfp-sfpplus1" }
+        },
+        {
+          "oid": "1.3.6.1.2.1.31.1.1.1.1.17",
+          "value": { "type": "octet_string", "text": "ether2" }
+        }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.0.8802.1.1.2.1.4.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.0.8802.1.1.2.1.4.1.1.5.0.3.7",
+          "value": { "type": "octet_string", "hex": "02:1f:5e:aa:bb:10" }
+        },
+        {
+          "oid": "1.0.8802.1.1.2.1.4.1.1.7.0.3.7",
+          "value": { "type": "octet_string", "text": "ether1" }
+        },
+        {
+          "oid": "1.0.8802.1.1.2.1.4.1.1.9.0.3.7",
+          "value": { "type": "octet_string", "text": "edge-rtr" }
+        }
+      ]
+    },
+    { "op": "walk", "root": "1.0.8802.1.1.2.1.4.2", "outcome": "empty" },
+    { "op": "walk", "root": "1.0.8802.1.1.2.1.3.7", "outcome": "empty" },
+    { "op": "walk", "root": "1.3.6.1.2.1.4.22.1", "outcome": "empty" },
+    { "op": "walk", "root": "1.3.6.1.2.1.4.35.1", "outcome": "empty" },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.17.7.1.2.2.1",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2.0.0.5.183.0.0.1",
+          "value": { "type": "integer", "value": 1 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2.0.0.12.66.0.0.2",
+          "value": { "type": "integer", "value": 2 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2.0.0.21.23.0.0.3",
+          "value": { "type": "integer", "value": 1 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3.0.0.5.183.0.0.1",
+          "value": { "type": "integer", "value": 3 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3.0.0.12.66.0.0.2",
+          "value": { "type": "integer", "value": 3 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3.0.0.21.23.0.0.3",
+          "value": { "type": "integer", "value": 4 }
+        }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.17.1.4.1.2",
+      "outcome": "present",
+      "varbinds": [
+        {
+          "oid": "1.3.6.1.2.1.17.1.4.1.2.1",
+          "value": { "type": "integer", "value": 16 }
+        },
+        {
+          "oid": "1.3.6.1.2.1.17.1.4.1.2.2",
+          "value": { "type": "integer", "value": 24 }
+        }
+      ]
+    }
+  ]
+}

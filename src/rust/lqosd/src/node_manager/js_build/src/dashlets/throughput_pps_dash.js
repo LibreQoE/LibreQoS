@@ -1,6 +1,11 @@
 import {PacketsPerSecondBar} from "../graphs/packets_bar";
 import {PacketsPerSecondTimescale} from "../graphs/packets_bar_insight";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+
+// translatable: false — "Throughput" is the websocket event name the dashlet filters on, not a label
 
 const LIVE_SAMPLE_LIMIT = 300;
 
@@ -11,11 +16,11 @@ export class ThroughputPpsDash extends DashletBaseInsight{
     }
 
     title() {
-        return "Throughput PPS";
+        return t("dashlet.name.throughput_packets_per_second");
     }
 
     tooltip() {
-        return "<h5>Throughput Packets/Second</h5><p>Shows the current throughput in packets per second. Traffic is divided between upload (from the ISP) and download (to the ISP) traffic.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.pps.tooltip")}</p>`;
     }
 
     supportsZoom() {

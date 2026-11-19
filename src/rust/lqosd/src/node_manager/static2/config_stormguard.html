@@ -5,7 +5,8 @@
         <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
             <i class="fa fa-exclamation-triangle me-2"></i>
             <div>
-                <strong>Advanced Feature:</strong> StormGuard is designed to mitigate highly unstable network links, such as those found in maritime environments. Please only enable this feature if you are experiencing significant network instability that requires automatic rate adjustments.
+                <strong data-i18n="config.stormguard.advanced_feature">Advanced Feature:</strong>
+                <span data-i18n="config.stormguard.advanced_intro">StormGuard is designed to mitigate highly unstable network links, such as those found in maritime environments. Please only enable this feature if you are experiencing significant network instability that requires automatic rate adjustments.</span>
             </div>
         </div>
         
@@ -13,128 +14,128 @@
             <!-- Enable/Disable StormGuard -->
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enabled">
-                <label class="form-check-label" for="enabled">Enable StormGuard</label>
-                <div class="form-text">Enable automatic rate adjustment based on network conditions</div>
+                <label class="form-check-label" for="enabled" data-i18n="config.stormguard.enable">Enable StormGuard</label>
+                <div class="form-text" data-i18n="config.stormguard.enable_help">Enable automatic rate adjustment based on network conditions</div>
             </div>
 
             <!-- Dry Run Mode -->
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="dryRun">
-                <label class="form-check-label" for="dryRun">Dry Run Mode</label>
-                <div class="form-text">Test mode - log changes without applying them</div>
+                <label class="form-check-label" for="dryRun" data-i18n="config.stormguard.dry_run">Dry Run Mode</label>
+                <div class="form-text" data-i18n="config.stormguard.dry_run_help">Test mode - log changes without applying them</div>
             </div>
 
             <!-- Log File Path -->
             <div class="mb-3">
-                <label for="logFile" class="form-label">Log File Path (Optional)</label>
+                <label for="logFile" class="form-label" data-i18n="config.stormguard.log_file">Log File Path (Optional)</label>
                 <input type="text" class="form-control" id="logFile" placeholder="/var/log/stormguard.csv">
-                <div class="form-text">Path to CSV file for logging site rates (leave empty to disable)</div>
+                <div class="form-text" data-i18n="config.stormguard.log_file_help">Path to CSV file for logging site rates (leave empty to disable)</div>
             </div>
 
             <!-- Strategy -->
             <div class="mb-3">
-                <label for="strategy" class="form-label">StormGuard Strategy</label>
+                <label for="strategy" class="form-label" data-i18n="config.stormguard.strategy.title">StormGuard Strategy</label>
                 <select class="form-select" id="strategy">
-                    <option value="legacy_score">legacy_score (score matrix)</option>
-                    <option value="delay_probe">delay_probe (RTT baseline + probing)</option>
-                    <option value="delay_probe_active">delay_probe_active (add active ICMP ping RTT)</option>
+                    <option value="legacy_score" data-i18n="config.stormguard.strategy.legacy_score">legacy_score (score matrix)</option>
+                    <option value="delay_probe" data-i18n="config.stormguard.strategy.delay_probe">delay_probe (RTT baseline + probing)</option>
+                    <option value="delay_probe_active" data-i18n="config.stormguard.strategy.delay_probe_active">delay_probe_active (add active ICMP ping RTT)</option>
                 </select>
-                <div class="form-text">Use <code>delay_probe</code> (default) for low-speed, unstable links (ships). Use <code>delay_probe_active</code> to supplement with infrequent ICMP pings. Keep <code>legacy_score</code> for existing rain-fade tuning.</div>
+                <div class="form-text" id="strategyHelp"></div>
             </div>
 
             <div id="delayProbeSection" style="display:none;">
                 <hr class="my-4" />
-                <h5>Delay + Probing Tuning</h5>
+                <h5 data-i18n="config.stormguard.delay.title">Delay + Probing Tuning</h5>
 
                 <div class="row">
                     <div class="col-md-6 mb-3">
-                        <label for="delayThresholdMs" class="form-label">Delay Threshold (ms)</label>
+                        <label for="delayThresholdMs" class="form-label" data-i18n="config.stormguard.delay.threshold">Delay Threshold (ms)</label>
                         <input type="number" class="form-control" id="delayThresholdMs" min="1" step="1" value="40">
-                        <div class="form-text">Standing delay above baseline that triggers a decrease</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.threshold_help">Standing delay above baseline that triggers a decrease</div>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="delayThresholdRatio" class="form-label">Delay Threshold Ratio</label>
+                        <label for="delayThresholdRatio" class="form-label" data-i18n="config.stormguard.delay.ratio">Delay Threshold Ratio</label>
                         <input type="number" class="form-control" id="delayThresholdRatio" min="1.01" step="0.01" value="1.10">
-                        <div class="form-text">RTT ratio over baseline that triggers a decrease (e.g., 1.10 = 10%)</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.ratio_help">RTT ratio over baseline that triggers a decrease (e.g., 1.10 = 10%)</div>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="baselineAlphaUp" class="form-label">Baseline Alpha Up</label>
+                        <label for="baselineAlphaUp" class="form-label" data-i18n="config.stormguard.delay.alpha_up">Baseline Alpha Up</label>
                         <input type="number" class="form-control" id="baselineAlphaUp" min="0.001" max="1" step="0.001" value="0.01">
-                        <div class="form-text">How fast the baseline drifts upward when RTT rises (smaller = slower)</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.alpha_up_help">How fast the baseline drifts upward when RTT rises (smaller = slower)</div>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="baselineAlphaDown" class="form-label">Baseline Alpha Down</label>
+                        <label for="baselineAlphaDown" class="form-label" data-i18n="config.stormguard.delay.alpha_down">Baseline Alpha Down</label>
                         <input type="number" class="form-control" id="baselineAlphaDown" min="0.001" max="1" step="0.001" value="0.10">
-                        <div class="form-text">How fast the baseline tracks downward when RTT falls (larger = faster)</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.alpha_down_help">How fast the baseline tracks downward when RTT falls (larger = faster)</div>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="probeIntervalSeconds" class="form-label">Probe Interval (seconds)</label>
+                        <label for="probeIntervalSeconds" class="form-label" data-i18n="config.stormguard.delay.probe_interval">Probe Interval (seconds)</label>
                         <input type="number" class="form-control" id="probeIntervalSeconds" min="1" step="1" value="10">
-                        <div class="form-text">Minimum time between increase attempts when conditions look good</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.probe_interval_help">Minimum time between increase attempts when conditions look good</div>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label for="minThroughputMbpsForRtt" class="form-label">Min Throughput for RTT (Mbps)</label>
+                        <label for="minThroughputMbpsForRtt" class="form-label" data-i18n="config.stormguard.delay.min_throughput">Min Throughput for RTT (Mbps)</label>
                         <input type="number" class="form-control" id="minThroughputMbpsForRtt" min="0" step="0.01" value="0.05">
-                        <div class="form-text">Ignore RTT-driven adjustments below this throughput to reduce noise</div>
+                        <div class="form-text" data-i18n="config.stormguard.delay.min_throughput_help">Ignore RTT-driven adjustments below this throughput to reduce noise</div>
                     </div>
                 </div>
             </div>
 
             <div id="activePingSection" style="display:none;">
                 <hr class="my-4" />
-                <h5>Active Ping (delay_probe_active)</h5>
+                <h5 data-i18n="config.stormguard.active_ping.title">Active Ping (delay_probe_active)</h5>
 
                 <div class="row">
                     <div class="col-md-6 mb-3">
-                        <label for="activePingTarget" class="form-label">Ping Target</label>
+                        <label for="activePingTarget" class="form-label" data-i18n="config.stormguard.active_ping.target">Ping Target</label>
                         <input type="text" class="form-control" id="activePingTarget" placeholder="1.1.1.1">
-                        <div class="form-text">Hostname or IP used for RTT sampling (default: 1.1.1.1)</div>
+                        <div class="form-text" data-i18n="config.stormguard.active_ping.target_help">Hostname or IP used for RTT sampling (default: 1.1.1.1)</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="activePingIntervalSeconds" class="form-label">Ping Interval (seconds)</label>
+                        <label for="activePingIntervalSeconds" class="form-label" data-i18n="config.stormguard.active_ping.interval">Ping Interval (seconds)</label>
                         <input type="number" class="form-control" id="activePingIntervalSeconds" min="1" step="1" value="10">
-                        <div class="form-text">Infrequent pings to keep overhead low</div>
+                        <div class="form-text" data-i18n="config.stormguard.active_ping.interval_help">Infrequent pings to keep overhead low</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="activePingTimeoutSeconds" class="form-label">Ping Timeout (seconds)</label>
+                        <label for="activePingTimeoutSeconds" class="form-label" data-i18n="config.stormguard.active_ping.timeout">Ping Timeout (seconds)</label>
                         <input type="number" class="form-control" id="activePingTimeoutSeconds" min="0.1" step="0.1" value="1.0">
-                        <div class="form-text">Timeout per ping attempt</div>
+                        <div class="form-text" data-i18n="config.stormguard.active_ping.timeout_help">Timeout per ping attempt</div>
                     </div>
                     <div class="col-md-12 mb-3">
-                        <label for="activePingWeight" class="form-label">Active Ping Weight (<span id="activePingWeightValue">70</span>%)</label>
+                        <label for="activePingWeight" class="form-label"><span data-i18n="config.stormguard.active_ping.weight">Active Ping Weight</span> (<span id="activePingWeightValue">70</span>%)</label>
                         <input type="range" class="form-range" id="activePingWeight" min="0" max="100" step="1" value="70">
-                        <div class="form-text">Blend active ping RTT (weight) with passive TCP RTT (remaining %)</div>
+                        <div class="form-text" data-i18n="config.stormguard.active_ping.weight_help">Blend active ping RTT (weight) with passive TCP RTT (remaining %)</div>
                     </div>
                 </div>
             </div>
 
             <hr class="my-4" />
-            <h5>Site Enrollment</h5>
+            <h5 data-i18n="config.stormguard.sites.title">Site Enrollment</h5>
 
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="allSites">
-                <label class="form-check-label" for="allSites">Monitor All Sites</label>
-                <div class="form-text">If enabled, StormGuard monitors all sites except those in the exclude list</div>
+                <label class="form-check-label" for="allSites" data-i18n="config.stormguard.sites.monitor_all">Monitor All Sites</label>
+                <div class="form-text" data-i18n="config.stormguard.sites.monitor_all_help">If enabled, StormGuard monitors all sites except those in the exclude list</div>
             </div>
 
             <!-- Monitored Sites Section -->
             <div class="mb-3">
-                <label class="form-label">Site Allowlist</label>
-                <div class="form-text">Used only when Monitor All Sites is unchecked</div>
+                <label class="form-label" data-i18n="config.stormguard.sites.allowlist">Site Allowlist</label>
+                <div class="form-text" data-i18n="config.stormguard.sites.allowlist_help">Used only when Monitor All Sites is unchecked</div>
 
                 <div id="targetsSection">
                     <div class="input-group mb-2">
                         <select class="form-select" id="targetSiteSelector">
-                            <option value="">Select a site...</option>
+                            <option value="" data-i18n="config.stormguard.sites.select">Select a site...</option>
                         </select>
-                        <button class="btn btn-outline-primary" type="button" id="addTargetBtn">
+                        <button class="btn btn-outline-primary" type="button" id="addTargetBtn" data-i18n="config.stormguard.sites.add">
                             <i class="fa fa-plus"></i> Add Site
                         </button>
                     </div>
 
                     <div class="input-group mb-2">
-                        <input type="text" class="form-control" id="targetSiteManual" placeholder="Or type a site name...">
-                        <button class="btn btn-outline-primary" type="button" id="addTargetManualBtn">
+                        <input type="text" class="form-control" id="targetSiteManual" placeholder="Or type a site name..." data-i18n-placeholder="config.stormguard.sites.manual_placeholder">
+                        <button class="btn btn-outline-primary" type="button" id="addTargetManualBtn" data-i18n="config.stormguard.sites.add_manual">
                             <i class="fa fa-plus"></i> Add
                         </button>
                     </div>
@@ -146,21 +147,21 @@
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Exclude Sites</label>
-                <div class="form-text">Sites to exclude when Monitor All Sites is enabled</div>
+                <label class="form-label" data-i18n="config.stormguard.sites.exclude">Exclude Sites</label>
+                <div class="form-text" data-i18n="config.stormguard.sites.exclude_help">Sites to exclude when Monitor All Sites is enabled</div>
 
                 <div class="input-group mb-2">
                     <select class="form-select" id="excludeSiteSelector">
-                        <option value="">Select a site...</option>
+                        <option value="" data-i18n="config.stormguard.sites.select">Select a site...</option>
                     </select>
-                    <button class="btn btn-outline-primary" type="button" id="addExcludeBtn">
+                    <button class="btn btn-outline-primary" type="button" id="addExcludeBtn" data-i18n="config.stormguard.sites.add">
                         <i class="fa fa-plus"></i> Add Site
                     </button>
                 </div>
 
                 <div class="input-group mb-2">
-                    <input type="text" class="form-control" id="excludeSiteManual" placeholder="Or type a site name...">
-                    <button class="btn btn-outline-primary" type="button" id="addExcludeManualBtn">
+                    <input type="text" class="form-control" id="excludeSiteManual" placeholder="Or type a site name..." data-i18n-placeholder="config.stormguard.sites.manual_placeholder">
+                    <button class="btn btn-outline-primary" type="button" id="addExcludeManualBtn" data-i18n="config.stormguard.sites.add_manual">
                         <i class="fa fa-plus"></i> Add
                     </button>
                 </div>
@@ -172,84 +173,84 @@
 
             <!-- Minimum Percentages -->
             <div class="mb-3">
-                <label for="minDownloadPct" class="form-label">Minimum Download Percentage (%)</label>
+                <label for="minDownloadPct" class="form-label" data-i18n="config.stormguard.minimum.download">Minimum Download Percentage (%)</label>
                 <input type="number" class="form-control" id="minDownloadPct" min="1" max="100" step="1" value="50">
-                <div class="form-text">Minimum percentage of advertised download speed (e.g., 50 for 50%)</div>
+                <div class="form-text" data-i18n="config.stormguard.minimum.download_help">Minimum percentage of advertised download speed (e.g., 50 for 50%)</div>
             </div>
 
             <div class="mb-3">
-                <label for="minUploadPct" class="form-label">Minimum Upload Percentage (%)</label>
+                <label for="minUploadPct" class="form-label" data-i18n="config.stormguard.minimum.upload">Minimum Upload Percentage (%)</label>
                 <input type="number" class="form-control" id="minUploadPct" min="1" max="100" step="1" value="50">
-                <div class="form-text">Minimum percentage of advertised upload speed (e.g., 50 for 50%)</div>
+                <div class="form-text" data-i18n="config.stormguard.minimum.upload_help">Minimum percentage of advertised upload speed (e.g., 50 for 50%)</div>
             </div>
 
             <hr class="my-4" />
-            <h5>Adjustment Multipliers</h5>
+            <h5 data-i18n="config.stormguard.multipliers.title">Adjustment Multipliers</h5>
 
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="increaseFastMultiplier" class="form-label">Increase Fast Multiplier</label>
+                    <label for="increaseFastMultiplier" class="form-label" data-i18n="config.stormguard.multipliers.increase_fast">Increase Fast Multiplier</label>
                     <input type="number" class="form-control" id="increaseFastMultiplier" min="0.01" step="0.01" value="1.30">
-                    <div class="form-text">Used for aggressive recovery when conditions improve quickly</div>
+                    <div class="form-text" data-i18n="config.stormguard.multipliers.increase_fast_help">Used for aggressive recovery when conditions improve quickly</div>
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="increaseMultiplier" class="form-label">Increase Multiplier</label>
+                    <label for="increaseMultiplier" class="form-label" data-i18n="config.stormguard.multipliers.increase">Increase Multiplier</label>
                     <input type="number" class="form-control" id="increaseMultiplier" min="0.01" step="0.01" value="1.15">
-                    <div class="form-text">Used for normal recovery when capacity can be raised</div>
+                    <div class="form-text" data-i18n="config.stormguard.multipliers.increase_help">Used for normal recovery when capacity can be raised</div>
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="decreaseMultiplier" class="form-label">Decrease Multiplier</label>
+                    <label for="decreaseMultiplier" class="form-label" data-i18n="config.stormguard.multipliers.decrease">Decrease Multiplier</label>
                     <input type="number" class="form-control" id="decreaseMultiplier" min="0.01" step="0.01" value="0.95">
-                    <div class="form-text">Used for normal reductions when instability is detected</div>
+                    <div class="form-text" data-i18n="config.stormguard.multipliers.decrease_help">Used for normal reductions when instability is detected</div>
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="decreaseFastMultiplier" class="form-label">Decrease Fast Multiplier</label>
+                    <label for="decreaseFastMultiplier" class="form-label" data-i18n="config.stormguard.multipliers.decrease_fast">Decrease Fast Multiplier</label>
                     <input type="number" class="form-control" id="decreaseFastMultiplier" min="0.01" step="0.01" value="0.88">
-                    <div class="form-text">Used for aggressive reductions when conditions deteriorate quickly</div>
+                    <div class="form-text" data-i18n="config.stormguard.multipliers.decrease_fast_help">Used for aggressive reductions when conditions deteriorate quickly</div>
                 </div>
             </div>
 
             <hr class="my-4" />
-            <h5>Cooldowns</h5>
+            <h5 data-i18n="config.stormguard.cooldowns.title">Cooldowns</h5>
 
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="increaseFastCooldownSeconds" class="form-label">Increase Fast Cooldown (seconds)</label>
+                    <label for="increaseFastCooldownSeconds" class="form-label" data-i18n="config.stormguard.cooldowns.increase_fast">Increase Fast Cooldown (seconds)</label>
                     <input type="number" class="form-control" id="increaseFastCooldownSeconds" min="0.25" step="0.25" value="2">
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="increaseCooldownSeconds" class="form-label">Increase Cooldown (seconds)</label>
+                    <label for="increaseCooldownSeconds" class="form-label" data-i18n="config.stormguard.cooldowns.increase">Increase Cooldown (seconds)</label>
                     <input type="number" class="form-control" id="increaseCooldownSeconds" min="0.25" step="0.25" value="1">
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="decreaseCooldownSeconds" class="form-label">Decrease Cooldown (seconds)</label>
+                    <label for="decreaseCooldownSeconds" class="form-label" data-i18n="config.stormguard.cooldowns.decrease">Decrease Cooldown (seconds)</label>
                     <input type="number" class="form-control" id="decreaseCooldownSeconds" min="0.25" step="0.25" value="3.75">
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label for="decreaseFastCooldownSeconds" class="form-label">Decrease Fast Cooldown (seconds)</label>
+                    <label for="decreaseFastCooldownSeconds" class="form-label" data-i18n="config.stormguard.cooldowns.decrease_fast">Decrease Fast Cooldown (seconds)</label>
                     <input type="number" class="form-control" id="decreaseFastCooldownSeconds" min="0.25" step="0.25" value="7.5">
                 </div>
             </div>
 
             <hr class="my-4" />
-            <h5>Circuit Fallback</h5>
+            <h5 data-i18n="config.stormguard.fallback.title">Circuit Fallback</h5>
 
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="circuitFallbackEnabled">
-                <label class="form-check-label" for="circuitFallbackEnabled">Enable Circuit Fallback</label>
-                <div class="form-text">Allow StormGuard to request a circuit-level fallback action when direct site adjustment is not appropriate</div>
+                <label class="form-check-label" for="circuitFallbackEnabled" data-i18n="config.stormguard.fallback.enable">Enable Circuit Fallback</label>
+                <div class="form-text" data-i18n="config.stormguard.fallback.enable_help">Allow StormGuard to request a circuit-level fallback action when direct site adjustment is not appropriate</div>
             </div>
 
             <div class="mb-3">
-                <label for="circuitFallbackSqm" class="form-label">Circuit Fallback SQM</label>
+                <label for="circuitFallbackSqm" class="form-label" data-i18n="config.stormguard.fallback.sqm">Circuit Fallback SQM</label>
                 <select class="form-select" id="circuitFallbackSqm">
                     <option value="fq_codel">fq_codel</option>
                     <option value="cake">cake</option>
                 </select>
-                <div class="form-text">SQM token to request for fallback actions</div>
+                <div class="form-text" data-i18n="config.stormguard.fallback.sqm_help">SQM token to request for fallback actions</div>
             </div>
 
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.stormguard.save">Save Changes</button>
         </form>
     </div>
 </div>

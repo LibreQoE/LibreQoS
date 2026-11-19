@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {t} from "../i18n/index.js";
 
 export const N_ITEMS = 50;
 
@@ -54,7 +55,11 @@ export class RttHistogram extends DashboardGraph {
                         let rttRangeEnd = rttMs + 10;
                         let samples = this.rawCounts[index] || 0;
                         let percentage = params[0].value.toFixed(2);
-                        return `RTT: ${rttMs}-${rttRangeEnd} ms<br/>Samples: ${samples}<br/>Percentage: ${percentage}%`;
+                        return [
+                            t("graph.rtt_histo.tooltip_rtt", {start: rttMs, end: rttRangeEnd}),
+                            t("graph.rtt_histo.tooltip_samples", {samples}),
+                            t("graph.rtt_histo.tooltip_percentage", {percentage}),
+                        ].join("<br/>");
                     }
                     return '';
                 }
@@ -68,7 +73,7 @@ export class RttHistogram extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
-                name: "% of Samples",
+                name: t("graph.rtt_histo.percent_of_samples"),
                 nameLocation: 'middle',
                 nameGap: 40,
                 min: () => 0,

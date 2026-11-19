@@ -1,305 +1,179 @@
 # Installing LibreQoS v3
 
-LibreQoS v3 is the DPDK dataplane plus the `lqosd` control plane. This page has
-three paths; use only the one that matches your host.
+LibreQoS v3 is the DPDK dataplane plus the `lqosd` control plane. Pick the path
+that matches your host:
 
-- **Fresh v3 install** — a new Ubuntu 24.04 host.
-- **Beta-to-beta upgrade** — an existing v3 beta host.
-- **v2.0 to v3** — a production v2 host; staged, see
+- **Fresh install**: a new Ubuntu 24.04 host (below).
+- **Beta-to-beta upgrade**: a host already running a v3 beta (below).
+- **v2.0 to v3**: a production v2 host. See
   [Upgrading from v2.0](upgrade-from-v2.md).
 
 ## Before you start
 
-- Ubuntu Server 24.04 LTS or newer, root/sudo.
-- Two supported dataplane NICs (or one for an on-a-stick trunk). The dataplane
-  NICs must have no management address and no bridge/bond/VLAN upper.
-- Hugepages: the installer tries 3072 × 2M at install. If that fails, add
+- Ubuntu Server 24.04 LTS or newer, with root/sudo.
+- Two supported dataplane NICs, or one for an on-a-stick trunk. The dataplane
+  NICs must have no management address and no bridge/bond/VLAN on top of them.
+- Hugepages: the installer reserves 3072 × 2M pages. If that fails, add
   `default_hugepagesz=2M hugepages=3072` to the kernel command line and reboot.
-- **Installation is offline.** Python dependencies ship in a vendored wheelhouse
-  inside the `libreqos` package; the postinst installs them with
-  `pip --no-index` and does not contact PyPI.
-- Proxmox/VM: use the modern virtio device `1af4:1041` and
-  `disable-legacy=on` on both dataplane NICs. See
-  [Upgrading from v2.0](upgrade-from-v2.md) for the full host/NIC detail.
+- Proxmox/VM: use the modern virtio device `1af4:1041` with
+  `disable-legacy=on` on both dataplane NICs.
+- If this host once ran v2, an old `/etc/lqos.conf` may still exist. v3 ignores
+  it and reads `/etc/libreqos/lqos.conf`.
+- The install needs no internet access beyond the LibreQoS apt repository:
+  Python dependencies ship inside the `libreqos` package.
 
-## Fresh v3 install
+## Fresh install
 
 ```bash
-# 1. Add the LibreQoS v3 apt repo (beta channel).
+# 1. Add the LibreQoS v3 repository
 curl -fsSL https://packages.libreqos.com/keys/libreqos-packages-keyring.gpg \
   | sudo tee /usr/share/keyrings/libreqos-packages-keyring.gpg >/dev/null
 echo "deb [signed-by=/usr/share/keyrings/libreqos-packages-keyring.gpg] https://packages.libreqos.com beta main" \
   | sudo tee /etc/apt/sources.list.d/libreqos.list
 sudo apt-get update
 
-# 2. Check the host before installing anything.
-sudo apt-get install -y libreqos-preflight
-libreqos-v3-preflight        # PASS / WARN / BLOCK
+# 2. Check the host (PASS / WARN / BLOCK; stop on BLOCK)
+sudo apt-get install -y libreqos-preflight && libreqos-v3-preflight
 
-# 3. Install the three packages at ONE version. The node API is served by
-#    lqosd at /api/v3; there is no separate libreqos-api package or unit.
-V=$(apt-cache policy libreqos | awk '/Candidate:/ {print $2}')
-case "$V" in ""|"(none)") echo "no libreqos candidate"; exit 1;; esac
-echo "installing $V"
-sudo apt-get install -y \
-  libreqos-preflight="$V" libreqos="$V" \
-  libreqos-dataplane="$V"
+# 3. Install
+sudo apt-get install -y libreqos libreqos-dataplane
 
-# 4. Reinstall trap: v3 reads /etc/libreqos/lqos.conf. A stale v2-layout
-#    /etc/lqos.conf is NOT the v3 config; move it aside.
-if [ -f /etc/lqos.conf ]; then
-  echo "WARNING: legacy /etc/lqos.conf exists; v3 uses /etc/libreqos/lqos.conf"
-fi
-
-# 5. First run (NIC pair, rates, users, then activate).
+# 4. First-run setup: NICs, rates, users, activate
 sudo lqos_setup tui
 ```
 
-**Worker count before first activation.** If this box needs a fixed worker
-count, set it **before** the TUI's final `activate-runtime` step (the activation
-is what renders the plan and starts the bridge). At the final confirmation
-prompt, open a second terminal and edit `/etc/libreqos/lqos.conf`:
+`libreqos-dataplane` requires the exactly matching `libreqos` version, so apt
+always installs a matched set.
+
+The setup wizard picks the NIC pair, writes the rates to
+`/etc/libreqos/lqos.conf`, and starts the services. Then
+{ref}`verify the install <v3-verify>`.
+
+### Setting the worker count
+
+By default the wizard sizes the DPDK worker count from the link rate, CPU cores
+and NIC queues. To use a fixed count instead, add it to `/etc/libreqos/lqos.conf`
+before you confirm the wizard's final activation step:
 
 ```toml
 [queues]
 workers = 8
 ```
 
-Then confirm activation. The TUI preserves the key and its final step renders
-the plan at that W.
+Changing the count on a host that is already running is not supported yet; see
+[Known limitations](known-limitations.md).
 
-If the TUI did not start the units (or you exited before activation), start
-them **in order** and wait for each:
-
-```bash
-wait_active() { # wait_active UNIT TIMEOUT_SEC
-  local i=0
-  while [ "$i" -lt "$2" ]; do
-    systemctl is-active --quiet "$1" && return 0
-    sleep 2; i=$((i+2))
-  done
-  echo "TIMEOUT waiting for $1"; return 1
-}
-sudo systemctl start libreqos-lqosd && wait_active libreqos-lqosd 60
-sudo systemctl start libreqos-scheduler && wait_active libreqos-scheduler 60
-sudo systemctl start libreqos-bridge && wait_active libreqos-bridge 120
-```
-
-The bearer-authenticated node API is served by `lqosd` on the WebUI listener
-under `/api/v3` (see the [Node API](../v2.0/api.md)); there is no separate
-`libreqos-api` unit to start, and no `:9122` listener.
-
-Set the rates and any worker override in `/etc/libreqos/lqos.conf` (the single
-operator source):
-
-```toml
-[dataplane]
-download_mbps = 2500.0
-upload_mbps = 2500.0
-
-[queues]
-workers = 8          # optional; omit to autosize
-```
-
-`workers` is the DPDK worker count. Omit it and the installer derives a count
-from the link, physical cores, and NIC queues. If the box is CPU-limited at the
-derived count, set `[queues] workers` and re-render the plan. Read the bound BDF
-pair from the machine state first:
+(v3-verify)=
+## Verify
 
 ```bash
-# The STATE reader is FIRST-wins (bootstrap::state_value), so take head -1.
-WAN_BDF=$(sed -n 's/^LQOS_DPDK_ORIG_WAN_BDF=//p' \
-  /var/lib/libreqos-bridge/dpdk-bind-originals.env 2>/dev/null | head -1)
-LAN_BDF=$(sed -n 's/^LQOS_DPDK_ORIG_LAN_BDF=//p' \
-  /var/lib/libreqos-bridge/dpdk-bind-originals.env 2>/dev/null | head -1)
-# mlx5 in-place boxes may have no bind-originals STATE: fall back to the
-# managed plan's BDF keys, then to lspci (no hard exit).
-if [ -z "$WAN_BDF" ] || [ -z "$LAN_BDF" ]; then
-  WAN_BDF=$(sed -n 's/^LQOS_DPDK_WAN_BDF=//p' \
-    /etc/libreqos/bridge.env.d/50-ports.conf 2>/dev/null | head -1)
-  LAN_BDF=$(sed -n 's/^LQOS_DPDK_LAN_BDF=//p' \
-    /etc/libreqos/bridge.env.d/50-ports.conf 2>/dev/null | head -1)
-fi
-if [ -n "$WAN_BDF" ] && [ -n "$LAN_BDF" ]; then
-  # beta16: pass the BDF pair explicitly
-  sudo lqos_setup ports-plan --wan "$WAN_BDF" --lan "$LAN_BDF"
-  # once lqos-74t.89 lands, the config-only form is:
-  # sudo lqos_setup ports-plan --from-config
-  sudo systemctl restart libreqos-bridge
-else
-  echo "BDF pair not found in STATE/50-ports; identify the two dataplane NICs:"
-  lspci -nn | grep -Ei 'ethernet|network'
-  echo "set WAN_BDF=... LAN_BDF=... and rerun the ports-plan command"
-fi
-```
-
-`--wan`/`--lan` supply only the PCI pair; the queue count still comes from the
-NIC/STATE. `--queues N` is accepted, but on beta16 it may still report the
-bound-NIC error below (74t.89). Expected:
-`ports-plan: wrote /etc/libreqos/bridge.env.d/50-ports.conf — workers=8 ...`.
-`ports-plan` writes that file; do not hand-edit `bridge.env`, `bridge.env.d/*`,
-or `50-ports.conf`. `libreqos-setup.service` verifies hugepages/NICs; it does
-not write the plan.
-
-Verify (all three at one version, no restarts):
-
-```bash
-dpkg-query -W -f='${Package} ${Version}\n' \
-  libreqos libreqos-preflight libreqos-dataplane
+dpkg -l 'libreqos*' | grep ^ii
 systemctl is-active libreqos-lqosd libreqos-scheduler libreqos-bridge
-for u in libreqos-lqosd libreqos-scheduler libreqos-bridge; do
-  echo "$u NRestarts=$(systemctl show -p NRestarts --value "$u")"
-done
-journalctl -u libreqos-bridge --since "-10 min" | grep -E "BOOT-PLACEMENT|FATAL"
+journalctl -u libreqos-bridge --since "-10 min" | grep FATAL
 ```
 
-Expect the same `V` on all three lines, `active` on all three units, and no
-`FATAL`. **First activation may recycle the bridge** (`NRestarts=2` is not a
-failure if the unit is active now). If the bridge is `failed`, reset and
-restart it once, then re-check:
+Expect the same version on all three packages, `active` three times, and no
+`FATAL` lines. The bridge may restart once or twice during its first activation;
+that is normal as long as it is `active` now. If it is `failed`, run
+`sudo systemctl restart libreqos-bridge` once and check again. If it still
+fails, see [Troubleshooting](troubleshooting.md).
 
-```bash
-sudo systemctl reset-failed libreqos-bridge 2>/dev/null || true
-sudo systemctl restart libreqos-bridge
-wait_active() { local i=0; while [ "$i" -lt 120 ]; do
-  systemctl is-active --quiet libreqos-bridge && return 0
-  sleep 2; i=$((i+2)); done; return 1; }
-wait_active || { echo "bridge still not active"; exit 1; }
-systemctl show -p NRestarts --value libreqos-bridge
-```
-
+(v3-beta-upgrade)=
 ## Beta-to-beta upgrade
 
-Back up the config, the LKG, and the old packages **before** changing
-anything. The three `$OLD` debs go into `$BK` (the rollback block below uses
-that same directory):
+Paste the blocks, in order, into one root shell (`sudo -i`); later blocks use
+the variables earlier ones set. A block that prints `FAIL` exits that shell
+before it changes anything else: fix the cause, open a new root shell and start
+again from step 1.
+
+**1. Check the target.** All three packages must be available at the same
+version:
+
+```bash
+V=$(apt-cache policy libreqos | awk '/Candidate:/ {print $2}')
+case "$V" in ""|"(none)") echo "FAIL: no libreqos candidate"; exit 1;; esac
+for p in libreqos-preflight libreqos libreqos-dataplane; do
+  apt-cache madison "$p" | awk -F'|' '{gsub(/ /,"",$2); print $2}' \
+    | grep -qxF "$V" || { echo "FAIL: $p=$V is not in the repository"; exit 1; }
+done
+echo "target: $V (all three packages present)"
+```
+
+**2. Back up** the config, the last-known-good (LKG) file and the three
+current packages. The block checks every copy before it reports success:
 
 ```bash
 OLD=$(dpkg-query -W -f='${Version}' libreqos 2>/dev/null || true)
-test -n "$OLD" || { echo "libreqos is not installed; this is not an upgrade"; exit 1; }
+test -n "$OLD" || { echo "FAIL: libreqos is not installed; this is not an upgrade"; exit 1; }
+LKG=/var/lib/libreqos-bridge/bridge_lkg.json
+test -f "$LKG" || { echo "FAIL: no $LKG on this host; do not upgrade without it"; exit 1; }
 BK=/var/backups/libreqos-upgrade-$(date +%Y%m%dT%H%M%S)
-sudo install -d -m 0700 "$BK"
-sudo cp -a /etc/libreqos "$BK/etc-libreqos"
-test -f /var/lib/libreqos-bridge/bridge_lkg.json \
-  && sudo cp -a /var/lib/libreqos-bridge/bridge_lkg.json "$BK/bridge_lkg.json"
-# REQUIRED: capture the three old debs now. apt beta normally serves only the
-# current candidate, so this can fail; if it does, STOP and obtain the three
-# $OLD debs from your own snapshot. Do not upgrade without a tested rollback.
-( cd "$BK" && sudo apt-get download \
-    libreqos="$OLD" libreqos-preflight="$OLD" \
-    libreqos-dataplane="$OLD" ) || {
-  echo "FAIL: could not download the $OLD debs; obtain them from your snapshot before upgrading" >&2
-  exit 1
-}
+install -d -m 0700 "$BK"
+cp -a /etc/libreqos "$BK/etc-libreqos" && cp -a "$LKG" "$BK/bridge_lkg.json" \
+  && diff -r /etc/libreqos "$BK/etc-libreqos" >/dev/null && cmp -s "$LKG" "$BK/bridge_lkg.json" \
+  || { echo "FAIL: config/LKG backup in $BK is incomplete"; exit 1; }
+# The beta repository usually keeps only the newest version, so the download
+# can fail. Then set DEBSRC to a directory holding your own copies of the three
+# $OLD debs (DEBSRC=/path/to/debs) and start again from step 1.
+if [ -n "${DEBSRC:-}" ]; then cp -a "$DEBSRC"/*.deb "$BK/"
+else ( cd "$BK" && apt-get download libreqos-preflight="$OLD" libreqos="$OLD" \
+         libreqos-dataplane="$OLD" ) \
+  || { echo "FAIL: cannot download the $OLD debs; set DEBSRC (see above)"; exit 1; }
+fi
 for p in libreqos-preflight libreqos libreqos-dataplane; do
-  ls "$BK"/${p}_*.deb >/dev/null 2>&1 || {
-    echo "FAIL: backup is missing $p=$OLD; do not upgrade" >&2
-    exit 1
-  }
+  n=0
+  for f in "$BK"/*.deb; do
+    [ -f "$f" ] || continue
+    [ "$(dpkg-deb -f "$f" Package)" = "$p" ] && [ "$(dpkg-deb -f "$f" Version)" = "$OLD" ] && n=$((n+1))
+  done
+  [ "$n" -eq 1 ] || { echo "FAIL: $BK needs exactly one $p=$OLD deb (found $n)"; exit 1; }
 done
-echo "$OLD" | sudo tee "$BK/old-version" >/dev/null
-echo "backup: $BK  old version: $OLD (three debs captured)"
+echo "$OLD" > "$BK/old-version"
+echo "backup OK: $BK (old version $OLD)"
 ```
 
-Install the three packages at one version:
+Do not upgrade until this prints `backup OK`.
+
+**3. Upgrade** to exactly `$V`. The packages restart the services themselves:
 
 ```bash
-sudo apt-get update
-V=$(apt-cache policy libreqos | awk '/Candidate:/ {print $2}')
-case "$V" in ""|"(none)") echo "no libreqos candidate"; exit 1;; esac
-echo "upgrading $OLD -> $V"
-sudo apt-get install -y -o Dpkg::Options::=--force-confold \
-  libreqos-preflight="$V" libreqos="$V" \
-  libreqos-dataplane="$V"
+apt-get update
+NEEDRESTART_MODE=l apt-get install -y -o Dpkg::Options::=--force-confold \
+  libreqos-preflight="$V" libreqos="$V" libreqos-dataplane="$V"
 ```
 
-Restart in order, waiting on each unit (no fixed sleeps):
+`--force-confold` keeps your edited config files. `NEEDRESTART_MODE=l` stops
+`needrestart` from also restarting unrelated system services such as
+`systemd-resolved`.
+
+**4. Verify** with the {ref}`same checks <v3-verify>`. On the first boot after
+an upgrade the bridge may log `section_validation=rejected:placement_budget`
+followed by `Placement ownership ACTIVE`. That is the bridge re-placing circuits
+across workers, not a failure.
+
+**Rollback.** List the backups and pick one. The block works in a fresh shell,
+and it re-checks the backup before it touches anything:
 
 ```bash
-wait_active() { # wait_active UNIT TIMEOUT_SEC
-  local i=0
-  while [ "$i" -lt "$2" ]; do
-    systemctl is-active --quiet "$1" && return 0
-    sleep 2; i=$((i+2))
-  done
-  echo "TIMEOUT waiting for $1"; return 1
-}
-sudo systemctl daemon-reload
-sudo systemctl restart libreqos-lqosd && wait_active libreqos-lqosd 60
-sudo systemctl restart libreqos-scheduler && wait_active libreqos-scheduler 60
-sudo systemctl restart libreqos-bridge
-# The bridge's own boot gate waits up to 120 s for a real transaction/boot
-# source; do not replace this with a sleep.
-wait_active libreqos-bridge 120
-```
-
-Verify with the same block as the fresh path. On the first boot after an
-upgrade, the expected placement lines are:
-
-```text
-BOOT-PLACEMENT ... path=tx ... section_validation=rejected:placement_budget
-Placement ownership ACTIVE ...
-```
-
-That is the A0 re-place, not a failure. A `FATAL` line is a failure.
-
-**Rollback** (restore the backup, then the old three-package set, then restart
-in the same order):
-
-```bash
-# Self-contained rollback: discover the newest backup and its old version if
-# this is a fresh shell (the upgrade block's BK/OLD are not required).
-BK=${BK:-$(ls -dt /var/backups/libreqos-upgrade-* 2>/dev/null | head -1)}
-[ -n "$BK" ] && [ -d "$BK" ] || { echo "backup dir not found"; exit 1; }
-OLD=${OLD:-$(cat "$BK/old-version" 2>/dev/null || true)}
-wait_active() { # self-contained: paste with this block
-  local i=0
-  while [ "$i" -lt "$2" ]; do
-    systemctl is-active --quiet "$1" && return 0
-    sleep 2; i=$((i+2))
-  done
-  echo "TIMEOUT waiting for $1"; return 1
-}
-sudo cp -a "$BK/etc-libreqos/." /etc/libreqos/
-test -f "$BK/bridge_lkg.json" \
-  && sudo cp -a "$BK/bridge_lkg.json" /var/lib/libreqos-bridge/bridge_lkg.json
+ls -dt /var/backups/libreqos-upgrade-*     # newest first
+BK=/var/backups/libreqos-upgrade-YYYYMMDDTHHMMSS   # replace with the one you picked
+OLD=$(cat "$BK/old-version" 2>/dev/null) || { echo "FAIL: $BK is not a verified backup"; exit 1; }
+test -d "$BK/etc-libreqos" && test -f "$BK/bridge_lkg.json" \
+  || { echo "FAIL: $BK has no config/LKG copy"; exit 1; }
+DEBS=()
 for p in libreqos-preflight libreqos libreqos-dataplane; do
-  ls "$BK"/${p}_*.deb >/dev/null 2>&1 || {
-    echo "FAIL: backup is missing $p; cannot roll back without the old debs" >&2
-    exit 1
-  }
+  m=()
+  for f in "$BK"/*.deb; do
+    [ -f "$f" ] || continue
+    [ "$(dpkg-deb -f "$f" Package)" = "$p" ] && [ "$(dpkg-deb -f "$f" Version)" = "$OLD" ] && m+=("$f")
+  done
+  [ "${#m[@]}" -eq 1 ] || { echo "FAIL: $BK needs exactly one $p=$OLD deb (found ${#m[@]})"; exit 1; }
+  DEBS+=("${m[0]}")
 done
-sudo dpkg -i "$BK"/libreqos-preflight_*.deb "$BK"/libreqos_*.deb \
-  "$BK"/libreqos-dataplane_*.deb
-sudo systemctl daemon-reload
-sudo systemctl restart libreqos-lqosd && wait_active libreqos-lqosd 60
-sudo systemctl restart libreqos-scheduler && wait_active libreqos-scheduler 60
-sudo systemctl restart libreqos-bridge && wait_active libreqos-bridge 120
+read -r -p "Roll back to $OLD from $BK? [y/N] " a; [ "$a" = y ] || exit 1
+cp -a "$BK/etc-libreqos/." /etc/libreqos/
+cp -a "$BK/bridge_lkg.json" /var/lib/libreqos-bridge/bridge_lkg.json
+dpkg -i "${DEBS[@]}"
+systemctl daemon-reload
+systemctl restart libreqos-lqosd libreqos-scheduler libreqos-bridge
 ```
-
-## v2.0 to v3 (staged)
-
-Do not upgrade in place. Keep the v2 host recoverable and keep the **legacy v2
-apt source and key available** until the rollback window closes; do not delete
-them. `libreqos-v3-rollback --from-archive` resolves the v2 packages from the
-legacy `repo.libreqos.com` archive and needs that source/key. If both sources
-define `libreqos`, give the v3 source priority (a pin) rather than disabling
-the v2 archive.
-
-Run the v3 preflight, then follow the staged steps in
-[Upgrading from v2.0](upgrade-from-v2.md): install the three packages at one
-version, adopt the v2 config, bind the dataplane NICs, and verify. The v2
-source stays available for rollback.
-
-## Known beta16 limitation
-
-On an **already-bound** NIC, `lqos_setup ports-plan --queues N` may report
-`NIC queue count undetectable ... pass --queues N` even when `--queues` is
-passed. This is the ordering bug tracked in **lqos-74t.89**; this page will be
-updated when it lands.
-
-The upgrade itself does **not** change the worker count: the existing
-`lqos.conf` and generated plan are preserved. Do not change `[queues] workers`
-on an already-bound beta16 host through the plan writer; do not hand-edit
-`50-ports.conf`. If you need a worker change now, escalate rather than
-following an untested pre-bind sequence.

@@ -1,108 +1,66 @@
 # What's new in LibreQoS v3
 
-**Version: LibreQoS v3 (current).** This page summarises the operator-visible
-differences between LibreQoS v2.0 and v3. It is the honest change list: sections
-that are still evolving say so.
+**Version: LibreQoS v3 beta.** The operator-visible changes from v2.0.
 
-## The datapath changed completely
+## The datapath
 
-- **The kernel datapath is removed.** The v2.0 `tc`/CAKE/HTB + eBPF/XDP stack no
-  longer attaches, cannot be configured, and is token-gated against reappearance.
-  Do **not** follow the v2.0 pages that describe `tc`/eBPF shaping.
-- **The bridge is the dataplane.** A userspace DPDK bridge (`bridge_rs`) applies
-  the shaped transaction; the dataplane ports are bound to DPDK, not enslaved to
-  a Linux bridge.
-- **Boot is lqosd-first.** `lqosd` starts first and migrates on-disk state to the
-  v3 schema; `libreqos-bridge` starts after it and **fails closed** on a v2
-  transaction. The bridge keeps shaping if `lqosd` is stopped (control-plane
-  independence).
-- **The LKG boot** means a bridge restart or a machine reboot comes up shaping
-  from the last-known-good transaction instead of waiting for a fresh control
-  plan.
+- **The kernel datapath is removed.** The v2.0 `tc`/CAKE/HTB and eBPF/XDP stack
+  is gone. A userspace DPDK bridge (`bridge_rs`) does the shaping, and the
+  dataplane NICs are bound to DPDK instead of a Linux bridge.
+- **`lqosd` starts first.** It upgrades the on-disk state to the v3 format, then
+  the bridge starts. The bridge refuses to start on leftover v2 state rather
+  than shaping wrongly.
+- **Shaping survives a control-plane outage.** If `lqosd` stops, the bridge
+  keeps shaping with the last applied configuration.
+- **Restarts come up shaping.** After a bridge restart or a reboot, the bridge
+  shapes immediately from its last-known-good (LKG) configuration instead of
+  waiting for `lqosd`.
 
 ## The control plane
 
-- **`lqosd`** provides the control plane, the local WebUI/dashboard, the node
-  API at `/api/v3`, and the bridge broker. The retired Flask `lqos_api` service
-  is replaced by that in-daemon API: no separate binary, package, unit or
-  install-time fetch exists for it.
-- **The Python refresh engine is retired.** The v3 transaction compiler produces
-  the shaping world; there is no Python scheduling loop.
-- **UISP** runs through `libreqos-scheduler` (the standalone UISP unit/timer is
-  retired into it).
+- **`lqosd`** serves the WebUI, the node API at `/api/v3`, and the link to the
+  bridge. The separate Flask `lqos_api` service is retired.
+- **The Python refresh engine is retired.** A built-in compiler builds the
+  shaping configuration.
+- **UISP** runs inside `libreqos-scheduler`; the separate UISP unit and timer
+  are retired.
 
 ## Shaping and telemetry
 
-- **CAKE is the default** SQM (v2.0 defaulted to `fq_codel`).
-- **Dynamic (auto) CAKE allocation is ON by default** (the GA flip;
-  `LIBREQOS_DPDK_DYNAMIC_CAKE`, set `=0` to disable): idle circuits hold a FIFO
-  leaf and switch to CAKE when they carry traffic (the v2 pattern). The
-  **aggregate sub-gate** (`LIBREQOS_DPDK_DYNAMIC_CAKE_AGGREGATE_GATE`) is the
-  default-off one, and it is inert without shard-tin. The load-bearing number is
-  the **concurrent-CAKE ceiling**, not the subscriber count, so this is **not** a
-  delivered-scale claim — the GA scale work (`.43`) gates how it is described.
-- **Per-direction RTT / retransmit / packet counters are back** end-to-end
-  (flows, hosts, the heatmap percentiles, the live views), including the pooled
-  QoO rollup returning to kernel semantics.
-- **Unknown-IP tracking is implemented.** The page and `#unknownIpCount` render
-  the bridge **best-effort (unmapped) host** class. Three honest notes: the page
-  keeps a 300 s last-seen window; `clear` on a bridge host is a disclosed no-op
-  (the source is a live interval snapshot, not an accumulating kernel map); and
-  the unmapped class carries no flow deltas, so its rate reads **0 by design**
-  (the page shows the host and a real Last Seen).
-- **Heatmap accounting** changed from median to exact per-minute accounting; the
-  site/global denominators are the summed member capacity.
+- **Your SQM setting still applies.** `[queues] default_sqm` (default
+  `cake diffserv4`, as in v2.0) and per-circuit `sqm_override` pick each leaf
+  queue. CAKE runs as the bridge's own CakeCore. `fq_codel` has no v3
+  implementation, and such circuits get a FIFO leaf. See
+  [Known limitations](known-limitations.md).
+- **Dynamic CAKE allocation is available but off by default.** With
+  `LIBREQOS_DPDK_DYNAMIC_CAKE=1` on an all-CAKE tree, idle circuits run a
+  simple FIFO queue and switch to CAKE when they carry traffic. Capacity then
+  depends on how many circuits run CAKE at once, not on the total subscriber
+  count.
+- **Per-direction RTT, retransmit and packet counters are back** in flows, hosts,
+  the heatmap and the live views.
+- **Unknown-IP tracking** shows traffic from hosts that match no circuit. See
+  [Known limitations](known-limitations.md) for how it differs from v2.
+- **The heatmap** uses exact per-minute values instead of medians. Site and
+  global percentages are relative to the summed capacity of their members.
 
-## Configuration surface
+## Configuration
 
-The v3 config surface is smaller and stricter than v2.0's:
-
-- **`/etc/libreqos/lqos.conf`** — the product network/shaping world. The v2.0
-  compat pair (`network.json` + `ShapedDevices.csv`) is still read for migration.
-- **`/etc/libreqos/bridge.env`** — the bridge's environment (typed config path,
-  EAL args, the analytics socket, the LKG path). Operators edit this file, never
-  the unit.
-- **`/etc/libreqos/bridge.conf`** — the typed JSON runtime config
-  (`schema_version`). Strict: an unknown field is rejected, so a stale v2.0 key
-  **blocks the bridge from starting**. Setup migrates the known legacy key
-  (`circuit_capacity` is removed automatically); see
-  [Upgrading from v2.0](upgrade-from-v2.md).
-- **Removed / retired keys**: `fast_queues_fq_codel`, `queue_check_period_ms`,
-  `circuit_fallback_persist`, the dead `[treeguard]` template block, the dead
-  `runtime_virtualized` UI, and the static node-virtualization surface
-  (`[topology] queue_auto_virtualize_threshold_mbps`, the per-node
-  `queue_visibility_policy`, and the Network Map "Virtual" toggle).
-  `[tuning]` netdev/ethtool keys are relabelled
-  "Management NIC / Kernel Netdev only" — they do **not** tune DPDK ports.
-- **Virtual nodes are gone.** v2 virtual-node groupings model as **real sites**
-  in the source (`network.json`); a `virtual` flag is ignored. The bridge handles
-  tree depth natively and site sharding distributes subtrees across workers, so a
-  node is never hidden or have its children promoted at runtime — every canonical
-  node shapes as a real queue. (The `SetNodeVirtual` override and the TreeGuard
-  runtime-virtualization layer were already retired with TreeGuard.)
-- **`do_not_track_subnets`** is restored: a per-subnet opt-out that suppresses
-  flows **and** RTT for matching IPs (and is honoured by hosted Insight).
-- **UISP reporting interval**: the v2.0 `uisp_reporting_interval_seconds`
-  migrates into `integration_common.queue_refresh_interval_mins`
-  (when the live value is still the default).
-
-## Honest caveats (do not misquote)
-
-- Throughput walls scale with the **active leaf count** — never cite a blanket
-  "40G" figure without the leaf count and hardware qualifiers.
-- The bufferbloat result is a **circuit-level** claim (plus the in-situ
-  evaluation); system-level numbers depend on the deployment.
-- The NetFlow v9 exporter emits `TCP_FLAGS` / `DST_TOS` as honest zeros (the
-  bridge has no wire source), and small-flow attribution is bounded by the
-  tracked-table property quantified in the release notes.
-- **Sharded (W>1) per-leaf counters:** for a circuit sharded across workers
-  (a >4 Gbps circuit on a multi-worker shard-tin deployment), the top-level
-  `bridge_leaf_stats_*.json` counters are **one worker's share**, not the circuit
-  aggregate — read the circuit's egress as **Σ `worker_stats[].tx_bytes`** (the NIC
-  `ipackets` is the total cross-check; plus iperf3 and the shard-tin snapshot).
-  Non-sharded circuits are unaffected.
+- **`/etc/libreqos/lqos.conf`** is the main config. v2's `network.json` and
+  `ShapedDevices.csv` are still read.
+- **`/etc/libreqos/bridge.env`** and **`/etc/libreqos/bridge.conf`** hold bridge
+  settings; see [Operating v3](operate.md).
+- **Retired keys** are ignored: `fast_queues_fq_codel`, `queue_check_period_ms`,
+  `circuit_fallback_persist`, the `[treeguard]` block, and the node-virtualization
+  settings (`queue_auto_virtualize_threshold_mbps`, `queue_visibility_policy`,
+  and the Network Map "Virtual" toggle). The `[tuning]` keys apply only to the
+  management NIC, not the DPDK ports.
+- **Virtual nodes are gone.** A node marked `virtual` in `network.json` is
+  shaped as a real site. The bridge handles deep trees natively.
+- **`do_not_track_subnets`** is back: matching IPs are left out of flow and RTT
+  tracking, including in Insight.
+- **The UISP reporting interval** carries over from v2 automatically.
 
 ## Insight and APIs
 
-Insight and the local API are v3-native. 64-bit ids require the string-carrying
-WebUI; links composed before that fix dead-end for ids above 2^53.
+Insight and the local API are v3-native.

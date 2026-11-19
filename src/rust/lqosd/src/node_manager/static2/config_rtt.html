@@ -5,43 +5,41 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">RTT Color Thresholds</h5>
-                    <div class="lqos-config-panel-subtitle">Control how latency is colored across the WebUI without changing QoO or QoQ scoring behavior.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.rtt.title">RTT Color Thresholds</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.rtt.subtitle">Control how latency is colored across the WebUI without changing QoO or QoQ scoring behavior.</div>
                 </div>
             </div>
 
-            <div class="lqos-config-note mb-3" role="note">
-                These values control how RTT (latency) is colored in heatmaps, map markers, and RTT blocks. They do <strong>not</strong> change QoO/QoQ scoring.
-            </div>
+            <div class="lqos-config-note mb-3" role="note" id="rttThresholdsNote"></div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-8">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Threshold Values</h6>
-                        <div class="lqos-config-section-subtitle">Set the transition points for green, yellow, and red RTT ranges.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.rtt.thresholds.title">Threshold Values</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.rtt.thresholds.subtitle">Set the transition points for green, yellow, and red RTT ranges.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="useDefaultRttThresholds">
-                            <label class="form-check-label" for="useDefaultRttThresholds">
+                            <label class="form-check-label" for="useDefaultRttThresholds" data-i18n="config.rtt.use_defaults">
                                 Use default thresholds (0ms green, 100ms yellow, 200ms red)
                             </label>
                         </div>
 
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label for="rttGreenMs" class="form-label">Green point (ms)</label>
+                                <label for="rttGreenMs" class="form-label" data-i18n="config.rtt.green">Green point (ms)</label>
                                 <input type="number" class="form-control" id="rttGreenMs" min="0" step="1">
-                                <div class="form-text">RTT at or below this value will be colored green.</div>
+                                <div class="form-text" data-i18n="config.rtt.green_help">RTT at or below this value will be colored green.</div>
                             </div>
                             <div class="col-md-4">
-                                <label for="rttYellowMs" class="form-label">Yellow point (ms)</label>
+                                <label for="rttYellowMs" class="form-label" data-i18n="config.rtt.yellow">Yellow point (ms)</label>
                                 <input type="number" class="form-control" id="rttYellowMs" min="0" step="1">
-                                <div class="form-text">RTT near this value will be colored yellow.</div>
+                                <div class="form-text" data-i18n="config.rtt.yellow_help">RTT near this value will be colored yellow.</div>
                             </div>
                             <div class="col-md-4">
-                                <label for="rttRedMs" class="form-label">Red point (ms)</label>
+                                <label for="rttRedMs" class="form-label" data-i18n="config.rtt.red">Red point (ms)</label>
                                 <input type="number" class="form-control" id="rttRedMs" min="1" step="1">
-                                <div class="form-text">RTT at or above this value will be colored red.</div>
+                                <div class="form-text" data-i18n="config.rtt.red_help">RTT at or above this value will be colored red.</div>
                             </div>
                         </div>
                     </div>
@@ -49,8 +47,8 @@
 
                 <div class="col-12 col-xl-4">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Preview</h6>
-                        <div class="lqos-config-section-subtitle">Review the current threshold mapping before saving.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.rtt.preview.title">Preview</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.rtt.preview.subtitle">Review the current threshold mapping before saving.</div>
 
                         <div id="rttPreview" class="lqos-config-preview"></div>
                         <div id="rttValidationMessage" class="small mt-2"></div>
@@ -60,7 +58,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.rtt.save">Save Changes</button>
         </div>
     </form>
 </div>

@@ -460,7 +460,7 @@ async fn receive_channel_message(
                 return true;
             }
             if *request_state.login == LoginResult::Denied {
-                warn!("Websocket handshake cookie rejected");
+                tracing::debug!("Websocket handshake cookie rejected");
                 return true;
             }
             *handshake_complete = true;

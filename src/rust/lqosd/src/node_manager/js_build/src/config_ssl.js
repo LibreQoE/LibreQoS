@@ -4,6 +4,8 @@ import {
     directHttpUrlFromLocation,
     sslDisableRedirectTarget,
 } from "./config/ssl_redirect.mjs";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 function escapeHtml(value) {
     return String(value)
@@ -47,7 +49,7 @@ async function fetchJson(url, options = {}) {
 
     if (!response.ok) {
         const detail = (await response.text().catch(() => "")).trim();
-        throw new Error(detail || `Request failed with HTTP ${response.status}.`);
+        throw new Error(detail || t("config.ssl.request_failed", {status: response.status}));
     }
 
     return response.json();
@@ -67,29 +69,33 @@ function renderStatus(status) {
     document.getElementById("sslTargetUrl").innerHTML = status?.target_url
         ? `<a href="${escapeHtml(status.target_url)}">${escapeHtml(status.target_url)}</a>`
         : "-";
-    document.getElementById("sslCaddyInstalled").textContent = status?.caddy_installed ? "Yes" : "No";
-    document.getElementById("sslCaddyfilePresent").textContent = status?.caddyfile_present ? "Present" : "Not present";
+    document.getElementById("sslCaddyInstalled").textContent = status?.caddy_installed
+        ? t("config.ssl.value.yes")
+        : t("config.ssl.value.no");
+    document.getElementById("sslCaddyfilePresent").textContent = status?.caddyfile_present
+        ? t("config.ssl.value.present")
+        : t("config.ssl.value.not_present");
     document.getElementById("sslModeLabel").textContent = status?.using_internal_ca
-        ? "Local certificate authority"
-        : "Let's Encrypt / public certificate";
+        ? t("config.ssl.mode.local_ca")
+        : t("config.ssl.mode.public");
     document.getElementById("sslCaPath").innerHTML = status?.internal_ca_root_certificate
         ? `<code>${escapeHtml(status.internal_ca_root_certificate)}</code>`
-        : "Not needed";
+        : t("config.ssl.value.not_needed");
 
     if (status?.enabled) {
-        setStatus(
-            "success",
-            `HTTPS is enabled. LibreQoS is using <strong>${status.using_internal_ca ? "a local certificate authority" : "a public certificate flow"}</strong>.`,
-        );
+        const method = status.using_internal_ca
+            ? t("config.ssl.using.local_ca")
+            : t("config.ssl.using.public");
+        setStatus("success", tHtml("config.ssl.status.enabled", {method}));
     } else if (status?.managed_by_libreqos) {
         setStatus(
             "secondary",
-            "HTTPS is currently disabled. LibreQoS still owns the optional Caddy setup and can turn it back on from this page.",
+            t("config.ssl.status.disabled_managed"),
         );
     } else {
         setStatus(
             "secondary",
-            "HTTPS is currently disabled. Use Setup SSL to install Caddy and move the WebUI behind HTTPS.",
+            t("config.ssl.status.disabled_unmanaged"),
         );
     }
     document.getElementById("disableSslButton").disabled = !status?.managed_by_libreqos;
@@ -104,14 +110,14 @@ async function refreshStatus() {
 function actionMessage(outcome) {
     let html = escapeHtml(outcome.message);
     if (outcome.internal_ca_root_certificate) {
-        html += ` <br><span class="small">Trust <code>${escapeHtml(outcome.internal_ca_root_certificate)}</code> on operator workstations if the browser warns.</span>`;
+        html += ` <br><span class="small">${tHtml("config.ssl.action.trust", {path: outcome.internal_ca_root_certificate})}</span>`;
     }
-    html += ` <br><span class="small">Open <a href="${escapeHtml(outcome.target_url)}">${escapeHtml(outcome.target_url)}</a> after the service switch.</span>`;
+    html += ` <br><span class="small">${tHtml("config.ssl.action.open", {url: outcome.target_url})}</span>`;
     return html;
 }
 
 function redirectNotice(targetUrl) {
-    return `SSL shutdown was requested. Redirecting to <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>...`;
+    return tHtml("config.ssl.redirect_notice", {url: targetUrl});
 }
 
 function scheduleRedirect(targetUrl) {
@@ -121,7 +127,7 @@ function scheduleRedirect(targetUrl) {
 }
 
 async function setupSsl() {
-    setResult("info", "Preparing HTTPS setup...");
+    setResult("info", t("config.ssl.preparing_setup"));
     const outcome = await fetchJson("/local-api/ssl/setup", {
         method: "POST",
         body: JSON.stringify({
@@ -132,7 +138,7 @@ async function setupSsl() {
 }
 
 async function disableSsl() {
-    setResult("info", "Preparing HTTPS shutdown...");
+    setResult("info", t("config.ssl.preparing_shutdown"));
     const fallbackTarget = directHttpUrlFromLocation(window.location);
     try {
         const outcome = await fetchJson("/local-api/ssl/disable", {
@@ -143,6 +149,7 @@ async function disableSsl() {
         setResult("success", `${actionMessage(outcome)} <br><span class="small">${redirectNotice(targetUrl)}</span>`);
         scheduleRedirect(targetUrl);
     } catch (error) {
+        // translatable: false — "https:" is the protocol token compared here, never rendered
         if (window.location.protocol === "https:") {
             setResult(
                 "warning",
@@ -156,6 +163,13 @@ async function disableSsl() {
 }
 
 renderConfigMenu("ssl");
+// These paragraphs carry a literal example or scheme inside `<code>`, which the
+// DOM applier cannot keep: they are empty in the page and rendered here.
+renderMarkupText({
+    sslHowHostname: tHtml("config.ssl.how.hostname"),
+    sslHowIp: tHtml("config.ssl.how.ip"),
+    sslHostnameRule: tHtml("config.ssl.hostname.rule"),
+});
 
 loadConfig(async () => {
     const hostnameInput = document.getElementById("externalHostname");

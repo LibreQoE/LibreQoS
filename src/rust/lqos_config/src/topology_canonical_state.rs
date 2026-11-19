@@ -1,5 +1,5 @@
 use crate::{
-    Config, TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME,
+    Config, DeviceRef, TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME,
     TOPOLOGY_COMPILED_SHAPING_FILENAME,
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
     TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
@@ -1313,6 +1313,35 @@ fn rebuild_canonical_from_compat(
     }))
 }
 
+fn collect_device_refs(map: &Map<String, Value>, refs: &mut Vec<DeviceRef>) {
+    for value in map.values() {
+        let Some(node) = value.as_object() else {
+            continue;
+        };
+        if let Some(reference) = node.get("device_ref") {
+            if let Ok(mut reference) = serde_json::from_value::<DeviceRef>(reference.clone()) {
+                let node_id = node
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+                    .map(ToOwned::to_owned)
+                    .or_else(|| {
+                        let id = reference.node_id.trim();
+                        (!id.is_empty()).then(|| id.to_owned())
+                    });
+                if let Some(node_id) = node_id {
+                    reference.node_id = node_id;
+                    refs.push(reference);
+                }
+            }
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_object) {
+            collect_device_refs(children, refs);
+        }
+    }
+}
+
 impl TopologyCanonicalStateFile {
     /// Loads the canonical topology state if it exists.
     ///
@@ -1374,6 +1403,17 @@ impl TopologyCanonicalStateFile {
     /// This function is pure: it has no side effects.
     pub fn find_node(&self, node_id: &str) -> Option<&TopologyCanonicalNode> {
         self.nodes.iter().find(|node| node.node_id == node_id)
+    }
+
+    /// Enumerates typed `device_ref` metadata carried in the compatibility
+    /// network tree. This is read-only: the canonical state is not mutated and
+    /// malformed/absent refs are skipped.
+    pub fn device_refs(&self) -> Vec<DeviceRef> {
+        let mut refs = Vec::new();
+        if let Some(root) = self.compatibility_network_json.as_object() {
+            collect_device_refs(root, &mut refs);
+        }
+        refs
     }
 
     /// Returns a stable fingerprint of the topology ingress this canonical state represents.
@@ -3645,5 +3685,116 @@ mod t166_node_minimums_tests {
             .expect("a pre-min entry deserializes");
         assert_eq!(entry.download_mbps_min, 1, "the driver-specified floor");
         assert_eq!(entry.upload_mbps_min, 1);
+    }
+}
+
+#[cfg(test)]
+mod device_ref_tests {
+    use super::TopologyCanonicalStateFile;
+    use crate::DeviceRef;
+    use serde_json::{Value, json};
+    use std::net::IpAddr;
+
+    fn payload(device_ref: Option<Value>) -> Value {
+        let mut ap = json!({
+            "id": "ap-1",
+            "type": "AP",
+            "downloadBandwidthMbps": 100,
+            "uploadBandwidthMbps": 100
+        });
+        if let Some(reference) = device_ref {
+            ap["device_ref"] = reference;
+        }
+        json!({
+            "Site": {
+                "id": "site-1",
+                "type": "Site",
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {"AP": ap}
+            }
+        })
+    }
+
+    fn refs_for(device_ref: Option<Value>) -> Vec<DeviceRef> {
+        TopologyCanonicalStateFile::from_legacy_network_json(&payload(device_ref)).device_refs()
+    }
+
+    #[test]
+    fn payload_with_ip_and_model_is_typed() {
+        let refs = refs_for(Some(json!({
+            "node_id": "ap-1",
+            "mgmt_ip": "10.0.0.1",
+            "vendor_hint": "Cambium",
+            "model": "ePMP 3000",
+            "family_hint": "blackBox"
+        })));
+        assert_eq!(
+            refs,
+            vec![DeviceRef {
+                node_id: "ap-1".to_owned(),
+                mgmt_ip: Some(IpAddr::from([10, 0, 0, 1])),
+                vendor_hint: Some("Cambium".to_owned()),
+                model: Some("ePMP 3000".to_owned()),
+                family_hint: Some("blackBox".to_owned()),
+            }]
+        );
+    }
+
+    #[test]
+    fn null_ip_is_none() {
+        let refs = refs_for(Some(json!({
+            "node_id": "ap-1",
+            "mgmt_ip": null,
+            "model": "ePMP 3000"
+        })));
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].mgmt_ip, None);
+        assert_eq!(refs[0].model.as_deref(), Some("ePMP 3000"));
+    }
+
+    #[test]
+    fn malformed_ip_string_is_none() {
+        let refs = refs_for(Some(json!({
+            "node_id": "ap-1",
+            "mgmt_ip": "not-an-ip",
+            "model": "ePMP 3000"
+        })));
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].mgmt_ip, None);
+        assert_eq!(refs[0].model.as_deref(), Some("ePMP 3000"));
+    }
+
+    #[test]
+    fn absent_key_is_none() {
+        assert!(refs_for(None).is_empty());
+    }
+
+    #[test]
+    fn accessor_does_not_change_canonical_output() {
+        let with_ref = TopologyCanonicalStateFile::from_legacy_network_json(&payload(Some(json!({
+            "node_id": "ap-1",
+            "mgmt_ip": "10.0.0.1",
+            "model": "ePMP 3000"
+        }))));
+        let baseline = TopologyCanonicalStateFile::from_legacy_network_json(&payload(None));
+        assert_eq!(with_ref.nodes, baseline.nodes);
+
+        let before = with_ref.compatibility_network_json.clone();
+        assert_eq!(with_ref.device_refs().len(), 1);
+        assert_eq!(with_ref.compatibility_network_json, before);
+
+        let mut stripped = with_ref.compatibility_network_json.clone();
+        strip_device_ref(&mut stripped);
+        assert_eq!(stripped, baseline.compatibility_network_json);
+    }
+
+    fn strip_device_ref(value: &mut Value) {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("device_ref");
+            for child in object.values_mut() {
+                strip_device_ref(child);
+            }
+        }
     }
 }

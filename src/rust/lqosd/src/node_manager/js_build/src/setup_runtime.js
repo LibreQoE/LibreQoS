@@ -1,3 +1,4 @@
+import {t} from "./i18n/index.js";
 import {
     activeTopologySourceIntegrations,
     loadConfig,
@@ -10,12 +11,15 @@ function setText(id, text) {
     element.textContent = text;
 }
 
+// The banner's label and summary are the server's own text when it sends them
+// (`runtime_onboarding.rs`), the same way the licence page shows the authority's
+// label; only the fallbacks this page supplies are catalogued.
 function setStatusAlert(state) {
     const element = document.getElementById("runtimeSetupStatus");
     if (!element) return;
 
-    const label = state?.status_label || "Setup Required";
-    const summary = state?.summary || "Choose a topology source before expecting scheduler activity.";
+    const label = state?.status_label || t("setup_runtime.status.setup_required");
+    const summary = state?.summary || t("setup_runtime.summary.choose_source");
     const severity = state?.status_severity || (state?.required ? "warning" : "success");
     const alertClass = severity === "danger"
         ? "alert-danger"
@@ -38,10 +42,10 @@ function renderState(state) {
     setStatusAlert(state);
     setText(
         "runtimeActiveIntegrations",
-        activeIntegrations.length ? activeIntegrations.join(", ") : "None configured",
+        activeIntegrations.length ? activeIntegrations.join(", ") : t("setup_runtime.none_configured"),
     );
-    setText("runtimeNetworkJson", state?.network_json_present ? "Present" : "Missing");
-    setText("runtimeShapedDevices", state?.shaped_devices_present ? "Present" : "Missing");
+    setText("runtimeNetworkJson", state?.network_json_present ? t("setup_runtime.present") : t("setup_runtime.missing"));
+    setText("runtimeShapedDevices", state?.shaped_devices_present ? t("setup_runtime.present") : t("setup_runtime.missing"));
 }
 
 loadConfig((msg) => {
@@ -49,7 +53,7 @@ loadConfig((msg) => {
 }, () => {
     setStatusAlert({
         required: true,
-        status_label: "Setup Required",
-        summary: "Unable to load runtime setup status right now.",
+        status_label: t("setup_runtime.status.setup_required"),
+        summary: t("setup_runtime.load_failed"),
     });
 });

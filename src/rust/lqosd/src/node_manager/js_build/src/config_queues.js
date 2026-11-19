@@ -1,6 +1,8 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 import {normalizeDefaultSqm, isFlatCompileMode, SUPPORTED_DEFAULT_SQM} from "./config/queues_hygiene.mjs";
 import {applyBandwidthMbps} from "./config/dataplane_hygiene.mjs";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 // The flat-mode queue-sizing knobs are read only by `topology.compile_mode =
 // "flat"`; in the other supported modes the DPDK compiler derives sizing and
@@ -11,32 +13,32 @@ function validateConfig() {
     // Validate numeric fields
     const uplink = parseFloat(document.getElementById("uplinkBandwidth").value);
     if (isNaN(uplink) || uplink < 1) {
-        alert("Uplink Bandwidth must be a number greater than 0");
+        alert(t("config.queues.validation.uplink"));
         return false;
     }
 
     const downlink = parseFloat(document.getElementById("downlinkBandwidth").value);
     if (isNaN(downlink) || downlink < 1) {
-        alert("Downlink Bandwidth must be a number greater than 0");
+        alert(t("config.queues.validation.downlink"));
         return false;
     }
 
     if (flatMode) {
         const pnDownload = parseInt(document.getElementById("generatedPnDownload").value);
         if (isNaN(pnDownload) || pnDownload < 1) {
-            alert("Per-Node Download must be a number greater than 0");
+            alert(t("config.queues.validation.pn_download"));
             return false;
         }
 
         const pnUpload = parseInt(document.getElementById("generatedPnUpload").value);
         if (isNaN(pnUpload) || pnUpload < 1) {
-            alert("Per-Node Upload must be a number greater than 0");
+            alert(t("config.queues.validation.pn_upload"));
             return false;
         }
 
         const overrideQueues = document.getElementById("overrideQueues").value;
         if (overrideQueues && (isNaN(overrideQueues) || overrideQueues < 1)) {
-            alert("Override Queues must be a number greater than 0");
+            alert(t("config.queues.validation.override_queues"));
             return false;
         }
     }
@@ -91,6 +93,16 @@ function updateFlatModeVisibility() {
 
 // Render the configuration menu
 renderConfigMenu('queues');
+// The notes that wrap a compile mode or a file name in `<code>`/`<a>` render
+// through tHtml: `data-i18n` writes text, so a keyed element would lose the
+// markup, and splitting the sentence into fragments would lose the sentence.
+renderMarkupText({
+    legacySqmWarning: tHtml("config.queues.legacy_warning"),
+    queueModeHelp: tHtml("config.queues.queue_mode_help"),
+    flatModeSubtitle: tHtml("config.queues.flat.subtitle"),
+    flatModeHint: tHtml("config.queues.flat.hint"),
+    readonlyNote: tHtml("config.queues.readonly_note"),
+});
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -101,6 +113,7 @@ loadConfig(() => {
         const sqm = normalizeDefaultSqm(queues.default_sqm);
         document.getElementById("defaultSqm").value = sqm.value;
         if (sqm.legacy) {
+            // translatable: false — 'Default SQM " " is not supported by the DPDK pipeline; it will be saved as " ".' is a console diagnostic that names the stored SQM token, never rendered
             console.warn(`Default SQM "${sqm.original}" is not supported by the DPDK pipeline; it will be saved as "${sqm.value}".`);
         }
         document.getElementById("queueMode").value = queues.queue_mode ?? ((queues.monitor_only ?? false) ? "observe" : "shape");
@@ -122,11 +135,12 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.queues.saved"));
                 });
             }
         });
     } else {
+        // translatable: false — "Queue configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Queue configuration not found in window.config");
     }
 });

@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "id": "netonix-switch",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.46242"],
+    "sys_descr_contains": ["Netonix"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "vendor",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "version", "oid": "1.3.6.1.4.1.46242.1.0", "parser": "utf8" },
+          { "name": "total_draw", "oid": "1.3.6.1.4.1.46242.6.0", "parser": "u32" }
+        ]
+      }
+    },
+    {
+      "id": "temperatures",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "name", "oid": "1.3.6.1.4.1.46242.3.1.2", "parser": "utf8" },
+            { "name": "celsius", "oid": "1.3.6.1.4.1.46242.3.1.3", "parser": "i64" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    },
+    {
+      "id": "fdb",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.17.4.3.1.1", "parser": "octet_mac" },
+            { "name": "port", "oid": "1.3.6.1.2.1.17.4.3.1.2", "parser": "u32" },
+            { "name": "status", "oid": "1.3.6.1.2.1.17.4.3.1.3", "parser": "u32" }
+          ],
+          "index": { "kind": "dot1d_row_id" },
+          "bridge_port_resolution": "identity"
+        }
+      }
+    },
+    {
+      "id": "arp",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.35.1.4", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_typed" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "details": {
+      "system": "vendor",
+      "temperatures": "temperatures",
+      "arp": "arp"
+    },
+    "residuals": [
+      {
+        "name": "poe-mode",
+        "source": "docs/recon/netonix.md: per-port PoE mode has no DeviceDetails slot in v1"
+      },
+      {
+        "name": "psu-rails",
+        "source": "docs/recon/netonix.md: PSU rails are centivolt integers and need a unit transform"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 4096,
+    "max_rows": 4096,
+    "deadline_ms": 10000
+  }
+}

@@ -5,7 +5,6 @@ import {
 } from "./executive_utils";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {
-    heatRow,
     rttHeatRow,
     retransmitHeatRow,
     utilizationHeatRow,
@@ -15,65 +14,74 @@ import {
 } from "./dashlets/executive_heatmap_shared";
 import {colorByRttMs, colorByRetransmitPct} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
+import {formatTime} from "./i18n/format.js";
+import {t, tAttr} from "./i18n/index.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const PAGE_REFRESH_MS = 5000;
 
+// translatable: false — "Retransmit" "Download" "Upload" "Site" "Circuit" "Asn" — the heatmap API request tokens (metric and entity_kinds) the server matches, never rendered
 const metricConfigs = {
     rtt: {
-        title: "RTT (p50/p90) Heatmap",
+        title: () => t("executive.heatmap.title.rtt"),
         metric: "Rtt",
         colorFn: (v) => colorByRttMs(v),
         formatFn: (v) => formatLatest(v, "ms"),
         icon: "fa-stopwatch",
-        description: "Paged list of sites, circuits, and ASNs ranked server-side by latest RTT (p50/p90 quadrants).",
+        description: () => t("executive.heatmap.description.rtt"),
         legend: [
-            { label: "Good", sample: 10 },
-            { label: "Moderate", sample: 40 },
-            { label: "Elevated", sample: 90 },
-            { label: "Severe", sample: 180 },
+            { label: () => t("site_map.legend.scale.good"), sample: 10 },
+            { label: () => t("executive.legend.moderate"), sample: 40 },
+            { label: () => t("executive.legend.elevated"), sample: 90 },
+            { label: () => t("executive.legend.severe"), sample: 180 },
         ],
     },
     retransmit: {
-        title: "TCP Retransmits Heatmap",
+        title: () => t("dashlet.name.tcp_retransmits_heatmap"),
         metric: "Retransmit",
         colorFn: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))),
         formatFn: (v) => formatLatest(v, "%", 1),
         icon: "fa-undo-alt",
-        description: "Paged list ranked server-side by latest retransmit percentage.",
+        description: () => t("executive.heatmap.description.ranked", {
+            metric: t("executive.heatmap.metric.retransmit_pct"),
+        }),
         legend: [
-            { label: "Low", sample: 0.5 },
-            { label: "Watch", sample: 1.5 },
-            { label: "Elevated", sample: 3.5 },
-            { label: "Severe", sample: 7.5 },
+            { label: () => t("site_map.legend.scale.low"), sample: 0.5 },
+            { label: () => t("executive.legend.watch"), sample: 1.5 },
+            { label: () => t("executive.legend.elevated"), sample: 3.5 },
+            { label: () => t("executive.legend.severe"), sample: 7.5 },
         ],
     },
     download: {
-        title: "Download Utilization Heatmap",
+        title: () => t("executive.heatmap.title.download"),
         metric: "Download",
         colorFn: colorByCapacity,
         formatFn: (v) => formatLatest(v, "%"),
         icon: "fa-arrow-down",
-        description: "Paged list ranked server-side by latest download utilization.",
+        description: () => t("executive.heatmap.description.ranked", {
+            metric: t("executive.heatmap.metric.download_utilization"),
+        }),
         legend: [
-            { label: "Comfortable", sample: 30 },
-            { label: "Busy", sample: 70 },
-            { label: "Near capacity", sample: 90 },
-            { label: "Saturated", sample: 99 },
+            { label: () => t("executive.legend.comfortable"), sample: 30 },
+            { label: () => t("executive.legend.busy"), sample: 70 },
+            { label: () => t("executive.legend.near_capacity"), sample: 90 },
+            { label: () => t("executive.legend.saturated"), sample: 99 },
         ],
     },
     upload: {
-        title: "Upload Utilization Heatmap",
+        title: () => t("executive.heatmap.title.upload"),
         metric: "Upload",
         colorFn: colorByCapacity,
         formatFn: (v) => formatLatest(v, "%"),
         icon: "fa-arrow-up",
-        description: "Paged list ranked server-side by latest upload utilization.",
+        description: () => t("executive.heatmap.description.ranked", {
+            metric: t("executive.heatmap.metric.upload_utilization"),
+        }),
         legend: [
-            { label: "Comfortable", sample: 30 },
-            { label: "Busy", sample: 70 },
-            { label: "Near capacity", sample: 90 },
-            { label: "Saturated", sample: 99 },
+            { label: () => t("executive.legend.comfortable"), sample: 30 },
+            { label: () => t("executive.legend.busy"), sample: 70 },
+            { label: () => t("executive.legend.near_capacity"), sample: 90 },
+            { label: () => t("executive.legend.saturated"), sample: 99 },
         ],
     },
 };
@@ -82,14 +90,14 @@ function renderLegend(cfg) {
     const items = (cfg.legend || []).map((item) => `
         <span class="badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-2">
             <span class="rounded-circle border" style="display:inline-block;width:0.8rem;height:0.8rem;background:${cfg.colorFn(item.sample)}"></span>
-            <span>${item.label}</span>
+            <span>${item.label()}</span>
         </span>
     `).join("");
     return `
-        <div class="d-flex flex-wrap gap-2 align-items-center mb-3" role="note" aria-label="Heatmap legend">
-            <span class="small text-muted">Legend:</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3" role="note" aria-label="${tAttr("executive.page.legend_aria")}">
+            <span class="small text-muted">${t("executive.page.legend")}</span>
             ${items}
-            <span class="small text-muted">Detail pages now page server-ranked rows instead of streaming the full executive universe every second.</span>
+            <span class="small text-muted">${t("executive.page.legend_note")}</span>
         </div>
     `;
 }
@@ -153,6 +161,7 @@ function renderMetricRow(cfg, metricKey, row) {
 }
 
 function attachPaginationHandlers(target, state) {
+    // translatable: false — 'data-exec-page=" "' is the pagination attribute the two buttons carry, not a label
     target.querySelectorAll("[data-exec-page]").forEach((button) => {
         button.addEventListener("click", () => {
             const nextPage = Number(button.dataset.execPage);
@@ -199,17 +208,17 @@ function renderHeatmapTable(targetId, metricKey) {
             <div class="card shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title}</div>
+                        <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title()}</div>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="small text-muted">Updated ${new Date(generatedAt).toLocaleTimeString()}</span>
-                            <button class="btn btn-sm btn-outline-secondary" ${hasPrev ? `data-exec-page="${page - 1}"` : "disabled"}>Prev</button>
-                            <span class="small text-muted">Page ${page + 1} / ${totalPages}</span>
-                            <button class="btn btn-sm btn-outline-secondary" ${hasNext ? `data-exec-page="${page + 1}"` : "disabled"}>Next</button>
+                            <span class="small text-muted">${t("common.state.updated", {time: formatTime(generatedAt)})}</span>
+                            <button class="btn btn-sm btn-outline-secondary" ${hasPrev ? `data-exec-page="${page - 1}"` : "disabled"}>${t("common.page.prev")}</button>
+                            <span class="small text-muted">${t("common.page.position", {page: page + 1, pages: totalPages})}</span>
+                            <button class="btn btn-sm btn-outline-secondary" ${hasNext ? `data-exec-page="${page + 1}"` : "disabled"}>${t("common.page.next")}</button>
                         </div>
                     </div>
-                    <p class="text-muted small mb-3">${cfg.description}</p>
+                    <p class="text-muted small mb-3">${cfg.description()}</p>
                     ${renderLegend(cfg)}
-                    <div class="exec-heat-rows" role="list">${body || `<div class="text-muted small">No heatmap rows available.</div>`}</div>
+                    <div class="exec-heat-rows" role="list">${body || `<div class="text-muted small">${t("executive.page.no_rows")}</div>`}</div>
                 </div>
             </div>
         `;
@@ -229,7 +238,7 @@ function renderHeatmapTable(targetId, metricKey) {
     });
 
     state.pollHandle = pollExecutiveHeatmapPage(state.query, renderRows, PAGE_REFRESH_MS);
-    target.innerHTML = `<div class="text-muted small">Waiting for heatmap data…</div>`;
+    target.innerHTML = `<div class="text-muted small">${t("executive.page.waiting_heatmap")}</div>`;
 }
 
 export function renderHeatmapPage(metricKey) {

@@ -1,4 +1,5 @@
 // Provides helpers for a 3-entry (min/max/median) series.
+import {t} from "../../i18n/index.js";
 
 export class MinMaxSeries {
     // Build the series
@@ -22,7 +23,7 @@ export class MinMaxSeries {
             {
                 type: 'line',
                 data: [],
-                name: this.seriesName + " Min",
+                name: t("common.chart.series_min", {series: this.seriesName}),
                 smooth: true,
                 // Hide the area
                 areaStyle: { color: window.graphPalette[paletteIndex], opacity: 0.0 },
@@ -37,7 +38,7 @@ export class MinMaxSeries {
             {
                 type: 'line',
                 data: [],
-                name: this.seriesName + " Max",
+                name: t("common.chart.series_max", {series: this.seriesName}),
                 smooth: true,
                 areaStyle: { color: window.graphPalette[paletteIndex], opacity: 0.3 },
                 itemStyle: {

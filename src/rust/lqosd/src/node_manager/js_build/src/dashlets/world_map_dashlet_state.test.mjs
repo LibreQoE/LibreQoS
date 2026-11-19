@@ -1,10 +1,26 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {dirname, resolve} from "node:path";
 import {test} from "node:test";
+import {fileURLToPath} from "node:url";
 import {
     applyWorldMapFeatureUpdate,
-    WORLD_MAP_ENCODING_DESCRIPTION,
+    worldMapEncodingDescription,
     worldMapStatusText,
 } from "./world_map_dashlet_state.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CATALOG_DIR = resolve(HERE, "../../../static2/i18n");
+const EN = JSON.parse(readFileSync(resolve(CATALOG_DIR, "en.json"), "utf8"));
+const ES = JSON.parse(readFileSync(resolve(CATALOG_DIR, "es.json"), "utf8"));
+
+/** The minimum `index.js` and `locale.mjs` need to resolve a catalog. */
+function installBrowser(catalog, lang) {
+    globalThis.window = {LQOS_I18N_EN: EN};
+    if (lang !== "en") globalThis.window.LQOS_I18N = catalog;
+    globalThis.localStorage = {getItem: () => null, setItem: () => {}};
+    globalThis.document = {documentElement: {lang}, cookie: ""};
+}
 
 function makeDashlet() {
     const graphUpdates = [];
@@ -29,18 +45,23 @@ function makeDashlet() {
     };
 }
 
-test("worldMapStatusText reports feature count and encodings", () => {
-    assert.equal(
-        worldMapStatusText(3),
-        `Showing 3 recent endpoint locations. ${WORLD_MAP_ENCODING_DESCRIPTION}`,
-    );
-    assert.equal(
-        worldMapStatusText(1),
-        `Showing 1 recent endpoint location. ${WORLD_MAP_ENCODING_DESCRIPTION}`,
-    );
+test("worldMapStatusText reports the feature count in both locales", () => {
+    installBrowser(EN, "en");
+    const english = worldMapEncodingDescription();
+    assert.equal(worldMapStatusText(3), `Showing 3 recent endpoint locations. ${english}`);
+    assert.equal(worldMapStatusText(1), `Showing 1 recent endpoint location. ${english}`);
+
+    installBrowser(ES, "es");
+    const spanish = worldMapEncodingDescription();
+    assert.equal(worldMapStatusText(3), `Se muestran 3 ubicaciones recientes de extremos. ${spanish}`);
+    assert.equal(worldMapStatusText(1), `Se muestra 1 ubicación reciente de extremos. ${spanish}`);
+    // The encoding sentence is its own message; a status line that dropped it
+    // would still read as a count, and the screen reader would lose the meaning.
+    assert.match(spanish, /^Los puntos más grandes indican más tráfico/);
 });
 
 test("applyWorldMapFeatureUpdate renders features and announces the latest count", () => {
+    installBrowser(EN, "en");
     const dashlet = makeDashlet();
     const features = [
         { type: "Feature", properties: { id: 1 } },

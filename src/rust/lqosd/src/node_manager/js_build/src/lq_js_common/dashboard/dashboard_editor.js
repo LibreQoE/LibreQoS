@@ -1,4 +1,8 @@
 import {DashboardLayout} from "./layout";
+import {t, tAttr} from "../../i18n/index.js";
+
+// translatable: false — ".modal-body .container-fluid" ".accordion-body .list-group" "#dashboardGrid .dashboard-item" are DOM selectors, not labels
+// translatable: false — "Dashboard editor: SortableJS is not loaded. Drag/drop will be disabled." and "Unknown widget tag:" are developer console diagnostics, never rendered
 
 /**
  * Opens a full screen modal that lets the user edit dashboard items with tab support.
@@ -26,62 +30,29 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
         widgetNameLookup[element.tag] = element.name;
     });
     
-    // Build modal HTML with tab support
-    const styleId = "dashboardEditorStyle";
-    const existingStyle = document.getElementById(styleId);
-    if (existingStyle) {
-        existingStyle.remove();
-    }
-
+    // Build the modal. Every label comes from the catalog; the modal's
+    // scaffolding is styled from node_manager.css, so the bundle injects no
+    // stylesheet of its own.
     var modalHtml = `
-  <style id="${styleId}">
-    .border-dashed {
-        border: 2px dashed #dee2e6 !important;
-    }
-    .card.h-100 {
-        min-height: 100px;
-    }
-    .tab-manager {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 15px;
-    }
-    .tab-manager .nav-tabs {
-        flex: 1;
-        margin-bottom: 0;
-    }
-    .dashboard-grid-container {
-        min-height: 400px;
-    }
-    .nav-link:hover .fa-pencil-alt {
-        opacity: 1 !important;
-    }
-    .tab-name:focus + .fa-pencil-alt {
-        display: none;
-    }
-    /* Make drop overlay non-interactive so it doesn't block drags */
-    #dropZone { pointer-events: none; }
-  </style>
   <div class="modal fade" id="dashboardEditorModal" tabindex="-1" aria-labelledby="dashboardEditorModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="dashboardEditorModalLabel">Dashboard Editor</h5>
-          <button type="button" class="btn btn-primary btn-sm ms-3" id="downloadLayoutButton" title="Save layout to file">
-            <i class="fas fa-download me-1"></i>Download Layout
+          <h5 class="modal-title" id="dashboardEditorModalLabel">${t("dashboard.editor.title")}</h5>
+          <button type="button" class="btn btn-primary btn-sm ms-3" id="downloadLayoutButton" title="${tAttr("dashboard.editor.download_title")}">
+            <i class="fas fa-download me-1"></i>${t("dashboard.editor.download")}
           </button>
-          <button type="button" class="btn btn-success btn-sm ms-2" id="uploadLayoutButton" title="Load layout from file">
-            <i class="fas fa-upload me-1"></i>Upload Layout
+          <button type="button" class="btn btn-success btn-sm ms-2" id="uploadLayoutButton" title="${tAttr("dashboard.editor.upload_title")}">
+            <i class="fas fa-upload me-1"></i>${t("dashboard.editor.upload")}
           </button>
           <input type="file" id="layoutFileInput" accept=".json" style="display: none;">
           <button type="button" class="btn btn-danger btn-sm ms-3" id="clearAllButton">
-            <i class="fas fa-trash me-1"></i>Clear Current Tab
+            <i class="fas fa-trash me-1"></i>${t("dashboard.editor.clear_tab")}
           </button>
           <button type="button" class="btn btn-warning btn-sm ms-2" id="restoreDefaultsButton">
-            <i class="fas fa-undo me-1"></i>Restore Defaults
+            <i class="fas fa-undo me-1"></i>${t("dashboard.editor.restore_defaults")}
           </button>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="${tAttr("common.action.close")}"></button>
         </div>
         <div class="modal-body">
           <div id="dropZone" class="d-none position-absolute top-0 start-0 w-100 h-100 
@@ -89,7 +60,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                style="z-index: 1000;">
               <div class="text-center">
                   <i class="fas fa-file-upload fa-4x text-primary mb-3"></i>
-                  <h4>Drop layout file here</h4>
+                  <h4>${t("dashboard.editor.drop_here")}</h4>
               </div>
           </div>
           <div class="container-fluid">
@@ -101,7 +72,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                     <!-- Tabs will be injected here -->
                   </ul>
                   <button type="button" class="btn btn-sm btn-primary" id="addTabButton">
-                    <i class="fas fa-plus"></i> Add Tab
+                    <i class="fas fa-plus"></i> ${t("dashboard.editor.add_tab")}
                   </button>
                 </div>
                 <div class="dashboard-grid-container">
@@ -120,8 +91,8 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
           </div>
         </div>
         <div class="modal-footer">
-          <button id="dashboardDone" type="button" class="btn btn-primary">Done</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="dashboardDone" type="button" class="btn btn-primary">${t("common.action.done")}</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t("common.action.cancel")}</button>
         </div>
       </div>
     </div>
@@ -135,7 +106,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
     function showAlert(message, type = 'info') {
         const alert = $(`<div class="alert alert-${type} alert-dismissible fade show" role="alert">
             ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="${tAttr("common.action.close")}"></button>
         </div>`);
         $('.modal-body .container-fluid').prepend(alert);
         setTimeout(() => alert.alert('close'), 4000);
@@ -225,7 +196,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                 <div class="dashboard-item col-12" data-size="12" data-name="placeholder">
                     <div class="card border-dashed h-100">
                         <div class="card-body d-flex justify-content-center align-items-center">
-                            <span class="text-muted">Drag widgets here to start building your dashboard</span>
+                            <span class="text-muted">${t("dashboard.editor.drag_hint")}</span>
                         </div>
                     </div>
                 </div>
@@ -259,7 +230,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
         // Group by category
         const categories = {};
         availableElements.forEach(item => {
-            const cat = item.category || 'Uncategorized';
+            const cat = item.category || t("dashboard.uncategorized");
             if (!categories[cat]) categories[cat] = [];
             categories[cat].push(item);
         });
@@ -307,7 +278,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
 
     // Handle add tab button
     $('#addTabButton').on('click', function() {
-        let newTabName = `Tab ${currentLayout.tabs.length + 1}`;
+        let newTabName = t("dashboard.tab_default", {number: currentLayout.tabs.length + 1});
         currentLayout.tabs.push({
             id: DashboardLayout.makeTabId(newTabName),
             name: newTabName,
@@ -433,14 +404,14 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
 
     // Clear current tab
     $('#clearAllButton').on('click', function() {
-        if (!confirm('Clear all widgets from this tab?')) return;
+        if (!confirm(t("dashboard.editor.clear_confirm"))) return;
         currentLayout.tabs[activeTabIndex].dashlets = [];
         renderDashboard();
     });
 
     // Restore defaults
     $('#restoreDefaultsButton').on('click', function() {
-        if (!confirm('Restore default dashboard layout? This replaces your current layout.')) return;
+        if (!confirm(t("dashboard.editor.restore_confirm"))) return;
         // Remove the saved layout for this cookieName and reload page
         localStorage.removeItem(cookieName);
         window.location.reload();
@@ -468,7 +439,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
         document.body.removeChild(a);
         
         URL.revokeObjectURL(url);
-        showAlert('Layout downloaded successfully!', 'success');
+        showAlert(t("dashboard.editor.downloaded"), 'success');
     }
 
     // Validate uploaded layout
@@ -512,13 +483,13 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                 
                 // Validate structure
                 if (!validateLayout(imported)) {
-                    showAlert('Invalid layout file format', 'danger');
+                    showAlert(t("dashboard.editor.invalid_file"), 'danger');
                     return;
                 }
                 
                 // Warn if different dashboard type
                 if (imported.dashboardType && imported.dashboardType !== cookieName) {
-                    if (!confirm(`This layout is from a different dashboard type (${imported.dashboardType}). Continue anyway?`)) {
+                    if (!confirm(t("dashboard.editor.other_dashboard", {type: imported.dashboardType}))) {
                         return;
                     }
                 }
@@ -539,10 +510,10 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                 renderTabs();
                 renderDashboard();
                 
-                showAlert('Layout imported successfully!', 'success');
+                showAlert(t("dashboard.editor.imported"), 'success');
                 
             } catch (err) {
-                showAlert('Failed to parse layout file: ' + err.message, 'danger');
+                showAlert(t("dashboard.editor.parse_failed", {error: err.message}), 'danger');
             }
         };
         reader.readAsText(file);
@@ -600,10 +571,6 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
             document.removeEventListener(evtName, onDragLeaveOrDrop);
         });
         document.removeEventListener('drop', onDocumentDrop);
-        const styleEl = document.getElementById(styleId);
-        if (styleEl) {
-            styleEl.remove();
-        }
         $(this).remove();
         if (committedLayout) {
             callback(committedLayout);

@@ -2,6 +2,14 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
 import {isRedacted} from "../helpers/redact";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Illegible" is a font-family name the redaction mode sets, not a label
+// translatable: false — "_empty" is the DOM id suffix this dashlet appends
+
+function shaperRootName() {
+    return t("common.label.shaper");
+}
 
 function retransmitPacketsForNode(node, direction) {
     return Number(
@@ -28,12 +36,12 @@ class ChildrenSankeyGraphUp extends DashboardGraph {
             delete this.option.series[0].label;
         }
         if (Array.isArray(items)) {
-            const nodes = [{ name: 'Shaper' }];
+            const nodes = [{ name: shaperRootName() }];
             const links = [];
             items.forEach(it => {
                 const color = colorByRetransmitPct(it.rxmit ?? 0);
                 nodes.push({ name: it.name, itemStyle: { color } });
-                links.push({ source: 'Shaper', target: it.name, value: it.value });
+                links.push({ source: shaperRootName(), target: it.name, value: it.value });
             });
             this.option.series[0].data = nodes;
             this.option.series[0].links = links;
@@ -56,8 +64,8 @@ export class ShaperChildrenUp extends BaseDashlet {
         this._lastL2 = null;
     }
     canBeSlowedDown(){ return true; }
-    title(){ return "Shaper Children (Upload)"; }
-    tooltip(){ return "<h5>Child Throughput</h5><p>Top child nodes by upload throughput."; }
+    title(){ return t("dashlet.name.shaper_children_upload"); }
+    tooltip(){ return `<h5>${t("dashlet.children.title")}</h5><p>${t("dashlet.children.tooltip_up")}</p>`; }
     subscribeTo(){ return ["TreeSummary", "TreeSummaryL2"]; }
     buildContainer(){ let b=super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
     setup(){
@@ -66,7 +74,7 @@ export class ShaperChildrenUp extends BaseDashlet {
         this.traceRender("setup-complete", { graphId: this.graphDivId() });
         if (this.last) this.graph.update(this.last);
     }
-    _showEmpty(show, msg = "No recent data"){
+    _showEmpty(show, msg = t("common.state.no_recent_data")){
         const card = document.getElementById(this.id);
         if (!card) return;
         let empty = document.getElementById(this._emptyId);
@@ -112,7 +120,7 @@ export class ShaperChildrenUp extends BaseDashlet {
         const parentMap = new Map();
         (this._lastSummary || []).slice(1).forEach(r => parentMap.set(r[0], r[1]));
 
-        const nodes = [{ name: 'Shaper' }];
+        const nodes = [{ name: shaperRootName() }];
         const links = [];
         let hasData = false;
 
@@ -143,7 +151,7 @@ export class ShaperChildrenUp extends BaseDashlet {
                 links.push({ source: pName, target: c.name, value: v });
             }
             if (parentSum > 0) {
-                links.push({ source: 'Shaper', target: pName, value: parentSum });
+                links.push({ source: shaperRootName(), target: pName, value: parentSum });
             }
         }
 

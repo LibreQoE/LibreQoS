@@ -1,8 +1,12 @@
 import {scaleNumber, toNumber, trimTrailingZeros} from "../lq_js_common/helpers/scaling";
 import {CAKE_TIN_LEGEND_PAIRS, cakeTinIndexFor} from "./cake_tin_order.mjs";
+import {t} from "../i18n/index.js";
+// The series-name vocabulary lives in its own module so the Node test can
+// import it; the CAKE charts keep importing the legend formatter from here.
+import {cakeLegendFormatter, cakeSeriesDisplay} from "./cake_tin_labels.mjs";
+export {cakeLegendFormatter};
 
 export const CAKE_CHART_WINDOW_SECONDS = 180;
-export const CAKE_CHART_WINDOW_LABEL = "Last 3 minutes · 1s samples";
 
 export function cakeChartXAxis(windowSize = CAKE_CHART_WINDOW_SECONDS) {
     const labels = new Array(windowSize).fill("");
@@ -19,7 +23,7 @@ export function cakeChartXAxis(windowSize = CAKE_CHART_WINDOW_SECONDS) {
         if (labels[0] === "") {
             labels[0] = `-${Math.ceil(windowSize / 60)}m`;
         }
-        labels[windowSize - 1] = "Now";
+        labels[windowSize - 1] = t("graph.axis.now");
     }
 
     return labels;
@@ -28,7 +32,7 @@ export function cakeChartXAxis(windowSize = CAKE_CHART_WINDOW_SECONDS) {
 export function cakeChartTitle(text, unitsLabel) {
     return {
         text,
-        subtext: `${CAKE_CHART_WINDOW_LABEL} · ${unitsLabel}`,
+        subtext: `${t("graph.cake.window_label")} · ${unitsLabel}`,
         left: 10,
         top: 10,
         textStyle: {
@@ -67,6 +71,7 @@ export function cakeCommonXAxis(windowSize = CAKE_CHART_WINDOW_SECONDS) {
         },
         axisLine: {
             lineStyle: {
+                // translatable: false — "rgba(148, 163, 184, 0.28)" is the axis line colour
                 color: "rgba(148, 163, 184, 0.28)",
             },
         },
@@ -98,6 +103,7 @@ export function cakeScatterSeries(name, color) {
             itemStyle: {
                 color,
                 opacity: 0.98,
+                // translatable: false — "rgba(255, 255, 255, 0.92)" is the hover dot border colour
                 borderColor: "rgba(255, 255, 255, 0.92)",
                 borderWidth: 1,
             },
@@ -152,7 +158,7 @@ export function cakeTooltip(unitFormatter) {
             if (rows.length === 0) {
                 return "";
             }
-            const heading = rows[0]?.axisValueLabel || "Selected sample";
+            const heading = rows[0]?.axisValueLabel || t("graph.cake.selected_sample");
             const lines = [
                 `<div style="margin-bottom:4px;color:#8c939d;font-size:11px;">${heading}</div>`,
             ];
@@ -162,13 +168,10 @@ export function cakeTooltip(unitFormatter) {
                 if (raw === null || raw === undefined || Number.isNaN(Number(raw))) {
                     return;
                 }
-                const isUpload = entry.seriesName.endsWith(" Up");
-                const label = isUpload
-                    ? entry.seriesName.slice(0, -3)
-                    : entry.seriesName;
-                const direction = isUpload ? "Upload" : "Download";
+                const {label, direction} = cakeSeriesDisplay(entry.seriesName);
+                const name = label ? `${label} <span style="color:#8c939d">(${direction})</span>` : direction;
                 lines.push(
-                    `${entry.marker}${label} <span style="color:#8c939d">(${direction})</span>: <strong>${unitFormatter(Math.abs(Number(raw)))}</strong>`,
+                    `${entry.marker}${name}: <strong>${unitFormatter(Math.abs(Number(raw)))}</strong>`,
                 );
             });
 
@@ -221,18 +224,20 @@ export function cakePerDirectionOption(msg, titleText, field, unitFormatter) {
         up.push(0 - (sample[1][field] ?? 0));
     }
     return {
-        title: cakeChartTitle(titleText, "Packets per sample"),
+        title: cakeChartTitle(titleText, t("graph.axis.packets_per_sample")),
         grid: cakeCommonGrid(),
         legend: {
             orient: "horizontal",
             right: 10,
             top: "bottom",
             // do NOT set selectedMode:false — it disables the legend
+            formatter: cakeLegendFormatter,
             textStyle: {
                 color: '#aaa'
             },
             data: [
                 {
+                    // translatable: false — "Down" "Up" are the per-direction series identifiers the tooltip and legend render
                     name: "Down",
                     icon: 'circle',
                     itemStyle: { color: window.graphPalette[0] }

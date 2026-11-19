@@ -1,5 +1,9 @@
 import {toNumber} from "./lq_js_common/helpers/scaling.js";
 import {disposeTooltipsWithin} from "./lq_js_common/helpers/tooltips.js";
+import {t} from "./i18n/index.js";
+
+// translatable: false — "-> Mbps" is the separator between the assigned and effective rate pairs plus the unit, not copy
+// translatable: false — "hover focus" is the Bootstrap tooltip trigger list
 
 export function formatRatePairValue(ratePair) {
     const down = toNumber(ratePair?.down, 0).toFixed(1);
@@ -56,11 +60,17 @@ export function applyMaxRateDisplay(maxRateEl, assignedRate, effectiveRate, init
     maxRateEl.setAttribute("tabindex", "0");
     maxRateEl.setAttribute(
         "title",
-        `Assigned max ${formatRatePairValue(assignedRate)} Mbps; effective queue max ${formatRatePairValue(effectiveRate)} Mbps`,
+        t("circuit.rate.assigned_effective_tooltip", {
+            assigned: formatRatePairValue(assignedRate),
+            effective: formatRatePairValue(effectiveRate),
+        }),
     );
     maxRateEl.setAttribute(
         "aria-label",
-        `Assigned max ${formatRatePairValue(assignedRate)} Mbps. Effective queue max ${formatRatePairValue(effectiveRate)} Mbps.`,
+        t("circuit.rate.assigned_effective_aria", {
+            assigned: formatRatePairValue(assignedRate),
+            effective: formatRatePairValue(effectiveRate),
+        }),
     );
 
     if (typeof initTooltipsWithin === "function") {

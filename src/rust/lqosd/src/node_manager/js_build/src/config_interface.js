@@ -7,12 +7,10 @@ import {
     PENDING_OPERATION_KEY,
     saveNetworkModeState,
 } from "./config/network_mode_storage.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 const NETPLAN_TRY_TIMEOUT_MS = 30_000;
 const RECONNECT_POLL_INTERVAL_MS = 2_000;
-const BRIDGE_MTU_HELP = "Applies to the bridge members and br0.";
-const SINGLE_INTERFACE_MTU_HELP = "Applies to the trunk interface.";
-const MTU_LOCKED_HELP = "MTU cannot be changed while a network-mode operation is pending.";
 let currentHelperStatus = null;
 let currentInspection = null;
 let currentPendingOperation = null;
@@ -48,6 +46,7 @@ function configModeKind(config) {
     return "unknown";
 }
 
+// translatable: false — "Accept" is an HTTP request header name, not UI text
 function getJson(url) {
     return fetch(url, {
         headers: { "Accept": "application/json" },
@@ -55,7 +54,7 @@ function getJson(url) {
     }).then(async (response) => {
         if (!response.ok) {
             const body = await response.text();
-            throw new Error(body || `Request failed: ${response.status}`);
+            throw new Error(body || t("config.interface.error.request_failed", {status: response.status}));
         }
         return response.json();
     });
@@ -73,7 +72,7 @@ function postJson(url, body) {
     }).then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(data?.message || `Request failed: ${response.status}`);
+            throw new Error(data?.message || t("config.interface.error.request_failed", {status: response.status}));
         }
         return data;
     });
@@ -137,9 +136,9 @@ function updateBridgeMtuState() {
     const editingLocked = Boolean(currentInspection?.editing_locked);
     bridgeMtu.disabled = editingLocked;
     if (editingLocked) {
-        bridgeMtuHelp.textContent = MTU_LOCKED_HELP;
+        bridgeMtuHelp.textContent = t("config.interface.mtu.locked");
     } else {
-        bridgeMtuHelp.textContent = BRIDGE_MTU_HELP;
+        bridgeMtuHelp.textContent = t("config.interface.mtu.help_members");
     }
 }
 
@@ -148,9 +147,9 @@ function updateSingleInterfaceMtuState() {
     const singleInterfaceMtuHelp = document.getElementById("singleInterfaceMtuHelp");
     if (!singleInterfaceMtu || !singleInterfaceMtuHelp) return;
     if (currentInspection?.editing_locked) {
-        singleInterfaceMtuHelp.textContent = MTU_LOCKED_HELP;
+        singleInterfaceMtuHelp.textContent = t("config.interface.mtu.locked");
     } else {
-        singleInterfaceMtuHelp.textContent = SINGLE_INTERFACE_MTU_HELP;
+        singleInterfaceMtuHelp.textContent = t("config.interface.mtu.help_trunk");
     }
 }
 
@@ -165,11 +164,11 @@ function validateConfig() {
         const toInternet = document.getElementById("toInternet").value.trim();
         const toNetwork = document.getElementById("toNetwork").value.trim();
         if (!toInternet || !toNetwork) {
-            alert("Both interface names are required in bridge mode");
+            alert(t("config.interface.error.bridge_interfaces_required"));
             return false;
         }
         if (toInternet === toNetwork) {
-            alert("Bridge mode requires two different interfaces");
+            alert(t("config.interface.error.bridge_interfaces_distinct"));
             return false;
         }
         if (!validateMtuField("bridgeMtu", "bridgeMtuError", parseOptionalMtu)) {
@@ -180,22 +179,22 @@ function validateConfig() {
         const internetVlan = parseInt(document.getElementById("internetVlan").value, 10);
         const networkVlan = parseInt(document.getElementById("networkVlan").value, 10);
         if (!interfaceName) {
-            alert("Interface name is required in single interface mode");
+            alert(t("config.interface.error.interface_required"));
             return false;
         }
         if (isNaN(internetVlan) || internetVlan < 1 || internetVlan > 4094) {
-            alert("Internet VLAN must be between 1 and 4094");
+            alert(t("config.interface.error.internet_vlan_range"));
             return false;
         }
         if (isNaN(networkVlan) || networkVlan < 1 || networkVlan > 4094) {
-            alert("Network VLAN must be between 1 and 4094");
+            alert(t("config.interface.error.network_vlan_range"));
             return false;
         }
         if (!validateMtuField("singleInterfaceMtu", "singleInterfaceMtuError", parseOptionalMtu)) {
             return false;
         }
     } else {
-        alert("Please select either bridge or single interface mode");
+        alert(t("config.interface.error.mode_required"));
         return false;
     }
     return true;
@@ -234,16 +233,16 @@ function optionLabel(candidate, selectedValue) {
         return candidate.name;
     }
     if (candidate.current_selection || candidate.name === selectedValue) {
-        return `${candidate.name} (current selection; unavailable)`;
+        return t("config.interface.option.current_unavailable", {name: candidate.name});
     }
-    return `${candidate.name} (unavailable)`;
+    return t("config.interface.option.unavailable", {name: candidate.name});
 }
 
 function buildSelectOptions(selectElement, modeKey, selectedValue, excludedValue = null) {
     if (!selectElement) return;
     const eligibilityField = modeKey === "single" ? "single_interface_eligible" : "bridge_eligible";
     const candidates = interfaceCandidates();
-    const options = [`<option value="">Select an eligible interface</option>`];
+    const options = [`<option value="">${t("config.interface.select.interface")}</option>`];
     const seen = new Set();
 
     candidates.forEach((candidate) => {
@@ -259,7 +258,7 @@ function buildSelectOptions(selectElement, modeKey, selectedValue, excludedValue
 
     if (selectedValue && !seen.has(selectedValue)) {
         options.push(
-            `<option value="${escapeHtml(selectedValue)}">${escapeHtml(`${selectedValue} (current selection; unavailable)`)}</option>`
+            `<option value="${escapeHtml(selectedValue)}">${escapeHtml(t("config.interface.option.current_unavailable", {name: selectedValue}))}</option>`
         );
     }
 
@@ -289,12 +288,12 @@ function renderInterfaceHelp(helpElementId, modeKey, selectedValues = {}) {
 
     element.innerHTML = `
         <details class="lqos-config-disclosure mt-2">
-            <summary>Why some interfaces are unavailable</summary>
+            <summary>${t("config.interface.interface.unavailable_why")}</summary>
             <ul class="mb-0 mt-2">
             ${unavailable.map((candidate) => {
                 const reason = Array.isArray(candidate.details) && candidate.details.length > 0
                     ? candidate.details.join(" ")
-                    : "Unavailable for managed LibreQoS setup.";
+                    : t("config.interface.interface.unavailable_reason");
                 return `<li><code>${escapeHtml(candidate.name)}</code>: ${escapeHtml(reason)}</li>`;
             }).join("")}
             </ul>
@@ -383,15 +382,15 @@ function pendingDeadlineMs(operation) {
 
 function formatCountdown(remainingMs) {
     if (!Number.isFinite(remainingMs)) {
-        return "Waiting for reconnect status...";
+        return t("config.interface.recovery.waiting_reconnect");
     }
     if (remainingMs <= 0) {
-        return "Rollback deadline reached. Waiting for LibreQoS to report the final state.";
+        return t("config.interface.recovery.deadline_reached");
     }
     const totalSeconds = Math.ceil(remainingMs / 1000);
     const seconds = totalSeconds % 60;
     const minutes = Math.floor(totalSeconds / 60);
-    return `Confirm or revert within ${minutes}:${String(seconds).padStart(2, "0")}.`;
+    return t("config.interface.recovery.countdown", {minutes, seconds: String(seconds).padStart(2, "0")});
 }
 
 function setPendingOperation(operation, extra = {}) {
@@ -453,13 +452,16 @@ function renderRecoveryPanel() {
 
     const deadline = pendingDeadlineMs(pending);
     const remainingMs = deadline == null ? null : deadline - Date.now();
-    const summaryText = pending.summary || "LibreQoS staged a network change and is waiting for confirmation.";
+    const summaryText = pending.summary || t("config.interface.recovery.staged");
     const reconnectText = recoveryReachable
-        ? "LibreQoS is reachable again. Confirm the network change if access looks correct, or revert it if not."
-        : "Connection is temporarily unavailable while LibreQoS tests the network change. This page will keep polling and show the confirm buttons again as soon as the box comes back.";
+        ? t("config.interface.recovery.reachable")
+        : t("config.interface.recovery.unreachable");
 
     summary.textContent = summaryText;
-    detail.textContent = `${reconnectText} Pending operation: ${pending.operation_id}`;
+    detail.textContent = t("config.interface.recovery.pending_operation", {
+        reconnect: reconnectText,
+        id: pending.operation_id,
+    });
     countdown.textContent = formatCountdown(remainingMs);
 
     confirmButton.disabled = !recoveryReachable;
@@ -513,6 +515,8 @@ function pollRecoveryStatus() {
         });
 }
 
+// translatable: false — "Active", "Starting", "Inactive", "Degraded", "Ready", "Missing" and "Conflict" are
+// the shaping and inspection state enums the server reports. The badges show the token verbatim.
 function badgeClassForShapingState(state) {
     switch (state) {
         case "Active":
@@ -572,10 +576,10 @@ function renderShapingStatus(status) {
     const retryButton = document.getElementById("retryShapingButton");
     if (!badge || !summary || !detail || !banner || !retryButton) return;
 
-    const state = status?.state || "Unknown";
+    const state = status?.state || t("config.interface.state.unknown");
     badge.className = `badge ${badgeClassForShapingState(state)}`;
     badge.textContent = state;
-    summary.textContent = status?.summary || "No shaping status available.";
+    summary.textContent = status?.summary || t("config.interface.shaping.none");
 
     if (status?.detail) {
         detail.classList.remove("d-none");
@@ -586,7 +590,7 @@ function renderShapingStatus(status) {
     }
 
     banner.innerHTML = status?.degraded
-        ? `<div class="alert alert-danger" role="alert"><strong>Shaping is degraded.</strong> ${escapeHtml(status.summary || "")}</div>`
+        ? `<div class="alert alert-danger" role="alert">${tHtml("config.interface.shaping.degraded_banner", {summary: status.summary || ""})}</div>`
         : "";
 
     const canRetry = Boolean(status?.can_retry);
@@ -598,24 +602,24 @@ function renderDetectedFiles(files) {
     const container = document.getElementById("netplanFiles");
     if (!container) return;
     if (!Array.isArray(files) || files.length === 0) {
-        container.innerHTML = `<div class="text-secondary">No relevant netplan files were detected for the current selection.</div>`;
+        container.innerHTML = `<div class="text-secondary">${t("config.interface.review.files_none")}</div>`;
         return;
     }
 
     container.innerHTML = files.map((file) => {
         const details = Array.isArray(file.details) && file.details.length > 0
             ? `<ul class="mb-0 mt-2">${file.details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>`
-            : `<div class="text-secondary mt-2">No extra details.</div>`;
+            : `<div class="text-secondary mt-2">${t("config.interface.review.file_no_details")}</div>`;
         const interfaces = Array.isArray(file.relevant_interfaces) && file.relevant_interfaces.length > 0
             ? file.relevant_interfaces.map((iface) => `<code>${escapeHtml(iface)}</code>`).join(", ")
-            : "None";
+            : t("config.interface.review.no_interfaces");
         const badgeClass = file.compatible ? "text-bg-success" : badgeClassForInspectionState(file.classification);
         return `
             <div class="border rounded p-3 mb-3">
                 <div class="d-flex justify-content-between flex-wrap gap-2 align-items-center">
                     <div>
                         <div class="fw-semibold">${escapeHtml(file.path)}</div>
-                        <div class="text-secondary">Relevant interfaces: ${interfaces}</div>
+                        <div class="text-secondary">${t("config.interface.review.relevant_interfaces")} ${interfaces}</div>
                     </div>
                     <span class="badge ${badgeClass}">${escapeHtml(file.classification)}</span>
                 </div>
@@ -639,10 +643,10 @@ function renderInspection(inspection) {
     const takeoverButton = document.getElementById("takeoverButton");
     if (!badge || !summary || !preview || !previewMeta || !previewNote || !diffPreview || !diffPreviewMeta || !applyButton || !adoptButton || !takeoverButton) return;
 
-    const state = inspection?.inspector_state || "Unknown";
+    const state = inspection?.inspector_state || t("config.interface.state.unknown");
     badge.className = `badge ${badgeClassForInspectionState(state)}`;
     badge.textContent = state;
-    summary.textContent = inspection?.summary || "No netplan inspection data available.";
+    summary.textContent = inspection?.summary || t("config.interface.netplan.none");
 
     const warnings = Array.isArray(inspection?.warnings) ? [...inspection.warnings] : [];
     const dangerousChanges = Array.isArray(inspection?.dangerous_changes) ? inspection.dangerous_changes : [];
@@ -653,9 +657,10 @@ function renderInspection(inspection) {
     renderAlertList("netplanConflicts", "danger", inspection?.conflicts || []);
     renderDetectedFiles(inspection?.detected_files || []);
 
+    const modeLabel = inspection?.mode_label || t("config.interface.state.unknown");
     previewMeta.innerHTML = `
-        <div><strong>Mode:</strong> ${escapeHtml(inspection?.mode_label || "Unknown")}</div>
-        <div><strong>Managed file:</strong> <code>${escapeHtml(inspection?.managed_file_path || "/etc/netplan/libreqos.yaml")}</code></div>`;
+        <div>${tHtml("config.interface.review.mode", {mode: modeLabel})}</div>
+        <div>${tHtml("config.interface.review.managed_file", {path: inspection?.managed_file_path || "/etc/netplan/libreqos.yaml"})}</div>`;
     previewNote.innerHTML = [
         inspection?.strong_confirmation_text
             ? `<div class="alert alert-danger py-2">${escapeHtml(inspection.strong_confirmation_text)}</div>`
@@ -666,9 +671,9 @@ function renderInspection(inspection) {
     ].join("");
     preview.textContent = inspection?.managed_preview_yaml || "";
     diffPreviewMeta.innerHTML = inspection?.diff_preview_label
-        ? `<div><strong>Diff:</strong> ${escapeHtml(inspection.diff_preview_label)}</div>`
-        : `<div class="text-secondary">No diff preview available.</div>`;
-    diffPreview.textContent = inspection?.diff_preview || "No diff preview available.";
+        ? `<div>${tHtml("config.interface.review.diff_label", {label: inspection.diff_preview_label})}</div>`
+        : `<div class="text-secondary">${t("config.interface.diff.none")}</div>`;
+    diffPreview.textContent = inspection?.diff_preview || t("config.interface.diff.none");
 
     [
         "bridgeMode",
@@ -713,7 +718,7 @@ function renderHelperStatus(status) {
         revertButton.disabled = false;
     } else {
         clearPendingOperation();
-        pendingEl.innerHTML = `<div class="text-secondary">No pending network change.</div>`;
+        pendingEl.innerHTML = `<div class="text-secondary">${t("config.interface.pending.none")}</div>`;
         confirmButton.disabled = true;
         revertButton.disabled = true;
     }
@@ -734,7 +739,7 @@ function renderHelperStatus(status) {
         lastBackupEl.innerHTML = recent;
         restoreButton.disabled = Boolean(pending);
     } else {
-        lastBackupEl.innerHTML = `<div class="text-secondary">No helper backup recorded yet.</div>`;
+        lastBackupEl.innerHTML = `<div class="text-secondary">${t("config.interface.backup.none")}</div>`;
         restoreButton.disabled = true;
     }
 }
@@ -751,7 +756,7 @@ function refreshHelperStatus() {
                 renderHelperStatus(null);
             }
             setRecoveryReachable(false);
-            throw new Error("Unable to refresh helper status");
+            throw new Error(t("config.interface.error.refresh_failed"));
         });
 }
 
@@ -761,7 +766,7 @@ function inspectCandidate() {
     const button = document.getElementById("inspectButton");
     if (button) {
         button.disabled = true;
-        button.textContent = "Inspecting...";
+        button.textContent = t("config.interface.actions.inspecting");
     }
 
     return postJson("/local-api/network-mode/inspect", { config: candidate })
@@ -770,12 +775,12 @@ function inspectCandidate() {
             return refreshHelperStatus();
         })
         .catch((err) => {
-            alert(err.message || "Unable to inspect current netplan");
+            alert(err.message || t("config.interface.error.inspect_failed"));
         })
         .finally(() => {
             if (button) {
                 button.disabled = false;
-                button.textContent = "Inspect Current Netplan";
+                button.textContent = t("config.interface.actions.inspect");
             }
         });
 }
@@ -783,28 +788,49 @@ function inspectCandidate() {
 function confirmDangerousChange(actionLabel, candidate) {
     const warnings = Array.isArray(currentInspection?.dangerous_changes) ? currentInspection.dangerous_changes.slice() : [];
     if (configModeKind(window.config) !== configModeKind(candidate)) {
-        warnings.push("Switching between Linux bridge and single-interface modes requires strong confirmation.");
+        warnings.push(t("config.interface.confirm.mode_switch"));
     }
+    // The Apply action carries the label "Apply Network Changes", never the bare
+    // mode token, so this guard has never skipped the dialog. Kept verbatim: an
+    // i18n unit does not change a safety confirmation.
     if (warnings.length === 0 && actionLabel === "Apply") {
         return true;
     }
 
     const intro = currentInspection?.strong_confirmation_text
-        || "This change may interrupt access to this system. LibreQoS will automatically roll back if you do not confirm within 30 seconds. If your browser disconnects, stay on this page and it will keep trying to reconnect.";
-    return window.confirm(`${actionLabel} requires confirmation:\n\n- ${warnings.join("\n- ")}\n\n${intro}`);
+        || t("config.interface.confirm.intro");
+    return window.confirm(t("config.interface.confirm.requires", {
+        action: actionLabel,
+        warnings: warnings.join("\n- "),
+        intro,
+    }));
+}
+
+// translatable: false — "Apply", "Adopt" and "TakeOver" are network-mode request tokens, not labels
+// The server routes on them and `applyNetworkChanges` defaults to one of them; the label
+// the operator reads comes from the catalog.
+function actionLabelFor(mode) {
+    switch (mode) {
+        case "Adopt":
+            return t("config.interface.actions.adopt");
+        case "TakeOver":
+            return t("config.interface.actions.take_over");
+        default:
+            return t("config.interface.actions.apply");
+    }
 }
 
 function applyNetworkChanges(mode = "Apply") {
     if (!validateConfig()) return;
     const candidate = buildCandidateConfig();
-    const actionLabel = mode === "Adopt" ? "Adopt into libreqos.yaml" : mode === "TakeOver" ? "Take Over libreqos.yaml" : "Apply Network Changes";
+    const actionLabel = actionLabelFor(mode);
     if (!confirmDangerousChange(actionLabel, candidate)) {
         return;
     }
     const button = document.getElementById("applyButton");
     if (button) {
         button.disabled = true;
-        button.textContent = "Applying...";
+        button.textContent = t("config.interface.actions.applying");
     }
 
     postJson("/local-api/network-mode/apply", {
@@ -825,12 +851,12 @@ function applyNetworkChanges(mode = "Apply") {
             return Promise.allSettled([inspectCandidate(), refreshHelperStatus()]);
         })
         .catch((err) => {
-            alert(err.message || "Unable to apply network changes");
+            alert(err.message || t("config.interface.error.apply_failed"));
         })
         .finally(() => {
             if (button) {
                 button.disabled = false;
-                button.textContent = "Apply Network Changes";
+                button.textContent = t("config.interface.actions.apply");
             }
         });
 }
@@ -838,7 +864,7 @@ function applyNetworkChanges(mode = "Apply") {
 function actOnPending(endpoint) {
     const operationId = activePendingOperationId();
     if (!operationId) {
-        alert("No pending network operation is available");
+        alert(t("config.interface.error.no_pending_operation"));
         return;
     }
 
@@ -846,31 +872,28 @@ function actOnPending(endpoint) {
         .then((response) => {
             clearPendingOperation();
             clearNetworkModeState(DRAFT_KEY);
-            alert(response?.message || "Operation completed");
+            alert(response?.message || t("config.interface.pending.completed"));
             return Promise.allSettled([refreshHelperStatus(), inspectCandidate()]);
         })
         .catch((err) => {
-            alert(err.message || "Operation failed");
+            alert(err.message || t("config.interface.error.operation_failed"));
         });
 }
 
 function rollbackLatestBackup() {
     const pending = currentHelperStatus?.pending_operation;
     if (pending?.operation_id) {
-        alert("Confirm or revert the pending network change before restoring an older backup.");
+        alert(t("config.interface.error.restore_pending"));
         return;
     }
 
     const backupId = currentHelperStatus?.recent_backups?.[0]?.backup_id;
     if (!backupId) {
-        alert("No rollback bundle is available.");
+        alert(t("config.interface.error.no_backup"));
         return;
     }
 
-    const confirmed = window.confirm(
-        "Restore the previous managed LibreQoS network configuration?\n\n"
-        + "This will overwrite the current managed netplan state with the most recent backup and may interrupt access to this system."
-    );
+    const confirmed = window.confirm(t("config.interface.confirm.restore"));
     if (!confirmed) {
         return;
     }
@@ -878,11 +901,11 @@ function rollbackLatestBackup() {
     postJson("/local-api/network-mode/rollback", { backup_id: backupId })
         .then((response) => {
             clearNetworkModeState(DRAFT_KEY);
-            alert(response?.message || "Rollback completed");
+            alert(response?.message || t("config.interface.backup.completed"));
             return Promise.all([refreshHelperStatus(), inspectCandidate()]);
         })
         .catch((err) => {
-            alert(err.message || "Unable to restore the previous managed config");
+            alert(err.message || t("config.interface.error.restore_failed"));
         });
 }
 
@@ -890,21 +913,21 @@ function retryShaping() {
     const button = document.getElementById("retryShapingButton");
     if (button) {
         button.disabled = true;
-        button.textContent = "Retrying...";
+        button.textContent = t("config.interface.actions.retrying");
     }
 
     postJson("/local-api/network-mode/retry-shaping", {})
         .then((response) => {
-            alert(response?.message || "Shaping retry requested");
+            alert(response?.message || t("config.interface.shaping.retry_requested"));
             return Promise.all([refreshHelperStatus(), inspectCandidate()]);
         })
         .catch((err) => {
-            alert(err.message || "Unable to retry shaping");
+            alert(err.message || t("config.interface.error.retry_failed"));
         })
         .finally(() => {
             if (button) {
                 button.disabled = false;
-                button.textContent = "Retry Shaping";
+                button.textContent = t("config.interface.shaping.retry");
             }
         });
 }
@@ -941,7 +964,7 @@ function wireActions() {
         if (!validateConfig()) return;
         saveDraft();
         inspectCandidate();
-        alert("Network mode draft saved for this browser tab. Use Apply Network Changes to commit both lqos.conf and netplan together.");
+        alert(t("config.interface.draft.saved"));
     });
     document.getElementById("inspectButton").addEventListener("click", inspectCandidate);
     document.getElementById("applyButton").addEventListener("click", () => applyNetworkChanges("Apply"));
@@ -979,5 +1002,5 @@ loadConfig((msg) => {
     refreshHelperStatus().catch(() => {});
     ensureRecoveryPolling();
 }, () => {
-    alert("Unable to load LibreQoS configuration");
+    alert(t("config.interface.error.load_failed"));
 });

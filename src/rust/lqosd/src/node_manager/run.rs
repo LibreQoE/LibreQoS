@@ -5,7 +5,7 @@ use crate::node_manager::security_headers::apply_api_docs_security_headers;
 use crate::node_manager::shaper_queries_actor::{ShaperQueryCommand, shaper_queries_actor};
 use crate::node_manager::{
     auth,
-    static_pages::{static_routes, vendor_service},
+    static_pages::{asset_fallback, static_routes, vendor_service},
     ws::websocket_router,
 };
 use crate::system_stats::SystemStats;
@@ -20,8 +20,46 @@ use lqos_probe::ProbeClient;
 use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeFile;
 use tracing::info;
+
+/// The WebUI listen address when `webserver_listen` is absent or blank.
+///
+/// beta20.8 (driver ruling 2026-11-14): this is the **direct plaintext WebUI
+/// listener**, restored to all interfaces so an existing beta9 install with no
+/// `webserver_listen` keeps working after upgrade (the pre-Nov-11 upgrade
+/// behaviour). The exposure is driver-accepted ("installers know not to use
+/// publicly routed IPs"); the auth/setup gates are unchanged.
+///
+/// IPv6 narrowing (recorded): the pre-Nov-11 default was the dual-stack
+/// `:::9123`; `0.0.0.0:9123` is **IPv4-only**. An IPv6-only host must set
+/// `webserver_listen = "[::]:9123"` (or `[::1]:9123` for loopback). This is
+/// NOT byte-identical to the old default.
+///
+/// The TLS-terminating Caddy proxy is separate and always loopback
+/// (`lqos_setup::ssl::{RUNTIME_DIRECT_LISTEN, RUNTIME_SECURE_LISTEN,
+/// WEB_UPSTREAM}` = `127.0.0.1:9123`), so an SSL-enabled install does not
+/// expose this listener.
+pub(crate) const DEFAULT_WEBSERVER_LISTEN: &str = "0.0.0.0:9123";
+
+/// Resolve the listener: the operator's configured bind, or the default.
+/// An empty/blank value is treated as unset. An explicit value wins verbatim
+/// (loopback `127.0.0.1:9123` and IPv6 `[::]:9123` included).
+fn resolved_webserver_listen(configured: Option<&str>) -> String {
+    configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_WEBSERVER_LISTEN.to_string())
+}
+
+/// True when `webserver_listen` is absent/blank (the default bind applies).
+fn webserver_listen_is_default(configured: Option<&str>) -> bool {
+    configured
+        .map(str::trim)
+        .map(|value| value.is_empty())
+        .unwrap_or(true)
+}
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
@@ -47,11 +85,13 @@ pub async fn spawn_webserver(
         bail!("Static path not found for webserver (bin/static2/");
     }
 
-    // Listen for net connections
-    let listen_address = config
-        .webserver_listen
-        .clone()
-        .unwrap_or(":::9123".to_string());
+    // Security card 1ad21622a §3.1: mint the one-time setup code at
+    // startup/reset ONLY while unconfigured (never on the request path).
+    super::auth::ensure_first_run_setup_code();
+
+    // Listen for net connections. Unset => loopback (the bind is the network
+    // control; never a wildcard default).
+    let listen_address = resolved_webserver_listen(config.webserver_listen.as_deref());
     let listener = TcpListener::bind(&listen_address).await?;
 
     // Setup shaper queries
@@ -73,7 +113,14 @@ pub async fn spawn_webserver(
         api_state,
     )?;
 
-    info!("Webserver listening on: [{listen_address}]");
+    // Name the bound address AND its source: an operator upgrading from beta9
+    // must be able to see the restored wildcard default in the startup log.
+    let listen_source = if webserver_listen_is_default(config.webserver_listen.as_deref()) {
+        "default: webserver_listen absent/blank"
+    } else {
+        "configured via webserver_listen"
+    };
+    info!("Webserver listening on: [{listen_address}] ({listen_source})");
     axum::serve(
         listener,
         router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
@@ -192,7 +239,9 @@ fn build_router(
             lqos_api::web::docs_router()
                 .layer(axum::middleware::from_fn(apply_api_docs_security_headers)),
         )
-        .fallback_service(ServeDir::new(static_path)))
+        // Assets only: `*.html` never falls through to an unauthenticated
+        // ServeDir (card 94b00da77 §3.7, invariant 8).
+        .fallback_service(asset_fallback(static_path)))
 }
 
 /// Provides a redirect service that sends visitors
@@ -217,6 +266,65 @@ async fn not_found() -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// beta20.8 upgrade regression (driver ruling 2026-11-14): an absent or
+    /// blank `webserver_listen` binds all IPv4 interfaces again, so a beta9
+    /// install with no `webserver_listen` stays reachable after upgrade.
+    /// An explicit value wins verbatim, including loopback and IPv6.
+    #[test]
+    fn unset_webserver_listen_defaults_to_all_ipv4_interfaces() {
+        assert_eq!(resolved_webserver_listen(None), "0.0.0.0:9123");
+        assert_eq!(resolved_webserver_listen(Some("")), "0.0.0.0:9123");
+        assert_eq!(resolved_webserver_listen(Some("   ")), "0.0.0.0:9123");
+        // Explicit values win verbatim.
+        assert_eq!(
+            resolved_webserver_listen(Some("203.0.113.5:9123")),
+            "203.0.113.5:9123"
+        );
+        assert_eq!(
+            resolved_webserver_listen(Some("127.0.0.1:9123")),
+            "127.0.0.1:9123"
+        );
+        assert_eq!(resolved_webserver_listen(Some("[::]:9123")), "[::]:9123");
+        assert_eq!(resolved_webserver_listen(Some("[::1]:9123")), "[::1]:9123");
+        assert_eq!(DEFAULT_WEBSERVER_LISTEN, "0.0.0.0:9123");
+        // Source detection for the startup log.
+        assert!(webserver_listen_is_default(None));
+        assert!(webserver_listen_is_default(Some("")));
+        assert!(webserver_listen_is_default(Some("  ")));
+        assert!(!webserver_listen_is_default(Some("127.0.0.1:9123")));
+    }
+
+    /// The resolved default really is a wildcard bind: bind its HOST on an
+    /// ephemeral port (9123 may be in use on a bench box) and assert the
+    /// kernel reports an unspecified local address.
+    #[test]
+    fn resolved_default_binds_the_wildcard_address() {
+        let resolved = resolved_webserver_listen(None);
+        let host = resolved.rsplit_once(':').expect("host:port").0;
+        let listener =
+            std::net::TcpListener::bind(format!("{host}:0")).expect("bind the default host");
+        assert!(
+            listener.local_addr().expect("local addr").ip().is_unspecified(),
+            "the default host must bind all IPv4 interfaces"
+        );
+    }
+
+    /// The help text the operator reads must name the restored default (the
+    /// stale side was the code, not the UI).
+    #[test]
+    fn ui_help_text_names_the_restored_default() {
+        for (name, doc) in [
+            ("config_general.html", include_str!("static2/config_general.html")),
+            ("i18n/en.json", include_str!("static2/i18n/en.json")),
+            ("i18n/es.json", include_str!("static2/i18n/es.json")),
+        ] {
+            assert!(
+                doc.contains("0.0.0.0:9123"),
+                "{name} must name the restored default 0.0.0.0:9123"
+            );
+        }
+    }
 
     #[test]
     fn node_manager_router_sources_do_not_enable_cors_layer() {
@@ -840,60 +948,49 @@ mod tests {
         }
     }
 
-    /// Temp `lqos.conf` carrying one `[local_api]` key, held under the shared
-    /// runtime-config test lock so parallel tests never see a half-written config.
-    struct ApiKeyConfig {
+    /// The shipped example config with both directory keys pointed at `dir`, so a
+    /// fixture writes only the section it is about.
+    fn example_config(dir: &Path) -> String {
+        include_str!("../../../lqos_config/src/etc/v15/example.toml")
+            .replacen(
+                "lqos_directory = \"/opt/libreqos/src\"",
+                &format!("lqos_directory = {:?}", dir.to_string_lossy()),
+                1,
+            )
+            .replacen(
+                "state_directory = \"/opt/libreqos/state\"",
+                &format!(
+                    "state_directory = {:?}",
+                    dir.join("state").to_string_lossy()
+                ),
+                1,
+            )
+    }
+
+    /// One temp runtime directory plus the `lqos.conf` the daemon reads, held
+    /// under the shared runtime-config test lock so parallel tests never see a
+    /// half-written config.
+    ///
+    /// `configure` receives the temp directory (already carrying `state/`) and
+    /// returns the raw config text; it may also seed the served static tree. For
+    /// its lifetime `LQOS_CONFIG` and `LQOS_DIRECTORY` point at the temp tree and
+    /// the config cache is dropped on the way in and on the way out: both are
+    /// process globals every `load_config()` caller shares.
+    struct TempLqosConfig {
         _guard: std::sync::MutexGuard<'static, ()>,
         dir: std::path::PathBuf,
         config_path: std::path::PathBuf,
-        api_key: String,
         old_lqos_config: Option<std::ffi::OsString>,
         old_lqos_directory: Option<std::ffi::OsString>,
     }
 
-    impl ApiKeyConfig {
-        fn new(label: &str) -> Self {
-            let guard = crate::test_support::runtime_config_test_lock()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+    impl TempLqosConfig {
+        fn new(label: &str, configure: impl FnOnce(&Path) -> String) -> Self {
+            let guard = config_test_lock();
             let dir = std::env::temp_dir().join(format!("lqosd-{label}-{}", std::process::id()));
             std::fs::create_dir_all(dir.join("state")).expect("create runtime dir");
             let config_path = dir.join("lqos.conf");
-            // Mint the record through the SAME seam the key manager uses, so the
-            // fixture cannot drift from the real digest.
-            let (record, creation) = crate::node_manager::local_api::local_api_keys::build_key(
-                &lqos_config::Config::default(),
-                "ext",
-                uuid::Uuid::nil(),
-                &[7_u8; crate::node_manager::local_api::local_api_keys::KEY_RANDOM_BYTES],
-                1,
-            )
-            .expect("mint a test API key");
-            let api_key = creation.api_key;
-
-            let raw = include_str!("../../../lqos_config/src/etc/v15/example.toml")
-                .replacen(
-                    "lqos_directory = \"/opt/libreqos/src\"",
-                    &format!("lqos_directory = {:?}", dir.to_string_lossy()),
-                    1,
-                )
-                .replacen(
-                    "state_directory = \"/opt/libreqos/state\"",
-                    &format!("state_directory = {:?}", dir.join("state").to_string_lossy()),
-                    1,
-                )
-                .replacen(
-                    "bearer_token = \"\"",
-                    &format!(
-                        "bearer_token = \"\"\n\n[[local_api.keys]]\nid = \"{}\"\nname = \"{}\"\ntoken_sha256 = \"{}\"\ncreated_at_unix = {}",
-                        record.id,
-                        record.name,
-                        record.token_sha256,
-                        record.created_at_unix,
-                    ),
-                    1,
-                );
-            std::fs::write(&config_path, raw).expect("write test config");
+            std::fs::write(&config_path, configure(&dir)).expect("write test config");
 
             let old_lqos_config = std::env::var_os("LQOS_CONFIG");
             let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
@@ -906,29 +1003,17 @@ mod tests {
                 _guard: guard,
                 dir,
                 config_path,
-                api_key,
                 old_lqos_config,
                 old_lqos_directory,
             }
         }
 
-        fn api_key(&self) -> &str {
-            &self.api_key
-        }
-
-        /// Drops every key from the config file and invalidates the snapshot, the
-        /// way `update_config` publishes a revoke.
-        fn revoke_all(&self) {
-            let raw = std::fs::read_to_string(&self.config_path).expect("read test config");
-            let start = raw.find("[[local_api.keys]]").expect("key block");
-            let end = raw.find("[ip_ranges]").expect("section after local_api");
-            let revoked = format!("{}{}", &raw[..start], &raw[end..]);
-            std::fs::write(&self.config_path, revoked).expect("write revoked config");
-            lqos_config::clear_cached_config();
+        fn config_path(&self) -> &Path {
+            &self.config_path
         }
     }
 
-    impl Drop for ApiKeyConfig {
+    impl Drop for TempLqosConfig {
         fn drop(&mut self) {
             match &self.old_lqos_config {
                 Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
@@ -940,6 +1025,58 @@ mod tests {
             }
             lqos_config::clear_cached_config();
             let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A temp `lqos.conf` carrying one `[local_api]` key.
+    struct ApiKeyConfig {
+        temp: TempLqosConfig,
+        api_key: String,
+    }
+
+    impl ApiKeyConfig {
+        fn new(label: &str) -> Self {
+            // Mint the record through the SAME seam the key manager uses, so the
+            // fixture cannot drift from the real digest.
+            let (record, creation) = crate::node_manager::local_api::local_api_keys::build_key(
+                &lqos_config::Config::default(),
+                "ext",
+                uuid::Uuid::nil(),
+                &[7_u8; crate::node_manager::local_api::local_api_keys::KEY_RANDOM_BYTES],
+                1,
+            )
+            .expect("mint a test API key");
+            let api_key = creation.api_key;
+
+            let temp = TempLqosConfig::new(label, |dir| {
+                example_config(dir).replacen(
+                    "bearer_token = \"\"",
+                    &format!(
+                        "bearer_token = \"\"\n\n[[local_api.keys]]\nid = \"{}\"\nname = \"{}\"\ntoken_sha256 = \"{}\"\ncreated_at_unix = {}",
+                        record.id,
+                        record.name,
+                        record.token_sha256,
+                        record.created_at_unix,
+                    ),
+                    1,
+                )
+            });
+            Self { temp, api_key }
+        }
+
+        fn api_key(&self) -> &str {
+            &self.api_key
+        }
+
+        /// Drops every key from the config file and invalidates the snapshot, the
+        /// way `update_config` publishes a revoke.
+        fn revoke_all(&self) {
+            let raw = std::fs::read_to_string(self.temp.config_path()).expect("read test config");
+            let start = raw.find("[[local_api.keys]]").expect("key block");
+            let end = raw.find("[ip_ranges]").expect("section after local_api");
+            let revoked = format!("{}{}", &raw[..start], &raw[end..]);
+            std::fs::write(self.temp.config_path(), revoked).expect("write revoked config");
+            lqos_config::clear_cached_config();
         }
     }
 
@@ -984,7 +1121,7 @@ mod tests {
         if let Some(bearer) = bearer {
             builder = builder.header("x-bearer", bearer);
         }
-        send(router, builder).await
+        send(router, builder, &[]).await
     }
 
     async fn post(router: Router, path: &str, bearer: Option<&str>) -> (StatusCode, String) {
@@ -994,7 +1131,7 @@ mod tests {
         if let Some(bearer) = bearer {
             builder = builder.header("x-bearer", bearer);
         }
-        let (status, _, body) = send(router, builder).await;
+        let (status, _, body) = send(router, builder, &[]).await;
         (status, body)
     }
 
@@ -1002,13 +1139,20 @@ mod tests {
         let builder = axum::http::Request::builder()
             .uri(path)
             .header("cookie", "User-Token=admin-session");
-        let (status, _, body) = send(router, builder).await;
+        let (status, _, body) = send(router, builder, &[]).await;
         (status, body)
     }
 
+    /// The one request round trip: every request helper in this module ends
+    /// here.
+    ///
+    /// `headers` are extra field lines (including repeated names such as two
+    /// `accept-language` lines): a request builder cannot carry them all through
+    /// the callers that vary exactly one header.
     async fn send(
         router: Router,
-        builder: axum::http::request::Builder,
+        mut builder: axum::http::request::Builder,
+        headers: &[(&str, &str)],
     ) -> (StatusCode, axum::http::HeaderMap, String) {
         use tower::ServiceExt;
 
@@ -1017,15 +1161,385 @@ mod tests {
         // surface rather than on a wrong answer.
         const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
         let response = router
             .oneshot(builder.body(axum::body::Body::empty()).expect("request"))
             .await
             .expect("router should answer");
         let status = response.status();
-        let headers = response.headers().clone();
+        let response_headers = response.headers().clone();
         let body = axum::body::to_bytes(response.into_body(), MAX_BODY_BYTES)
             .await
             .expect("body");
-        (status, headers, String::from_utf8_lossy(&body).into_owned())
+        (
+            status,
+            response_headers,
+            String::from_utf8_lossy(&body).into_owned(),
+        )
+    }
+
+    /// Temp config plus the served static tree the node manager's own template
+    /// path reads (`<lqos_directory>/bin/static2`). The shell and the two
+    /// standalone pages are copied from the in-tree `static2`, so the render
+    /// runs against the real placeholders.
+    struct UiLocaleFixture {
+        /// Held for its `Drop`: restoring the environment and deleting the temp
+        /// tree is the fixture's whole remaining job.
+        _temp: TempLqosConfig,
+    }
+
+    impl UiLocaleFixture {
+        /// `config_language` writes `ui_language` at the top of the config;
+        /// `with_user` creates the first admin so authenticated pages answer
+        /// `200`.
+        fn new(label: &str, config_language: Option<&str>, with_user: bool) -> Self {
+            let label = format!("ui-locale-{label}");
+            let temp = TempLqosConfig::new(&label, |dir| {
+                let static_dir = dir.join("bin/static2");
+                std::fs::create_dir_all(&static_dir).expect("create static dir");
+                let source_static =
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/node_manager/static2");
+                for page in ["template.html", "login.html", "first-run.html"] {
+                    std::fs::copy(source_static.join(page), static_dir.join(page))
+                        .unwrap_or_else(|e| panic!("copy {page}: {e}"));
+                }
+                let raw = example_config(dir);
+                match config_language {
+                    Some(tag) => format!("ui_language = {tag:?}\n{raw}"),
+                    None => raw,
+                }
+            });
+            crate::node_manager::auth::invalidate_auth_cache();
+
+            if with_user {
+                let mut users =
+                    lqos_config::WebUsers::load_or_create().expect("create the users file");
+                users
+                    .add_or_update_user("admin", "secret", lqos_config::UserRole::Admin)
+                    .expect("add the test admin");
+                crate::node_manager::auth::invalidate_auth_cache();
+            }
+
+            Self { _temp: temp }
+        }
+    }
+
+    impl Drop for UiLocaleFixture {
+        fn drop(&mut self) {
+            // The fields restore the environment after this runs, so drop the
+            // cached auth snapshot while it still describes this fixture.
+            crate::node_manager::auth::invalidate_auth_cache();
+        }
+    }
+
+    /// Logs in through the router and returns the `User-Token` cookie pair.
+    async fn login_cookie(router: &Router) -> String {
+        use tower::ServiceExt;
+
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(axum::http::Method::POST)
+                    .uri("/doLogin")
+                    .header("content-type", "application/json")
+                    .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                        [127, 0, 0, 1],
+                        40000,
+                    ))))
+                    .body(axum::body::Body::from(
+                        r#"{"username":"admin","password":"secret"}"#,
+                    ))
+                    .expect("login request"),
+            )
+            .await
+            .expect("login answers");
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "the test admin must be able to log in"
+        );
+        response
+            .headers()
+            .get(axum::http::header::SET_COOKIE)
+            .expect("login sets a session cookie")
+            .to_str()
+            .expect("session cookie is ASCII")
+            .split(';')
+            .next()
+            .expect("cookie pair")
+            .to_string()
+    }
+
+    /// A `GET` for `path` carrying `cookies` as one `Cookie` field line.
+    fn page_request(path: &str, cookies: &[&str]) -> axum::http::request::Builder {
+        let builder = axum::http::Request::builder().uri(path);
+        if cookies.is_empty() {
+            builder
+        } else {
+            builder.header("cookie", cookies.join("; "))
+        }
+    }
+
+    /// One templated request nests deep enough that a debug build overflows the
+    /// default 2 MiB test stack, so these tests run on a thread with room (the
+    /// daemon sets its own stack size for the same reason).
+    fn on_wide_stack(body: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(body)
+            .expect("spawn the wide-stack test thread")
+            .join()
+            .expect("the wide-stack test thread panicked");
+    }
+
+    fn block_on(future: impl std::future::Future<Output = ()>) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build the test runtime")
+            .block_on(future);
+    }
+
+    /// The three substitutions the operator-facing contract names: the
+    /// `Content-Language` header, the `lang`/`dir` attributes and the catalog
+    /// script tags, with no template token left behind. `dir` is the direction
+    /// the served locale's catalog record declares.
+    fn assert_locale_render(lang: &str, dir: &str, headers: &axum::http::HeaderMap, body: &str) {
+        assert_eq!(
+            headers
+                .get(axum::http::header::CONTENT_LANGUAGE)
+                .and_then(|value| value.to_str().ok()),
+            Some(lang),
+            "Content-Language must name the resolved locale"
+        );
+        assert!(
+            body.contains(&format!(r#"<html lang="{lang}" dir="{dir}""#)),
+            "the page must carry lang/dir: {body:.200}"
+        );
+        // The English catalog always loads: the runtime reads its fallback
+        // strings from it, so a page that loaded only the served catalog would
+        // render untranslated keys as their key names. The shared helper owns
+        // what counts as a catalog; every page's generated locale list is
+        // asserted in `template.rs`.
+        let scripts = crate::node_manager::template::catalog_scripts(body);
+        if lang == "en" {
+            assert_eq!(scripts, ["en.js"], "English is its own fallback");
+        } else {
+            assert_eq!(
+                scripts,
+                ["en.js", format!("{lang}.js").as_str()],
+                "one fallback catalog, then the served one"
+            );
+        }
+        assert!(
+            !body.contains("%%"),
+            "no template token may survive: {body:.200}"
+        );
+    }
+
+    /// A negotiated page may not be stored or replayed by a shared cache.
+    fn assert_not_cacheable(headers: &axum::http::HeaderMap) {
+        assert_eq!(
+            headers
+                .get(axum::http::header::CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store"),
+            "a negotiated page must not be stored"
+        );
+        let vary = headers
+            .get(axum::http::header::VARY)
+            .and_then(|value| value.to_str().ok())
+            .expect("a negotiated page must name its Vary fields")
+            .to_ascii_lowercase();
+        for field in ["cookie", "accept-language"] {
+            assert!(vary.contains(field), "Vary must name {field}: {vary}");
+        }
+    }
+
+    #[test]
+    fn templated_page_resolves_the_cookie_then_accept_language() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("cookie", None, true);
+                let router = test_router();
+                let session = login_cookie(&router).await;
+
+                let (status, headers, body) = send(
+                    router.clone(),
+                    page_request("/help.html", &[session.as_str(), "lqos_lang=es"]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+                // The shell is composed per request (role, status, locale); it
+                // carries no `Vary` because `no-store` already keeps every cache
+                // out of it.
+                assert_eq!(
+                    headers
+                        .get(axum::http::header::CACHE_CONTROL)
+                        .and_then(|value| value.to_str().ok()),
+                    Some("no-store"),
+                    "a composed page must not be stored"
+                );
+
+                let (status, headers, body) = send(
+                    router.clone(),
+                    page_request("/help.html", &[session.as_str()]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("en", "ltr", &headers, &body);
+
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/help.html", &[session.as_str()]),
+                    &[("accept-language", "es-MX,es;q=0.9,en;q=0.8")],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+            })
+        });
+    }
+
+    #[test]
+    fn config_language_is_the_node_default_and_the_cookie_wins() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("config", Some("es"), true);
+                let router = test_router();
+                let session = login_cookie(&router).await;
+
+                let (status, headers, body) = send(
+                    router.clone(),
+                    page_request("/help.html", &[session.as_str()]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/help.html", &[session.as_str(), "lqos_lang=en"]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("en", "ltr", &headers, &body);
+            })
+        });
+    }
+
+    #[test]
+    fn unknown_config_language_counts_as_absent() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("config-unknown", Some("de"), true);
+                let router = test_router();
+                let session = login_cookie(&router).await;
+
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/help.html", &[session.as_str()]),
+                    &[("accept-language", "es;q=0.9")],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+            })
+        });
+    }
+
+    /// A sender may split `Accept-Language` across field lines; both lines are
+    /// one list, so the second must still be read.
+    #[test]
+    fn split_accept_language_field_lines_are_joined() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("split", None, true);
+                let router = test_router();
+                let session = login_cookie(&router).await;
+
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/help.html", &[session.as_str()]),
+                    &[("accept-language", "de"), ("accept-language", "es")],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+            })
+        });
+    }
+
+    #[test]
+    fn standalone_first_run_page_carries_the_locale_substitutions() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("standalone", None, false);
+                let router = test_router();
+
+                let (status, headers, body) = send(
+                    router.clone(),
+                    page_request("/first-run.html", &[]),
+                    &[("accept-language", "es-MX,es;q=0.9")],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+                assert_not_cacheable(&headers);
+
+                // The control this page carries writes `lqos_lang`; the reload
+                // that follows is a fresh request, so the server has to resolve
+                // that cookie into the same language.
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/first-run.html", &["lqos_lang=es"]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+            })
+        });
+    }
+
+    /// The page every unauthenticated operator sees gets the same substitutions,
+    /// negotiated from the same headers: the fixture has users, but no session.
+    #[test]
+    fn standalone_login_page_carries_the_locale_substitutions() {
+        on_wide_stack(|| {
+            block_on(async {
+                let _fixture = UiLocaleFixture::new("login", None, true);
+                let router = test_router();
+
+                let (status, headers, body) = send(
+                    router.clone(),
+                    page_request("/login.html", &[]),
+                    &[("accept-language", "es-MX,es;q=0.9")],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+                assert_not_cacheable(&headers);
+
+                // Same round trip as the first-run page: the control's cookie,
+                // not the browser's headers, decides the composing language.
+                let (status, headers, body) = send(
+                    router,
+                    page_request("/login.html", &["lqos_lang=es"]),
+                    &[],
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                assert_locale_render("es", "ltr", &headers, &body);
+            })
+        });
     }
 }

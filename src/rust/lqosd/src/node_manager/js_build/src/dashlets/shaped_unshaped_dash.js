@@ -2,14 +2,19 @@ import {ShapedUnshapedPie} from "../graphs/shaped_unshaped_pie";
 import {ShapedUnshapedTimescale} from "../graphs/shaped_unshaped_timescale";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {sumDownUpOrder} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+
+// translatable: false — "Throughput" is the websocket event name the dashlet filters on, not a label
 
 export class ShapedUnshapedDash extends DashletBaseInsight {
     title() {
-        return "Mapped/Unmapped Traffic";
+        return t("dashlet.name.mapped_unmapped_traffic");
     }
 
     tooltip() {
-        return "<h5>Mapped/Unmapped Traffic</h5><p>Shows the amount of traffic that is mapped (shaped) and unmapped. Mapped traffic follows configured bandwidth limits; unmapped traffic is not.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.mapped.tooltip")}</p>`;
     }
 
     subscribeTo() {

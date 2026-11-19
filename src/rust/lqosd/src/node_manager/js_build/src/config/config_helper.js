@@ -1,4 +1,5 @@
 import { get_ws_client } from "../pubsub/ws";
+import {t} from "../i18n/index.js";
 import {
     TOPOLOGY_SOURCES,
     activeTopologySourceIntegrations,
@@ -26,6 +27,7 @@ export function sendWsRequest(responseEvent, request, onComplete, onError, optio
             timeoutId = null;
         }
         wsClient.off(responseEvent, responseHandler);
+        // translatable: false — "Error" is the websocket event name, not a label
         wsClient.off("Error", errorHandler);
         if (callback) {
             callback(msg);
@@ -42,7 +44,8 @@ export function sendWsRequest(responseEvent, request, onComplete, onError, optio
     if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) {
         timeoutId = setTimeout(() => {
             finish(onError, {
-                message: options.timeoutMessage || `Timed out waiting for ${responseEvent}`,
+                message: options.timeoutMessage
+                    || t("config.common.timeout.waiting", {event: responseEvent}),
             });
         }, options.timeoutMs);
     }
@@ -169,8 +172,8 @@ export function applyTopologySourceCheckboxState(config) {
             wrapper.appendChild(note);
         }
         note.textContent = source === definition.value
-            ? "Selected by Topology Source."
-            : "Not the active topology source.";
+            ? t("config.common.topology_source.selected")
+            : t("config.common.topology_source.not_active");
     }
 }
 
@@ -194,14 +197,14 @@ export function loadConfig(onComplete, onError) {
 export function saveConfig(onComplete, onError) {
     const clearSecrets = window.configSecretClears || {};
     const reportError = (msg) => {
-        const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+        const errorMsg = (msg && msg.message) ? msg.message : t("config.common.request_failed");
         const detail = (msg && typeof msg === "object")
             ? { ...msg, message: errorMsg }
             : { message: errorMsg };
         if (onError) {
             onError(detail);
         } else {
-            alert("Error saving configuration: " + errorMsg);
+            alert(t("config.common.error.saving", {detail: errorMsg}));
         }
     };
     sendWsRequest(
@@ -235,7 +238,7 @@ export function saveConfig(onComplete, onError) {
         reportError,
         {
             timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
-            timeoutMessage: "Timed out waiting for the config save result. The websocket may have disconnected.",
+            timeoutMessage: t("config.common.timeout.save"),
         },
     );
 }
@@ -288,8 +291,8 @@ export function bindSecretField({
     inputId,
     statusId,
     clearButtonId,
-    configuredMessage = "Stored on server. Leave blank to keep the current value.",
-    emptyMessage = "No value stored.",
+    configuredMessage = t("config.common.secret.stored"),
+    emptyMessage = t("config.common.secret.empty"),
 }) {
     const input = document.getElementById(inputId);
     const status = document.getElementById(statusId);
@@ -304,9 +307,9 @@ export function bindSecretField({
         const clearing = secretClearMarked(section, field);
 
         if (hasReplacement) {
-            status.textContent = "A new value will replace the stored secret when you save.";
+            status.textContent = t("config.common.secret.replacing");
         } else if (clearing) {
-            status.textContent = "The stored secret will be cleared when you save.";
+            status.textContent = t("config.common.secret.clearing");
         } else if (configured) {
             status.textContent = configuredMessage;
         } else {
@@ -344,11 +347,11 @@ export function bindSecretField({
 
 export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {
     if (!network_json || typeof network_json !== "object") {
-        alert("Invalid network configuration");
+        alert(t("config.common.validation.invalid_network"));
         return;
     }
     if (!Array.isArray(shaped_devices)) {
-        alert("Invalid shaped devices configuration");
+        alert(t("config.common.validation.invalid_devices"));
         return;
     }
 
@@ -356,10 +359,10 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
     const validNodes = validNodeList(network_json);
     shaped_devices.forEach((device, index) => {
         if (!device.circuit_id || device.circuit_id.trim() === "") {
-            validationErrors.push(`Device ${index + 1}: Circuit ID is required`);
+            validationErrors.push(t("config.common.validation.device_circuit", {index: index + 1}));
         }
         if (!device.device_id || device.device_id.trim() === "") {
-            validationErrors.push(`Device ${index + 1}: Device ID is required`);
+            validationErrors.push(t("config.common.validation.device_id", {index: index + 1}));
         }
         if (
             device.parent_node &&
@@ -367,7 +370,10 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
             !validNodes.includes(device.parent_node)
         ) {
             validationErrors.push(
-                `Device ${index + 1}: Parent node '${device.parent_node}' does not exist`,
+                t("config.common.validation.device_parent", {
+                    index: index + 1,
+                    node: device.parent_node,
+                }),
             );
         }
 
@@ -382,20 +388,20 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
             Number.isNaN(umax)
         ) {
             validationErrors.push(
-                `Device ${index + 1}: One or more bandwidth fields are not valid numbers`,
+                t("config.common.validation.device_bandwidth", {index: index + 1}),
             );
         } else {
             if (dmin < 0.1 || umin < 0.1) {
-                validationErrors.push(`Device ${index + 1}: Min rates must be >= 0.1 Mbps`);
+                validationErrors.push(t("config.common.validation.device_min_rates", {index: index + 1}));
             }
             if (dmax < 0.2 || umax < 0.2) {
-                validationErrors.push(`Device ${index + 1}: Max rates must be >= 0.2 Mbps`);
+                validationErrors.push(t("config.common.validation.device_max_rates", {index: index + 1}));
             }
         }
     });
 
     if (validationErrors.length > 0) {
-        alert("Validation errors:\n" + validationErrors.join("\n"));
+        alert(`${t("config.common.validation.header")}\n${validationErrors.join("\n")}`);
         return;
     }
 
@@ -406,12 +412,12 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
             if (onComplete) onComplete(!!msg.ok, msg.message);
         },
         (msg) => {
-            const errorMsg = msg && msg.message ? msg.message : "Request failed";
+            const errorMsg = msg && msg.message ? msg.message : t("config.common.request_failed");
             if (onComplete) onComplete(false, errorMsg);
             if (onError) {
                 onError(msg);
             } else {
-                alert("Error saving configuration: " + errorMsg);
+                alert(t("config.common.error.saving", {detail: errorMsg}));
             }
         },
     );
@@ -419,7 +425,7 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
 
 export function saveNetworkJsonOnly(network_json, onComplete, onError) {
     if (!network_json || typeof network_json !== "object") {
-        alert("Invalid network configuration");
+        alert(t("config.common.validation.invalid_network"));
         return;
     }
 
@@ -430,12 +436,12 @@ export function saveNetworkJsonOnly(network_json, onComplete, onError) {
             if (onComplete) onComplete(!!msg.ok, msg.message);
         },
         (msg) => {
-            const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+            const errorMsg = (msg && msg.message) ? msg.message : t("config.common.request_failed");
             if (onComplete) onComplete(false, errorMsg);
             if (onError) {
                 onError(msg);
             } else {
-                alert("Error saving network configuration: " + errorMsg);
+                alert(t("config.common.error.saving_network", {detail: errorMsg}));
             }
         },
     );
@@ -677,21 +683,24 @@ export function validNodeList(network_json) {
 }
 
 export function renderConfigMenu(currentPage) {
+    // Every config page renders this menu, so its labels live in the shared
+    // `config.common` namespace instead of one page's. Product names stay
+    // literal: they read the same in both locales.
     const menuItems = [
-        { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
-        { href: "config_ssl.html", icon: "fa-lock", text: "SSL Setup", id: "ssl" },
-        { href: "config_rtt.html", icon: "fa-stopwatch", text: "RTT Thresholds", id: "rtt" },
-        { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
-        { href: "config_interface.html", icon: "fa-chain", text: "Bridge & Interface Mode", id: "interface" },
-        { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
-        { href: "config_dataplane.html", icon: "fa-tachometer", text: "Dataplane Bandwidth", id: "dataplane" },
+        { href: "config_general.html", icon: "fa-server", text: t("config.common.menu.general"), id: "general" },
+        { href: "config_ssl.html", icon: "fa-lock", text: t("config.common.menu.ssl"), id: "ssl" },
+        { href: "config_rtt.html", icon: "fa-stopwatch", text: t("config.common.menu.rtt"), id: "rtt" },
+        { href: "config_tuning.html", icon: "fa-warning", text: t("config.common.menu.tuning"), id: "tuning" },
+        { href: "config_interface.html", icon: "fa-chain", text: t("config.common.menu.interface"), id: "interface" },
+        { href: "config_queues.html", icon: "fa-car", text: t("config.common.menu.queues"), id: "queues" },
+        { href: "config_dataplane.html", icon: "fa-tachometer", text: t("config.common.menu.dataplane"), id: "dataplane" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
-        { href: "config_lts.html", icon: "fa-line-chart", text: "License & Services", id: "lts" },
-        { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
-        { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
-        { href: "config_dynamic_circuits.html", icon: "fa-layer-group", text: "Dynamic Circuits", id: "dynamic_circuits" },
-        { href: "config_radius_accounting.html", icon: "fa-satellite-dish", text: "RADIUS Accounting", id: "radius_accounting" },
-        { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
+        { href: "config_lts.html", icon: "fa-line-chart", text: t("config.common.menu.lts"), id: "lts" },
+        { href: "config_iprange.html", icon: "fa-address-card", text: t("config.common.menu.iprange"), id: "iprange" },
+        { href: "config_flows.html", icon: "fa-arrow-circle-down", text: t("config.common.menu.flows"), id: "flows" },
+        { href: "config_dynamic_circuits.html", icon: "fa-layer-group", text: t("config.common.menu.dynamic_circuits"), id: "dynamic_circuits" },
+        { href: "config_radius_accounting.html", icon: "fa-satellite-dish", text: t("config.common.menu.radius_accounting"), id: "radius_accounting" },
+        { href: "config_integration.html", icon: "fa-link", text: t("config.common.menu.integration"), id: "integration" },
         { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
         { href: "config_visp.html", icon: "fa-link", text: "VISP", id: "visp" },
@@ -699,9 +708,9 @@ export function renderConfigMenu(currentPage) {
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
         { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },
         { href: "config_wispgate.html", icon: "fa-link", text: "WispGate", id: "wispgate" },
-        { href: "config_network.html", icon: "fa-map", text: "Network Layout", id: "network" },
-        { href: "config_devices.html", icon: "fa-table", text: "Shaped Devices", id: "devices" },
-        { href: "config_users.html", icon: "fa-users", text: "LibreQoS Users", id: "users" }
+        { href: "config_network.html", icon: "fa-map", text: t("config.common.menu.network"), id: "network" },
+        { href: "config_devices.html", icon: "fa-table", text: t("config.common.menu.devices"), id: "devices" },
+        { href: "config_users.html", icon: "fa-users", text: t("config.common.menu.users"), id: "users" }
     ];
 
     const menuHtml = `

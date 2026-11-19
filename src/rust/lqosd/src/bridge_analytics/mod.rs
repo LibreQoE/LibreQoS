@@ -62,6 +62,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{
     CakeTransit, QueueSampleDirection, QueueSampleSnapshot, QueueSampleTin, QueueStoreTransit,
 };
+use lqos_network_devices::{ActivitySource, HostActivity};
 use lqos_queue_tracker::{
     ALL_QUEUE_SUMMARY, QueueCounts, TOTAL_QUEUE_STATS, set_queue_stats_stale,
 };
@@ -94,6 +95,13 @@ pub struct BridgeStatsSnapshot {
     pub by_circuit_id: FxHashMap<String, CircuitLiveRow>,
     pub stale: bool,
     pub captured_at_millis: u64,
+    /// `lqos-74t.191` MUST 1: when lqosd RECEIVED this snapshot, on lqosd's
+    /// own monotonic clock. The bridge's `captured_at_millis` is a
+    /// boot-relative raw-TSC millisecond value, NOT Unix epoch; freshness
+    /// checks must use ONE time domain, so the outage detector ages THIS
+    /// field instead of comparing the bridge value with wall-clock time.
+    /// `None` before the first successful poll (and after a cache reset).
+    pub received_at: Option<std::time::Instant>,
     /// Bridge-internal numeric ids seen this poll (diagnostics).
     pub host_rows: usize,
     /// Per-IP interval rates (T2a device-level join + flow counts).
@@ -1726,7 +1734,12 @@ fn poll_and_store_with(
             // `.49.1`: the SEPARATE best-effort host map (never `by_ip`).
             let best_effort_by_ip =
                 build_best_effort_by_ip(&next.best_effort_hosts, next.captured_at_millis);
-            report_range_activity(&by_ip);
+            // u11 A1/A4: ONE promotion-candidate batch per fresh snapshot, from
+            // the raw host rows (fallback-carried AND unmapped), stamped with the
+            // snapshot's own captured time. `joined`/`by_ip` are deliberately NOT
+            // the source: circuit totals smear co-tenant hosts and rates are not
+            // cumulative counters.
+            report_promotion_candidates(&next);
             let active_flow_ips = next
                 .active_flows
                 .iter()
@@ -1891,6 +1904,7 @@ fn poll_and_store_with(
                 last_good_circuit_ids: last_good_ids.clone(),
                 stale: false,
                 captured_at_millis: captured,
+                received_at: Some(std::time::Instant::now()),
                 host_rows,
                 by_ip,
                 best_effort_by_ip,
@@ -1917,6 +1931,7 @@ fn poll_and_store_with(
             publish_tree_live_view(
                 &joined,
                 &parent_by_circuit,
+                &lqos_network_devices::dynamic_origin_rows(),
                 captured,
                 false,
                 &rtt_snapshot.median_ms_by_circuit,
@@ -2033,50 +2048,174 @@ fn build_best_effort_by_ip(
     out
 }
 
-/// Dynamic-ranges §7 (SIGNAL): for each configured range, report per-IP
-/// activity for in-range hosts the catalog cannot resolve — the unconfirmed
-/// leaf's signature (the range leaf is transaction-stage and absent from the
-/// catalog, so it is the only catalog-unresolved leaf carrying in-range
-/// traffic). The actor owns the sustained-activity window and the write.
-fn report_range_activity(by_ip: &FxHashMap<IpAddr, IpLiveRow>) {
-    if by_ip.is_empty() {
+/// One batch's cap (u11 A4). The batch is assembled from the two candidate
+/// sources, FILTERED, de-duplicated by IP and sorted BEFORE this truncation, so
+/// ineligible rows can never crowd out eligible ones and the actor channel
+/// message stays small. A world with more sustained candidates than this promotes
+/// the lowest addresses first on one pass and the rest as their windows close;
+/// nothing is lost, because a candidate's counters keep accumulating.
+const PROMOTION_BATCH_LIMIT: usize = 1024;
+
+/// One host's CUMULATIVE bytes from the bridge's per-host counters (u11 A1).
+///
+/// `actual` is the byte counter the host itself accumulated in BOTH directions.
+/// Never the circuit totals (a shared circuit would smear other hosts' bytes
+/// into one), never the per-IP interval rates (`by_ip` is a rate, and rates do
+/// not difference into activity), never a carried last-good row (a repeat is not
+/// activity).
+fn cumulative_host_bytes(counters: &analytics_ipc::DirectionalCounters) -> u64 {
+    counters
+        .download_bytes
+        .saturating_add(counters.upload_bytes)
+}
+
+/// Inserts one candidate into the per-IP set (u11 A5).
+///
+/// One entry per host: when two rows name DIFFERENT counter accumulators for the
+/// same address the deltas cannot be priced, so the host is dropped for this
+/// pass instead of being summed across sources. A repeat from the SAME source is
+/// the same measurement and is left alone.
+fn consider_candidate(
+    chosen: &mut FxHashMap<IpAddr, HostActivity>,
+    ambiguous: &mut FxHashSet<IpAddr>,
+    activity: HostActivity,
+) {
+    if ambiguous.contains(&activity.ip) {
         return;
     }
+    if let Some(existing) = chosen.get(&activity.ip) {
+        if existing.source != activity.source {
+            chosen.remove(&activity.ip);
+            ambiguous.insert(activity.ip);
+        }
+        return;
+    }
+    chosen.insert(activity.ip, activity);
+}
+
+/// Assembles one promotion-candidate batch from a FRESH snapshot (u11 A1-A4).
+///
+/// Two sources, and nothing else:
+///
+/// - **shaped rows** (`next.hosts`) whose subscriber IP resolves, by longest
+///   prefix through the catalog, to a row that IS a configured range fallback.
+///   "Is a fallback" needs BOTH halves of the row identity: the circuit id must
+///   be exactly `dynamic-range:<trimmed configured rule name>`, and the payload
+///   must carry the fold's origin marker (`DynamicOriginRows::contains_row`).
+///   A prefix match alone would accept a promoted `dynamic-range:<rule>:<ip>`
+///   row, a lookalike name and an operator row sharing the prefix; the origin
+///   marker alone would accept every RADIUS row the store publishes. Both
+///   together are exactly the fold-synthesized fallback.
+/// - **genuinely unmapped rows** (`next.best_effort_hosts`) inside a configured
+///   range — the class no prefix Map covers. Any other shaped row is never
+///   reported as unknown.
+///
+/// Cost: one pass over each host table, one catalog lookup per shaped row, and
+/// one sort of the survivors. Side effects: none (pure).
+fn build_promotion_activity(
+    next: &analytics_ipc::AnalyticsSnapshot,
+    dynamic: &lqos_config::DynamicCircuitsConfig,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    origins: &lqos_utils::DynamicOriginRows,
+) -> Vec<HostActivity> {
+    let fallback_ids: FxHashSet<String> = dynamic
+        .ranges
+        .iter()
+        .map(|rule| format!("dynamic-range:{}", rule.name.trim()))
+        .collect();
+    let mut chosen: FxHashMap<IpAddr, HostActivity> = FxHashMap::default();
+    let mut ambiguous: FxHashSet<IpAddr> = FxHashSet::default();
+
+    for row in &next.hosts {
+        // A SHAPED row can never be the best-effort slot (`CircuitId` 0 is
+        // reserved for it and only ever appears in `best_effort_hosts`). Treating
+        // one as unmapped would mix two accumulators, so it is skipped.
+        if row.id.circuit_id == 0 {
+            continue;
+        }
+        let address = XdpIpAddress::from(row.id.subscriber_ip);
+        let Some((_, device)) = catalog.device_longest_match_for_ip(&address) else {
+            continue;
+        };
+        if !fallback_ids.contains(device.circuit_id.trim())
+            || !origins.contains_row(&device.circuit_id, &device.device_id)
+        {
+            continue;
+        }
+        consider_candidate(
+            &mut chosen,
+            &mut ambiguous,
+            HostActivity {
+                ip: row.id.subscriber_ip,
+                cumulative_bytes: cumulative_host_bytes(&row.actual),
+                source: ActivitySource::Circuit(row.id.circuit_id),
+            },
+        );
+    }
+
+    for row in &next.best_effort_hosts {
+        // Only a host a configured rule still contains can promote: the actor
+        // owns the exact rate plan, but an address outside every range is not a
+        // candidate and must not spend the batch limit.
+        if !dynamic
+            .ranges
+            .iter()
+            .any(|rule| rule.ip_range.contains(row.id.subscriber_ip))
+        {
+            continue;
+        }
+        consider_candidate(
+            &mut chosen,
+            &mut ambiguous,
+            HostActivity {
+                ip: row.id.subscriber_ip,
+                cumulative_bytes: cumulative_host_bytes(&row.actual),
+                source: ActivitySource::Unmapped,
+            },
+        );
+    }
+
+    let mut activities: Vec<HostActivity> = chosen.into_values().collect();
+    activities.sort_unstable_by_key(|activity| activity.ip);
+    activities.truncate(PROMOTION_BATCH_LIMIT);
+    activities
+}
+
+/// The per-pass wiring around [`build_promotion_activity`] (u11 A2/A4): ONE
+/// config read, ONE catalog snapshot and ONE origin-row snapshot per pass, and
+/// nothing at all when the feature is off.
+///
+/// The observation timestamp is the SNAPSHOT's own `captured_at_millis` (the
+/// bridge's monotone stamp): the engine prices intervals in one clock domain and
+/// rebaselines on a rollback (a bridge restart).
+///
+/// Side effects: reads the process config + catalog snapshots; sends nothing.
+fn promotion_candidates_for_snapshot(next: &analytics_ipc::AnalyticsSnapshot) -> Vec<HostActivity> {
     let Ok(config) = lqos_config::load_config() else {
-        return;
+        return Vec::new();
     };
-    let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
-        return;
+    let Some(dynamic) = config.dynamic_circuits.as_ref() else {
+        return Vec::new();
     };
-    if !dynamic_cfg.enabled
-        || !dynamic_cfg.enable_unknown_ip_promotion
-        || dynamic_cfg.ranges.is_empty()
-    {
-        return;
+    if !dynamic.enabled || !dynamic.enable_unknown_ip_promotion || dynamic.ranges.is_empty() {
+        return Vec::new();
     }
     let catalog = lqos_network_devices::network_devices_catalog();
-    for rule in &dynamic_cfg.ranges {
-        let mut samples = Vec::new();
-        for (ip, row) in by_ip {
-            if !rule.ip_range.contains(*ip) {
-                continue;
-            }
-            if catalog
-                .device_longest_match_for_ip(&lqos_utils::XdpIpAddress::from_ip(*ip))
-                .is_some()
-            {
-                continue;
-            }
-            let bytes = row
-                .bytes_per_second
-                .down
-                .saturating_add(row.bytes_per_second.up);
-            samples.push((*ip, bytes, row.tcp_packets));
-        }
-        if !samples.is_empty() {
-            lqos_network_devices::report_range_host_activity(rule.name.trim(), &samples);
-        }
+    let origins = lqos_network_devices::dynamic_origin_rows();
+    build_promotion_activity(next, dynamic, &catalog, &origins)
+}
+
+/// Pushes one promotion-candidate batch to the actor (u11 A4).
+///
+/// One bounded, NON-BLOCKING batch per successful fresh snapshot: the send uses
+/// `try_send` inside the actor API, so a full queue drops the batch (the next one
+/// differences over a longer interval) and the analytics cycle is never stalled.
+fn report_promotion_candidates(next: &analytics_ipc::AnalyticsSnapshot) {
+    let samples = promotion_candidates_for_snapshot(next);
+    if samples.is_empty() {
+        return;
     }
+    lqos_network_devices::report_promotion_candidate_activity(next.captured_at_millis, &samples);
 }
 
 /// T2b: rolls the E2 circuit rows up the store's parents chains into a
@@ -2234,32 +2373,55 @@ fn apply_tree_rtt_accumulation(snapshot: &TrackerRttSnapshot) {
 fn publish_tree_live_view(
     joined: &FxHashMap<String, CircuitLiveRow>,
     parent_by_circuit: &FxHashMap<String, String>,
+    dynamic_origin: &lqos_utils::DynamicOriginRows,
     captured: u64,
     stale: bool,
     median_ms_by_circuit: &FxHashMap<String, f32>,
 ) {
-    let view = build_tree_live_view(
+    let (view, unmatched) = build_tree_live_view(
         joined,
         parent_by_circuit,
+        dynamic_origin,
         captured,
         stale,
         median_ms_by_circuit,
     );
-    let unmatched = view.unmatched_circuits;
     let pruned = view.pruned_stale_circuits;
+    let now = now_unix_estimate();
+    let unmatched_warn = {
+        let mut state = UNMATCHED_WARN_STATE.lock();
+        unmatched_warn_for_view(now, &view, &unmatched, &mut state)
+    };
     TREE_LIVE_VIEW.store(Arc::new(Some(Arc::new(view))));
     use std::sync::atomic::Ordering;
-    if pruned > 0 && LAST_PRUNED_STALE.swap(pruned, Ordering::Relaxed) != pruned {
+    let previous_pruned = LAST_PRUNED_STALE.swap(pruned, Ordering::Relaxed);
+    if stale_prune_logs(previous_pruned, pruned) {
         info!("Tree live-view: pruned {pruned} stale circuit row(s) (not a store mismatch)");
-    } else if pruned == 0 {
-        LAST_PRUNED_STALE.store(0, Ordering::Relaxed);
     }
-    let now = now_unix_estimate();
-    let mut state = UNMATCHED_WARN_STATE.lock();
-    if unmatched_warn_due(now, unmatched, &mut state) {
+    if let Some(count) = unmatched_warn {
         warn!(
-            "Tree live-view: {unmatched} circuit id(s) matched no store node this tick (zero contribution)"
+            "Tree live-view: {count} provisioned circuit id(s) matched no store node this tick (zero contribution)"
         );
+    }
+}
+
+/// The two halves of [`TreeLiveView::unmatched_circuits`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct UnmatchedCircuits {
+    /// Provisioned rows: a circuit the operator owns with a parent the store does
+    /// not publish is a real divergence, and stays loud.
+    provisioned: usize,
+    /// Rows the dynamic fold synthesized. Their parent belongs to the dynamic
+    /// actor's world (a range fallback attaches to the store's synthetic root
+    /// node), so a missing store node is the NORMAL case for them — counted,
+    /// never warned, or every dynamic range would warn once a minute forever.
+    dynamic_origin: usize,
+}
+
+impl UnmatchedCircuits {
+    /// The value kept in [`TreeLiveView::unmatched_circuits`].
+    fn total(self) -> usize {
+        self.provisioned + self.dynamic_origin
     }
 }
 
@@ -2267,6 +2429,13 @@ fn publish_tree_live_view(
 /// mismatch persists (the analytics tick is 1s — a standing mismatch
 /// must not spam the log).
 const UNMATCHED_WARN_MIN_INTERVAL_SECS: u64 = 60;
+
+/// Whether a pruned-stale count CHANGES enough to log (163.1): the analytics
+/// tick is 1s, so a standing prune count must log once, not per poll. `0` never
+/// logs — a clean world is silent. PURE.
+fn stale_prune_logs(previous: usize, current: usize) -> bool {
+    current > 0 && current != previous
+}
 
 /// Cold-path rate-limit state for the unmatched-circuit WARN.
 #[derive(Default)]
@@ -2304,6 +2473,30 @@ fn unmatched_warn_due(now_unix: u64, count: usize, state: &mut UnmatchedWarnStat
     due
 }
 
+/// The unmatched-circuit WARN for one PUBLISHED view (u6 A2): the decision the
+/// emit site needs, taken together with the view that tick just published.
+///
+/// The rate limiter runs on the PROVISIONED half of the split, never on
+/// [`TreeLiveView::unmatched_circuits`]: that total also counts the fold's rows
+/// (a range fallback attaches to the store's synthetic root, absent by design),
+/// so the total would arm a store-divergence WARN on a healthy box once a
+/// minute, forever. Returns the count to log, or `None` when the tick is silent.
+fn unmatched_warn_for_view(
+    now_unix: u64,
+    view: &TreeLiveView,
+    unmatched: &UnmatchedCircuits,
+    state: &mut UnmatchedWarnState,
+) -> Option<usize> {
+    // The split and the view describe the same tick; binding them here keeps a
+    // future caller from logging a count the operator does not see.
+    debug_assert_eq!(
+        unmatched.total(),
+        view.unmatched_circuits,
+        "the warned split must account for the published total"
+    );
+    unmatched_warn_due(now_unix, unmatched.provisioned, state).then_some(unmatched.provisioned)
+}
+
 /// Wall-clock seconds, best-effort: 0 when the clock is unavailable
 /// (the rate limiter then just warns on its own cadence — every tick
 /// — which is today's behavior; clock loss is the louder problem).
@@ -2314,15 +2507,17 @@ fn now_unix_estimate() -> u64 {
 fn build_tree_live_view(
     joined: &FxHashMap<String, CircuitLiveRow>,
     parent_by_circuit: &FxHashMap<String, String>,
+    dynamic_origin: &lqos_utils::DynamicOriginRows,
     captured: u64,
     stale: bool,
     median_ms_by_circuit: &FxHashMap<String, f32>,
-) -> TreeLiveView {
+) -> (TreeLiveView, UnmatchedCircuits) {
     let mut view = TreeLiveView {
         stale,
         captured_at_millis: captured,
         ..Default::default()
     };
+    let mut unmatched = UnmatchedCircuits::default();
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
         let index_by_name: FxHashMap<&str, usize> = nodes
@@ -2342,8 +2537,13 @@ fn build_tree_live_view(
             let Some(&node_idx) = index_by_name.get(parent_node.as_str()) else {
                 // The circuit IS current (it has a parent mapping) but the
                 // store has no node: that is a real divergence, not a stale
-                // row. Keep it loud.
-                view.unmatched_circuits += 1;
+                // row — unless the fold synthesized the row, whose parent is
+                // the dynamic actor's business (u6 A2: counted, never warned).
+                if dynamic_origin.contains_circuit(circuit_id) {
+                    unmatched.dynamic_origin += 1;
+                } else {
+                    unmatched.provisioned += 1;
+                }
                 continue;
             };
             // The chain includes the circuit's own index (self-inclusive
@@ -2390,7 +2590,8 @@ fn build_tree_live_view(
             view.rtt_p90_ms.insert(*idx, p90 as f32);
         }
     }
-    view
+    view.unmatched_circuits = unmatched.total();
+    (view, unmatched)
 }
 
 fn mark_tree_live_view_stale() {
@@ -3271,6 +3472,294 @@ mod tests {
             "the 7 Unknown packets are the classified residual"
         );
     }
+
+    // ---- u11: the promotion signal (fallback-carried hosts) -------------------
+
+    /// One shaped-device row for the selection gates.
+    fn promotion_device(circuit_id: &str, network: &str, prefix: u8) -> lqos_config::ShapedDevice {
+        lqos_config::ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            circuit_name: circuit_id.to_string(),
+            device_id: circuit_id.to_string(),
+            device_name: circuit_id.to_string(),
+            ipv4: vec![(network.parse().expect("test network"), u32::from(prefix))],
+            ..lqos_config::ShapedDevice::default()
+        }
+    }
+
+    /// One configured range rule (the pure builder never reads the on/off gates;
+    /// the per-pass wiring owns those).
+    fn promotion_rule(name: &str, range: &str) -> lqos_config::DynamicCircuitRangeRule {
+        lqos_config::DynamicCircuitRangeRule {
+            name: name.to_string(),
+            ip_range: range.parse().expect("test range parses"),
+            download_min_mbps: 10.0,
+            upload_min_mbps: 5.0,
+            download_max_mbps: 25.0,
+            upload_max_mbps: 10.0,
+            attach_to: String::new(),
+        }
+    }
+
+    fn promotion_dynamic(
+        ranges: Vec<lqos_config::DynamicCircuitRangeRule>,
+    ) -> lqos_config::DynamicCircuitsConfig {
+        lqos_config::DynamicCircuitsConfig {
+            enabled: true,
+            enable_unknown_ip_promotion: true,
+            ranges,
+            ..lqos_config::DynamicCircuitsConfig::default()
+        }
+    }
+
+    /// A combined catalog over exactly these device rows (no overlay rows).
+    ///
+    /// `replace_with_new_data` is what builds the LPM trie and the row hashes, so
+    /// a hand-constructed `devices` vector alone would resolve nothing.
+    fn promotion_catalog(
+        devices: Vec<lqos_config::ShapedDevice>,
+    ) -> lqos_network_devices::NetworkDevicesCatalog {
+        let mut shaped = lqos_config::ConfigShapedDevices::default();
+        shaped.replace_with_new_data(devices);
+        lqos_network_devices::NetworkDevicesCatalog::from_snapshots(
+            lqos_network_devices::ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped)),
+            Arc::new(Vec::new()),
+        )
+    }
+
+    fn promotion_origins(pairs: &[(&str, &str)]) -> lqos_utils::DynamicOriginRows {
+        let mut origins = lqos_utils::DynamicOriginRows::default();
+        for (circuit_id, device_id) in pairs {
+            origins.insert_row(circuit_id, device_id);
+        }
+        origins
+    }
+
+    fn promotion_snapshot(shaped: Vec<HostRow>, unmapped: Vec<HostRow>) -> AnalyticsSnapshot {
+        AnalyticsSnapshot {
+            captured_at_millis: 1_000,
+            hosts: shaped,
+            best_effort_hosts: unmapped,
+            ..Default::default()
+        }
+    }
+
+    /// u11 A1/A3: a shaped row that resolves to the RANGE FALLBACK is a candidate
+    /// and carries the host's own CUMULATIVE counters. `shaped` is set to a
+    /// different value on purpose: the batch must read `actual`, never the
+    /// circuit-side counters.
+    #[test]
+    fn a_fallback_carried_host_is_a_promotion_candidate() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let catalog = promotion_catalog(vec![promotion_device(
+            "dynamic-range:range-24",
+            "192.168.66.0",
+            24,
+        )]);
+        let origins = promotion_origins(&[("dynamic-range:range-24", "dynamic-range:range-24")]);
+        let mut row = host_row(7, "192.168.66.4", 5_000_000, 1_000_000);
+        row.shaped = DirectionalCounters {
+            download_bytes: 99_000_000,
+            upload_bytes: 99_000_000,
+        };
+
+        let batch = build_promotion_activity(
+            &promotion_snapshot(vec![row], vec![]),
+            &dynamic,
+            &catalog,
+            &origins,
+        );
+
+        assert_eq!(batch.len(), 1, "the fallback-carried host is a candidate");
+        assert_eq!(
+            batch[0].ip,
+            "192.168.66.4".parse::<IpAddr>().expect("ip parses")
+        );
+        assert_eq!(
+            batch[0].cumulative_bytes, 6_000_000,
+            "the host's own actual down+up, never the circuit-side counters"
+        );
+        assert_eq!(
+            batch[0].source,
+            lqos_network_devices::ActivitySource::Circuit(7),
+            "the counter-source identity is the numeric bridge circuit"
+        );
+    }
+
+    /// u11 A3: a LOOKALIKE circuit id (`dynamic-range:range-24-extra`) is not the
+    /// fallback, even with the origin marker present — a prefix match would
+    /// accept it, which is why the id must match exactly.
+    #[test]
+    fn a_lookalike_circuit_id_is_not_a_promotion_candidate() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let lookalike = "dynamic-range:range-24-extra";
+        let catalog = promotion_catalog(vec![promotion_device(lookalike, "192.168.66.0", 24)]);
+        let origins = promotion_origins(&[(lookalike, lookalike)]);
+
+        let batch = build_promotion_activity(
+            &promotion_snapshot(
+                vec![host_row(7, "192.168.66.4", 5_000_000, 1_000_000)],
+                vec![],
+            ),
+            &dynamic,
+            &catalog,
+            &origins,
+        );
+        assert!(
+            batch.is_empty(),
+            "a name lookalike must never be treated as the range fallback: {batch:?}"
+        );
+    }
+
+    /// u11 A3: the origin marker is required too. A row whose id LOOKS right but
+    /// which the fold did not synthesize (no `DynamicOriginRows` entry) is not
+    /// the fallback — that is what keeps operator rows sharing the prefix out.
+    #[test]
+    fn a_fallback_shaped_row_without_the_origin_marker_is_not_a_candidate() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let catalog = promotion_catalog(vec![promotion_device(
+            "dynamic-range:range-24",
+            "192.168.66.0",
+            24,
+        )]);
+        let batch = build_promotion_activity(
+            &promotion_snapshot(
+                vec![host_row(7, "192.168.66.4", 5_000_000, 1_000_000)],
+                vec![],
+            ),
+            &dynamic,
+            &catalog,
+            &promotion_origins(&[]),
+        );
+        assert!(
+            batch.is_empty(),
+            "origin alone or id alone is not the fallback; both are required"
+        );
+    }
+
+    /// u11 A3: other shaped rows are never candidates — a provisioned device, an
+    /// already-promoted `:<ip>` row and a RADIUS row each answer no. The promoted
+    /// identity is the important one: its host's traffic is carried by its OWN
+    /// circuit, not by the fallback.
+    #[test]
+    fn provisioned_promoted_and_radius_rows_are_not_candidates() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let promoted = "dynamic-range:range-24:192.168.66.4";
+        let catalog = promotion_catalog(vec![
+            promotion_device("sub-1", "192.168.66.2", 32),
+            promotion_device(promoted, "192.168.66.4", 32),
+            promotion_device("radius:abc", "192.168.66.5", 32),
+        ]);
+        // The fallback's origin marker exists; these rows are not it.
+        let origins = promotion_origins(&[("dynamic-range:range-24", "dynamic-range:range-24")]);
+        let batch = build_promotion_activity(
+            &promotion_snapshot(
+                vec![
+                    host_row(3, "192.168.66.2", 5_000_000, 0),
+                    host_row(4, "192.168.66.4", 5_000_000, 0),
+                    host_row(5, "192.168.66.5", 5_000_000, 0),
+                ],
+                vec![],
+            ),
+            &dynamic,
+            &catalog,
+            &origins,
+        );
+        assert!(
+            batch.is_empty(),
+            "only the fold-synthesized fallback may carry a candidate: {batch:?}"
+        );
+    }
+
+    /// u11 A3: genuine unmapped rows stay — but only inside a configured range.
+    /// A host outside every rule can never promote, so it never spends the batch.
+    #[test]
+    fn unmapped_hosts_are_candidates_only_inside_a_configured_range() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let catalog = promotion_catalog(vec![]);
+        let batch = build_promotion_activity(
+            &promotion_snapshot(
+                vec![],
+                vec![
+                    host_row(0, "192.168.66.9", 4_096, 0),
+                    host_row(0, "198.51.100.9", 4_096, 0),
+                ],
+            ),
+            &dynamic,
+            &catalog,
+            &promotion_origins(&[]),
+        );
+        assert_eq!(
+            batch.len(),
+            1,
+            "only the in-range unmapped host is a candidate: {batch:?}"
+        );
+        assert_eq!(
+            batch[0].source,
+            lqos_network_devices::ActivitySource::Unmapped
+        );
+    }
+
+    /// u11 A5: one host, two counter accumulators. The deltas cannot be priced
+    /// across sources, so the host is DROPPED for this pass instead of summed.
+    #[test]
+    fn an_ambiguous_host_is_dropped_rather_than_summed() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("range-24", "192.168.66.0/24")]);
+        let catalog = promotion_catalog(vec![promotion_device(
+            "dynamic-range:range-24",
+            "192.168.66.0",
+            24,
+        )]);
+        let origins = promotion_origins(&[("dynamic-range:range-24", "dynamic-range:range-24")]);
+        let batch = build_promotion_activity(
+            &promotion_snapshot(
+                vec![host_row(7, "192.168.66.4", 5_000_000, 0)],
+                vec![host_row(0, "192.168.66.4", 5_000_000, 0)],
+            ),
+            &dynamic,
+            &catalog,
+            &origins,
+        );
+        assert!(
+            batch.is_empty(),
+            "two sources for one IP are ambiguous, never additive: {batch:?}"
+        );
+    }
+
+    /// u11 A4: the batch is bounded and deterministic — sorted by address, capped
+    /// AFTER filtering, so ineligible rows cannot crowd out eligible ones.
+    #[test]
+    fn the_batch_is_sorted_and_capped_after_filtering() {
+        let dynamic = promotion_dynamic(vec![promotion_rule("default", "0.0.0.0/0")]);
+        let catalog = promotion_catalog(vec![]);
+        let mut unmapped = Vec::new();
+        for index in 0..(PROMOTION_BATCH_LIMIT + 25) {
+            // Reverse order on purpose: the batch sorts, so the cap keeps the
+            // LOWEST addresses deterministically.
+            let host = format!("10.200.{}.{}", index / 250, index % 250 + 1);
+            unmapped.push(host_row(0, &host, 4_096, 0));
+        }
+        // An out-of-range row costs nothing, but keep one to prove the filter
+        // runs before the cap.
+        unmapped.push(host_row(0, "203.0.113.7", 4_096, 0));
+        let batch = build_promotion_activity(
+            &promotion_snapshot(vec![], unmapped),
+            &dynamic,
+            &catalog,
+            &promotion_origins(&[]),
+        );
+        assert_eq!(batch.len(), PROMOTION_BATCH_LIMIT);
+        assert!(
+            batch.windows(2).all(|pair| pair[0].ip <= pair[1].ip),
+            "the batch order is deterministic"
+        );
+        assert_eq!(
+            batch[0].ip,
+            "10.200.0.1".parse::<IpAddr>().expect("ip parses"),
+            "the cap keeps the lowest addresses"
+        );
+    }
+
 }
 
 #[cfg(test)]
@@ -3347,7 +3836,9 @@ mod tree_live_tests {
         let mut joined = FxHashMap::default();
         joined.insert("c1".to_string(), row(100, 50));
 
-        let view = build_tree_live_view(&joined, &parents, 42, false, &FxHashMap::default());
+        let (view, _unmatched) = build_tree_live_view(
+            &joined, &parents, &lqos_utils::DynamicOriginRows::default(), 42, false, &FxHashMap::default(),
+        );
         // ap's chain [0,1,2]: the circuit's shaped bytes roll up ap + ancestors.
         for idx in 0..=2 {
             let sums = view
@@ -3376,7 +3867,9 @@ mod tree_live_tests {
         write_store();
         let mut joined = FxHashMap::default();
         joined.insert("c1".to_string(), row(1, 1));
-        let view = build_tree_live_view(&joined, &FxHashMap::default(), 1, false, &FxHashMap::default());
+        let (view, _unmatched) = build_tree_live_view(
+            &joined, &FxHashMap::default(), &lqos_utils::DynamicOriginRows::default(), 1, false, &FxHashMap::default(),
+        );
         assert_eq!(view.unmatched_circuits, 0);
         assert_eq!(view.pruned_stale_circuits, 1);
     }
@@ -3396,7 +3889,9 @@ mod tree_live_tests {
         joined.insert("c1".to_string(), r);
         let mut medians: FxHashMap<String, f32> = FxHashMap::default();
         medians.insert("c1".to_string(), 42.0);
-        let view = build_tree_live_view(&joined, &parents, 1, false, &medians);
+        let (view, _unmatched) = build_tree_live_view(
+            &joined, &parents, &lqos_utils::DynamicOriginRows::default(), 1, false, &medians,
+        );
         // Every node on c1's chain carries the tracker median (42.0), never 639.
         for idx in 0..=2 {
             assert_eq!(
@@ -3417,7 +3912,9 @@ mod tree_live_tests {
         parents.insert("c1".to_string(), "ap".to_string());
         let mut joined = FxHashMap::default();
         joined.insert("ghost".to_string(), row(999, 999));
-        let view = build_tree_live_view(&joined, &parents, 1, false, &FxHashMap::default());
+        let (view, _unmatched) = build_tree_live_view(
+            &joined, &parents, &lqos_utils::DynamicOriginRows::default(), 1, false, &FxHashMap::default(),
+        );
         assert_eq!(view.unmatched_circuits, 0, "stale row is not a mismatch");
         assert_eq!(view.pruned_stale_circuits, 1, "stale row pruned");
 
@@ -3426,9 +3923,151 @@ mod tree_live_tests {
         parents2.insert("current".to_string(), "missing-node".to_string());
         let mut joined2 = FxHashMap::default();
         joined2.insert("current".to_string(), row(1, 1));
-        let view = build_tree_live_view(&joined2, &parents2, 1, false, &FxHashMap::default());
+        let (view, unmatched) = build_tree_live_view(
+            &joined2, &parents2, &lqos_utils::DynamicOriginRows::default(), 1, false, &FxHashMap::default(),
+        );
         assert_eq!(view.unmatched_circuits, 1, "current circuit missing node warns");
+        assert_eq!(
+            unmatched,
+            UnmatchedCircuits {
+                provisioned: 1,
+                dynamic_origin: 0
+            },
+            "a provisioned row with no store node is the warned half"
+        );
         assert_eq!(view.pruned_stale_circuits, 0);
+    }
+
+    /// u6 A2: a dynamic-origin row whose parent node is absent is COUNTED, never
+    /// warned. A range fallback attaches to the store's synthetic root, so the
+    /// absent-node case is normal for the fold's rows; warning on it would fire
+    /// once a minute, forever, on a healthy box.
+    #[test]
+    fn dynamic_origin_unmatched_rows_are_counted_but_never_warn() {
+        let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        write_store();
+        let mut parents: FxHashMap<String, String> = FxHashMap::default();
+        parents.insert("dynamic-range:Default".to_string(), "missing-node".to_string());
+        let mut joined = FxHashMap::default();
+        joined.insert("dynamic-range:Default".to_string(), row(10, 5));
+        let mut dynamic_origin = lqos_utils::DynamicOriginRows::new();
+        dynamic_origin.insert_row("dynamic-range:Default", "dynamic-range:Default");
+
+        let (view, unmatched) = build_tree_live_view(
+            &joined,
+            &parents,
+            &dynamic_origin,
+            1,
+            false,
+            &FxHashMap::default(),
+        );
+        assert_eq!(
+            view.unmatched_circuits, 1,
+            "the count stays in the counter, so the operator still sees it"
+        );
+        assert_eq!(
+            unmatched,
+            UnmatchedCircuits {
+                provisioned: 0,
+                dynamic_origin: 1
+            },
+            "the fold's own rows are the silent half"
+        );
+        let mut state = super::UnmatchedWarnState::default();
+        assert!(
+            !super::unmatched_warn_due(u64::MAX / 4, unmatched.provisioned, &mut state),
+            "a dynamic-origin row must never arm the store-divergence WARN"
+        );
+
+        // Control: the same row WITHOUT the origin marker is a real divergence
+        // and arms the WARN on the first sighting.
+        let (_, control) = build_tree_live_view(
+            &joined,
+            &parents,
+            &lqos_utils::DynamicOriginRows::default(),
+            1,
+            false,
+            &FxHashMap::default(),
+        );
+        assert_eq!(control.provisioned, 1, "control: unmarked rows warn");
+    }
+
+    /// u6 A2 (REV-T2): the EMIT SITE, not the helpers.
+    ///
+    /// A dynamic-origin row whose parent node is absent from `network.json` is
+    /// COUNTED into the published view and must never arm the store-divergence
+    /// WARN — twice, so a limiter that resets every tick shows up as well. The
+    /// same row without the marker then arms it on the first sighting. Passing
+    /// the view TOTAL (1) where the emit site needs the PROVISIONED count (0)
+    /// fails the dynamic-origin assertions.
+    #[test]
+    fn publishing_an_unmatched_dynamic_origin_row_never_arms_the_warn() {
+        let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        write_store();
+        // The warn state is process-global: start cold so "armed" is THIS test's.
+        *super::UNMATCHED_WARN_STATE.lock() = super::UnmatchedWarnState::default();
+
+        let mut parents: FxHashMap<String, String> = FxHashMap::default();
+        parents.insert("dynamic-range:Default".to_string(), "missing-node".to_string());
+        let mut joined = FxHashMap::default();
+        joined.insert("dynamic-range:Default".to_string(), row(10, 5));
+        let mut dynamic_origin = lqos_utils::DynamicOriginRows::new();
+        dynamic_origin.insert_row("dynamic-range:Default", "dynamic-range:Default");
+
+        for tick in 1..=2 {
+            super::publish_tree_live_view(
+                &joined,
+                &parents,
+                &dynamic_origin,
+                tick,
+                false,
+                &FxHashMap::default(),
+            );
+            let published = super::TREE_LIVE_VIEW.load_full();
+            let view = published
+                .as_ref()
+                .as_ref()
+                .expect("the tick publishes a view");
+            assert_eq!(
+                view.unmatched_circuits, 1,
+                "tick {tick}: the operator still sees the count"
+            );
+            assert!(
+                super::UNMATCHED_WARN_STATE.lock().last_warn_unix.is_none(),
+                "tick {tick}: a fold row must never arm the store-divergence WARN"
+            );
+        }
+
+        // Control: the SAME row with no origin marker is a real divergence.
+        super::publish_tree_live_view(
+            &joined,
+            &parents,
+            &lqos_utils::DynamicOriginRows::default(),
+            3,
+            false,
+            &FxHashMap::default(),
+        );
+        assert!(
+            super::UNMATCHED_WARN_STATE.lock().last_warn_unix.is_some(),
+            "control: a provisioned row arms the WARN at the emit site"
+        );
+    }
+
+    /// 163.1: the pruned-stale line logs when the count CHANGES, never per tick.
+    #[test]
+    fn a_standing_pruned_count_logs_once() {
+        assert!(!super::stale_prune_logs(0, 0), "a clean world is silent");
+        assert!(super::stale_prune_logs(0, 1), "the first prune is news");
+        assert!(
+            !super::stale_prune_logs(1, 1),
+            "the next 1s tick must not re-log the same count"
+        );
+        assert!(!super::stale_prune_logs(1, 1));
+        assert!(super::stale_prune_logs(1, 2), "a deeper prune is news");
+        assert!(
+            !super::stale_prune_logs(3, 0),
+            "a cleared prune needs no line"
+        );
     }
 
     #[test]
@@ -3441,7 +4080,9 @@ mod tree_live_tests {
         let mut joined = FxHashMap::default();
         joined.insert("c1".to_string(), row(100, 50));
         joined.insert("c2".to_string(), row(30, 20));
-        let view = build_tree_live_view(&joined, &parents, 7, false, &FxHashMap::default());
+        let (view, _unmatched) = build_tree_live_view(
+            &joined, &parents, &lqos_utils::DynamicOriginRows::default(), 7, false, &FxHashMap::default(),
+        );
         let ap = view.current_throughput.get(&2).copied().unwrap_or_default();
         assert_eq!((ap.down, ap.up), (130, 70), "siblings sum at the AP");
     }
@@ -3555,6 +4196,7 @@ mod tree_live_tests {
         publish_tree_live_view(
             &FxHashMap::default(),
             &FxHashMap::default(),
+            &lqos_utils::DynamicOriginRows::default(),
             1,
             false,
             &FxHashMap::default(),

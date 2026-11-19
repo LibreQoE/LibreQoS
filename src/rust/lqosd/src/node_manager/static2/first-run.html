@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="auto">
+<html lang="%%LANG%%" dir="%%DIR%%" data-bs-theme="auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LibreQoS Node Manager</title>
+    <!-- UI locale: catalog for the language this request resolved to. -->
+    %%I18N_SCRIPT%%
+    <!-- Locale list the page's language selector is built from. -->
+    <script src="i18n/locales.js%CACHEBUSTERS%"></script>
+    <title data-i18n="common.page_title">LibreQoS Node Manager</title>
     <script>
     (function () {
         try {
@@ -26,26 +30,34 @@
 </head>
 <body class="min-vh-100 d-flex flex-column">
 
+<!-- UI language, before sign-in: the same control the sidebar carries, built
+     from the locale list in the head. Shipped hidden, so a browser that runs no
+     bundle shows no empty select; the switcher reveals it with its options. -->
+<div id="languageControl" class="d-flex justify-content-end align-items-center gap-2 px-3 pt-3" hidden>
+    <label class="form-label mb-0 small" for="languageSelect" data-i18n="common.language.label">Language</label>
+    <select class="form-select form-select-sm w-auto" id="languageSelect"></select>
+</div>
+
 <div id="container" class="pad4 flex-fill d-flex align-items-start">
     <div class="row w-100">
         <div class="col-sm-4"></div>
         <div class="col-sm-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body">
-                    <h5 class="card-title">First Login</h5>
-                    <p>
-                        No <em>lqusers.toml</em> file was found. This is probably the first time you've run
+                    <h5 class="card-title" data-i18n="first_run.heading">First Login</h5>
+                    <p data-i18n="first_run.intro">
+                        No lqusers.toml file was found. This is probably the first time you've run
                         the LibreQoS web system. If it isn't, then please check permissions on that file and
                         use the "bin/lqusers" command to verify that your system is working.
                     </p>
-                    <p class="alert alert-warning" role="alert">
+                    <p class="alert alert-warning" role="alert" data-i18n="first_run.cookie_warning">
                         This site will use a cookie to store your identification. If that's not ok,
                         please don't use the site.
                     </p>
-                    <p>Let's create a new admin user:</p>
+                    <p data-i18n="first_run.create_admin">Let's create a new admin user:</p>
                     <table class="table">
                         <tr>
-                            <td>
+                            <td data-i18n="first_run.username">
                                 Your Username
                             </td>
                             <td>
@@ -53,11 +65,21 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>Your password</td>
+                            <td data-i18n="first_run.password">Your password</td>
                             <td><input type="password" id="password" /></td>
                         </tr>
+                        <tr>
+                            <td data-i18n="first_run.setup_code_label">Setup code</td>
+                            <td><input type="text" id="setupCode" autocomplete="off" spellcheck="false" /></td>
+                        </tr>
                     </table>
-                    <a class="btn btn-primary" id="btnCreateUser">Create User Account</a>
+                    <p class="small text-body-secondary" data-i18n="first_run.setup_code_help">
+                        The one-time setup code is stored root-only on the server and printed (as a
+                        path) in the lqosd startup log. Read it with
+                        sudo cat /run/lqos/first_run/setup-code and paste it above. It is consumed
+                        when the first admin is created.
+                    </p>
+                    <a class="btn btn-primary" id="btnCreateUser" data-i18n="first_run.action">Create User Account</a>
                 </div>
             </div>
         </div>
@@ -67,15 +89,20 @@
 
 <div id="firstRunError" class="alert alert-danger d-none mt-3 mx-auto" style="max-width: 720px;">
     <i class="fas fa-exclamation-triangle me-2"></i>
-    <span id="firstRunErrorText">Unable to initialize web authentication.</span>
+    <span id="firstRunErrorText" data-i18n="first_run.error_default">Unable to initialize web authentication.</span>
 </div>
 
-<script src="first-run.js"></script>
-
 <footer class="justify-content-center text-body-tertiary text-center py-3">
-    &copy; Copyright 2022-2024, LibreQoE LLC
+    <span data-i18n="common.footer.copyright">&copy; Copyright 2022-</span><span id="year"></span><span data-i18n="common.footer.rights">, LibreQoE LLC. All Rights Reserved.</span>
 </footer>
 
+<script>
+    // The live end year sits between the two catalog fragments, so it is written
+    // at load time exactly as the shell's footer does; no message carries a year.
+    document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+
+<script src="first-run.js"></script>
 <script src="vendor/bootstrap.bundle.min.js"></script>
 </body>
 </html>

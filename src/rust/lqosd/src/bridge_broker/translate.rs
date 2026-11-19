@@ -2967,7 +2967,7 @@ mod tests {
     }
 
     /// GATE (B) (`docs/broker_structural_diff_replay_gate_card.md` §1):
-    /// REPLAY flash_1's captured production DESIRED generations
+    /// REPLAY the captured production DESIRED generations
     /// (`scripts/test/broker_diff_shadow.py capture` →
     /// `<dir>/generations/gen_*.json`) through the producer, asserting the
     /// invariants on each consecutive transition — each historical class
@@ -2978,7 +2978,7 @@ mod tests {
         // DEFAULT to the COMMITTED fixture so the class fence runs in EVERY
         // cargo test (local + CI) — a no-op-unless-env gate can be silently
         // skipped. `LQOSD_DIFF_REPLAY_DIR` OVERRIDES it for a custom/real capture
-        // archive (the reviewer rev 4651 REQUIRED 1; the coordinator/flash_1 rev 4653).
+        // archive (required by the replay-gate review).
         let dir = std::env::var("LQOSD_DIFF_REPLAY_DIR").unwrap_or_else(|_| {
             concat!(
                 env!("CARGO_MANIFEST_DIR"),

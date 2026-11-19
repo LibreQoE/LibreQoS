@@ -19,6 +19,7 @@ export function cakeTinIndexFor(labelIndex) {
 }
 
 /** The four diffserv4 tin legend pairs (down series name -> up series name). */
+// translatable: false — "Bulk" "Bulk Up" "Best Effort" "Best Effort Up" "RT Video" "RT Video Up" "Voice" "RT Voice Up" — CAKE diffserv4 tin series identifiers this table pairs and `cakeTinLabel` renders in the active language
 export const CAKE_TIN_LEGEND_PAIRS = [
     { down: "Bulk", up: "Bulk Up" },
     { down: "Best Effort", up: "Best Effort Up" },

@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {t} from "../i18n/index.js";
 import {mkBadge} from "./bakery_shared";
 import {
     requestStormguardConfig,
@@ -51,11 +52,11 @@ export class StormguardSummaryDashlet extends BaseDashlet {
     }
 
     title() {
-        return "StormGuard Summary";
+        return t("dashlet.name.stormguard_summary");
     }
 
     tooltip() {
-        return "<h5>StormGuard Summary</h5><p>Shows whether StormGuard is enabled, how many watched sites are active, and where recent adjustments or cooldowns are concentrated.</p>";
+        return t("dashlet.stormguard.summary.tooltip");
     }
 
     subscribeTo() {
@@ -79,12 +80,12 @@ export class StormguardSummaryDashlet extends BaseDashlet {
         const configLink = document.createElement("a");
         configLink.href = "config_stormguard.html";
         configLink.className = "btn btn-sm btn-outline-primary";
-        configLink.innerHTML = "<i class='fa fa-gear me-1'></i> Config";
+        configLink.innerHTML = `<i class='fa fa-gear me-1'></i> ${t("dashlet.stormguard.summary.config_link")}`;
 
         const debugLink = document.createElement("a");
         debugLink.href = "stormguard_debug.html";
         debugLink.className = "btn btn-sm btn-outline-secondary";
-        debugLink.innerHTML = "<i class='fa fa-bug me-1'></i> Debug";
+        debugLink.innerHTML = `<i class='fa fa-bug me-1'></i> ${t("dashlet.stormguard.summary.debug_link")}`;
 
         links.appendChild(configLink);
         links.appendChild(debugLink);
@@ -95,10 +96,10 @@ export class StormguardSummaryDashlet extends BaseDashlet {
         const row = document.createElement("div");
         row.classList.add("row", "g-3");
 
-        this.watchedCard = summaryCard("Watched Sites", "fa-sitemap", "text-primary");
-        this.activeCard = summaryCard("Active Sites", "fa-wave-square", "text-success");
-        this.cooldownCard = summaryCard("Cooling Down", "fa-hourglass-half", "text-warning");
-        this.changedCard = summaryCard("Changed Recently", "fa-bolt", "text-danger");
+        this.watchedCard = summaryCard(t("dashlet.stormguard.card.watched_sites"), "fa-sitemap", "text-primary");
+        this.activeCard = summaryCard(t("dashlet.stormguard.card.active_sites"), "fa-wave-square", "text-success");
+        this.cooldownCard = summaryCard(t("dashlet.stormguard.state.cooling"), "fa-hourglass-half", "text-warning");
+        this.changedCard = summaryCard(t("dashlet.stormguard.card.changed_recently"), "fa-bolt", "text-danger");
 
         [
             this.watchedCard,
@@ -135,35 +136,35 @@ export class StormguardSummaryDashlet extends BaseDashlet {
         this.statusWrap.replaceChildren(
             mkBadge(configData.enabledLabel, configData.enabledClass),
             mkBadge(configData.dryRunLabel, "bg-light text-secondary border"),
-            mkBadge(`Strategy: ${configData.strategy}`, "bg-info-subtle text-info border border-info-subtle"),
+            mkBadge(t("dashlet.stormguard.badge.strategy", {strategy: configData.strategy}), "bg-info-subtle text-info border border-info-subtle"),
         );
 
         this.watchedCard.value.textContent = snapshot.watchedSiteCount.toString();
-        this.watchedCard.sub.textContent = "Sites currently emitting StormGuard data";
+        this.watchedCard.sub.textContent = t("dashlet.stormguard.card.watched_hint");
 
         this.activeCard.value.textContent = snapshot.sites.filter((site) => site.download || site.upload).length.toString();
-        this.activeCard.sub.textContent = "Sites with live debug metrics";
+        this.activeCard.sub.textContent = t("dashlet.stormguard.card.active_hint");
 
         this.cooldownCard.value.textContent = snapshot.cooldownSiteCount.toString();
         this.cooldownCard.sub.textContent = snapshot.cooldownSiteCount > 0
-            ? "StormGuard is pacing follow-up actions"
-            : "No sites are waiting out cooldowns";
+            ? t("dashlet.stormguard.card.cooling_hint")
+            : t("dashlet.stormguard.card.no_cooling_hint");
 
         this.changedCard.value.textContent = snapshot.recentChangeCount.toString();
         this.changedCard.sub.textContent = snapshot.recentChangeCount > 0
-            ? "Sites changed in the last 5 minutes"
-            : "No recent StormGuard adjustments";
+            ? t("dashlet.stormguard.card.changed_hint")
+            : t("dashlet.stormguard.card.no_changes_hint");
 
         if (snapshot.empty) {
             if (snapshot.config && snapshot.config.enabled) {
-                this.emptyEl.textContent = "StormGuard is enabled, but no watched sites are currently publishing live data.";
+                this.emptyEl.textContent = t("dashlet.stormguard.summary.empty_enabled");
             } else {
-                this.emptyEl.textContent = "StormGuard is disabled or idle. Use the config page to enable it and choose watched sites.";
+                this.emptyEl.textContent = t("dashlet.stormguard.summary.empty_disabled");
             }
         } else {
             this.emptyEl.textContent = snapshot.singleSite
-                ? "Single-site deployment detected. The detail panel expands that site’s current state and recent decisions."
-                : "Select a site from the list to inspect why StormGuard is holding, cooling down, or changing rates.";
+                ? t("dashlet.stormguard.summary.single_site")
+                : t("dashlet.stormguard.summary.choose_site");
         }
     }
 }

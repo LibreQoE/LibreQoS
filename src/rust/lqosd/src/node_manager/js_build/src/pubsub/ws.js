@@ -1,3 +1,8 @@
+// translatable: false — "I accept that this is an unstable, internal API and is unsupported" is the acknowledgement the client sends while opening the socket, not copy
+// translatable: false — "Failed to decode websocket message" "Websocket version mismatch persisted after reload:" "Websocket version mismatch:" "Websocket handler failed for" are developer console diagnostics
+// translatable: false — "client=" "server=" are the two diagnostic field labels those console lines print
+// translatable: false — "Websocket send failed; reconnecting" is a developer console warning
+// translatable: false — "Hello" is the websocket event name the handshake matches
 import { Encoder, decode } from "../lq_js_common/helpers/cbor-x";
 import { websocketHelloReply } from "./ws_auth.mjs";
 

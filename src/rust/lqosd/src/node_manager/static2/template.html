@@ -1,8 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="auto">
+<html lang="%%LANG%%" dir="%%DIR%%" data-bs-theme="auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- UI locale: catalog for the language this request resolved to. -->
+    %%I18N_SCRIPT%%
+    <!-- Locale list for the language selector every page builds. -->
+    <script src="i18n/locales.js%CACHEBUSTERS%"></script>
     <title>%%TITLE%%</title>
     <link rel="icon" href="favicon.png">
     <script>
@@ -42,16 +46,16 @@
     <!-- Sidebar -->
     <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar lqos-sidebar">
         <div class="container-fluid">            
-            <button class="navbar-toggler navbar-dark" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <button class="navbar-toggler navbar-dark" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation" data-i18n-aria-label="common.nav.toggle">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav flex-column">
                     <!-- Logo -->
                     <li class="nav-item mb-2">
-                        <a class="nav-link lqos-brand-link" href="index.html" aria-label="LibreQoS home" %%COBRAND_LOGO_DESCRIBEDBY%%>
+                        <a class="nav-link lqos-brand-link" href="index.html" aria-label="LibreQoS home" data-i18n-aria-label="common.nav.home" %%COBRAND_LOGO_DESCRIBEDBY%%>
                             <span class="lqos-logo-row">
-                                <img class="lqos_logo" src="tinylogo.svg" alt="LibreQoS SVG Logo" width="48" height="48">
+                                <img class="lqos_logo" src="tinylogo.svg" alt="LibreQoS SVG Logo" data-i18n-alt="common.nav.logo_alt" width="48" height="48">
                                 <span class="lqos-wordmark">LibreQoS <span class="lqos-wordmark-version">v3</span></span>
                                 %%COBRAND_LOGO%%
                             </span>
@@ -62,9 +66,9 @@
                     <li class="text-center">
                         <form class="d-none d-sm-inline-block form-inline navbar-search">
                             <div class="input-group">
-                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" autocomplete="off" id="txtSearch">
+                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" autocomplete="off" id="txtSearch" data-i18n-placeholder="common.search.placeholder" data-i18n-aria-label="common.search.action">
                                 <div class="input-group-append">
-                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch" aria-label="Search" title="Search">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch" aria-label="Search" title="Search" data-i18n-aria-label="common.search.action" data-i18n-title="common.search.action">
                                         <i class="fas fa-search fa-sm" aria-hidden="true"></i>
                                     </button>
                                 </div>
@@ -76,54 +80,54 @@
                     </li>
                     <!-- Dashboard -->
                     <li class="nav-item">
-                        <a class="nav-link" href="index.html">
+                        <a class="nav-link" href="index.html" data-i18n="common.nav.dashboard">
                             <i class="fa fa-fw fa-centerline fa-gauge-high nav-icon"></i> Dashboard
                         </a>
                     </li>
                     <!-- Tree -->
                     <li class="nav-item">
-                        <a class="nav-link" href="tree.html?parent=0">
+                        <a class="nav-link" href="tree.html?parent=0" data-i18n="common.nav.tree">
                             <i class="fa fa-fw fa-centerline fa-tree nav-icon"></i> Tree
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="topology_manager.html">
+                        <a class="nav-link" href="topology_manager.html" data-i18n="common.nav.topology">
                             <i class="fa fa-fw fa-centerline fa-diagram-project nav-icon"></i> Topology
                         </a>
                     </li>
                     <!-- Shaped Devices -->
                     <li class="nav-item">
-                        <a class="nav-link" href="shaped_devices.html">
+                        <a class="nav-link" href="shaped_devices.html" data-i18n="common.nav.devices">
                             <i class="fa fa-fw fa-centerline fa-user-circle nav-icon"></i> Devices <span id="shapedDeviceCount" class="badge menu-badge text-success">?</span>
                         </a>
                     </li>
                     <!-- Unknown IPs -->
                     <li class="nav-item">
-                        <a class="nav-link" href="unknown_ips.html">
+                        <a class="nav-link" href="unknown_ips.html" data-i18n="common.nav.unknown_ips">
                             <i class="fa fa-fw fa-centerline fa-address-card nav-icon"></i> Unknown IP <span id="unknownIpCount" class="badge menu-badge text-warning muted">?</span>
                         </a>
                     </li>
                     <!-- Site Map -->
                     <li class="nav-item">
-                        <a class="nav-link" href="site_map.html">
+                        <a class="nav-link" href="site_map.html" data-i18n="common.nav.site_map">
                             <i class="fa fa-fw fa-centerline fa-map-location-dot nav-icon"></i> Site Map
                         </a>
                     </li>
                     <!-- Flow Globe -->
                     <li class="nav-item">
-                        <a class="nav-link" href="flow_map.html">
+                        <a class="nav-link" href="flow_map.html" data-i18n="common.nav.flow_globe">
                             <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> Flow Globe
                         </a>
                     </li>
                     <!-- Tree Sankey -->
                     <li class="nav-item">
-                        <a class="nav-link" href="all_tree_sankey.html">
+                        <a class="nav-link" href="all_tree_sankey.html" data-i18n="common.nav.tree_overview">
                             <i class="fa fa-fw fa-centerline fa-server nav-icon"></i> Tree Overview
                         </a>
                     </li>
                     <!-- ASN Analysis -->
                     <li class="nav-item">
-                        <a class="nav-link" href="asn_analysis.html">
+                        <a class="nav-link" href="asn_analysis.html" data-i18n="common.nav.asn_analysis">
                             <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Analysis
                         </a>
                     </li>
@@ -133,49 +137,61 @@
                     %%CHAT_LINK%%
                     <!-- Config -->
                     <li class="nav-item">
-                        <a class="nav-link" href="config_general.html">
+                        <a class="nav-link" href="config_general.html" data-i18n="common.nav.configuration">
                             <i class="fa fa-fw fa-centerline fa-gears nav-icon"></i> Configuration
                         </a>
                     </li>
                     <!-- Help -->
                     <li class="nav-item">
-                        <a class="nav-link" href="help.html">
+                        <a class="nav-link" href="help.html" data-i18n="common.nav.help">
                             <i class="fa fa-fw fa-centerline fa-question-circle nav-icon"></i> Help
                         </a>
                         <hr />
                     </li>
-                    <li class="nav-section-label">System Health</li>
+                    <li class="nav-section-label" data-i18n="common.nav.system_health">System Health</li>
                     %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
                     %%BRIDGE_STATUS%%
                     <li class="nav-item">
-                        <a class="nav-link" href="cpu_workers.html">
+                        <a class="nav-link" href="cpu_workers.html" data-i18n="common.nav.cpu_workers">
                             <i class="fa fa-fw fa-centerline fa-microchip nav-icon"></i> CPU &amp; Workers
                         </a>
                     </li>
                     %%UPDATE_STATUS%%
+                    <!-- UI language: a nav item of its own, so it is reachable
+                         without opening a menu. A native select keeps the list
+                         from outgrowing the sidebar as catalogs are added. It
+                         ships hidden, because a browser that runs no bundle
+                         would otherwise show an empty combobox; the switcher
+                         reveals it once it has options. -->
+                    <li class="nav-item nav-language" id="languageNav" hidden>
+                        <label class="nav-language-label" for="languageSelect" data-i18n="common.language.label">
+                            <i class="fa fa-fw fa-centerline fa-language nav-icon" aria-hidden="true"></i> Language
+                        </label>
+                        <select class="form-select form-select-sm" id="languageSelect" aria-label="Language" data-i18n-aria-label="common.language.label"></select>
+                    </li>
                     <!-- Display preferences (kept out of the main nav list) -->
                     <li class="nav-item">
                         <details class="nav-display">
-                            <summary class="nav-link">
+                            <summary class="nav-link" data-i18n="common.display.title">
                                 <i class="fa fa-fw fa-centerline fa-palette nav-icon"></i> Display
                             </summary>
                             <div class="nav-display-body">
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" aria-label="Toggle day or night mode">
-                                    <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span>Dark mode</span></label>
+                                    <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" data-i18n-title="common.display.dark_mode_tooltip" aria-label="Toggle day or night mode" data-i18n-aria-label="common.display.dark_mode_aria">
+                                    <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span data-i18n="common.display.dark_mode">Dark mode</span></label>
                                 </div>
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" aria-label="Toggle redaction mode">
-                                    <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span>Redact</span></label>
+                                    <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" data-i18n-title="common.display.redact" aria-label="Toggle redaction mode" data-i18n-aria-label="common.display.redact_aria">
+                                    <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span data-i18n="common.display.redact">Redact</span></label>
                                 </div>
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" aria-label="Toggle color blind mode">
-                                    <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span>Color blind</span></label>
+                                    <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" data-i18n-title="common.display.color_blind_tooltip" aria-label="Toggle color blind mode" data-i18n-aria-label="common.display.color_blind_aria">
+                                    <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span data-i18n="common.display.color_blind">Color blind</span></label>
                                 </div>
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" aria-label="Toggle Klingon mode">
-                                    <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span>Klingon</span></label>
+                                    <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" data-i18n-title="common.display.klingon" aria-label="Toggle Klingon mode" data-i18n-aria-label="common.display.klingon_aria">
+                                    <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span data-i18n="common.display.klingon">Klingon</span></label>
                                 </div>
                             </div>
                         </details>
@@ -184,24 +200,25 @@
                          main nav so System Health stays high in the sidebar. -->
                     <li class="nav-item d-none" id="maintenanceNav">
                         <details class="nav-display">
-                            <summary class="nav-link">
+                            <summary class="nav-link" data-i18n="common.nav.maintenance">
                                 <i class="fa fa-fw fa-centerline fa-wrench nav-icon"></i> Maintenance
                             </summary>
                             <div class="nav-display-body">
                                 <div class="d-none" id="reloadLibreQoSItem">
                                     <a class="nav-link" href="#" id="reloadLibreQoSLink"
-                                       title="Re-sync the integration (or manual data) and apply now"
-                                       aria-label="Reload LibreQoS">
+                                       title="Re-sync the integration (or manual data) and apply now" data-i18n-title="common.reload.tooltip"
+                                       aria-label="Reload LibreQoS" data-i18n-aria-label="common.action.reload"
+                                       data-i18n="common.action.reload">
                                         <i class="fa fa-fw fa-centerline fa-rotate nav-icon" aria-hidden="true"></i> Reload LibreQoS
                                     </a>
                                 </div>
                                 <div class="d-none" id="observeShapeNav">
-                                    <div class="small text-uppercase text-secondary mt-1 mb-1">Queue Mode <span id="queueModeSummary" class="text-secondary small ms-1"></span></div>
-                                    <div class="btn-group btn-group-sm w-100" role="group" aria-label="Observe or shape mode">
-                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeObserve">Observe</button>
-                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeShape">Shape</button>
+                                    <div class="small text-uppercase text-secondary mt-1 mb-1" data-i18n="common.nav.queue_mode">Queue Mode <span id="queueModeSummary" class="text-secondary small ms-1"></span></div>
+                                    <div class="btn-group btn-group-sm w-100" role="group" aria-label="Observe or shape mode" data-i18n-aria-label="common.nav.queue_mode_aria">
+                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeObserve" data-i18n="common.nav.observe">Observe</button>
+                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeShape" data-i18n="common.nav.shape">Shape</button>
                                     </div>
-                                    <div class="small text-secondary mt-2">Reload required. Switching modes re-syncs and applies; the bridge keeps shaping and traffic is not interrupted.</div>
+                                    <div class="small text-secondary mt-2" data-i18n="common.nav.queue_mode_note">Reload required. Switching modes re-syncs and applies; the bridge keeps shaping and traffic is not interrupted.</div>
                                 </div>
                             </div>
                         </details>
@@ -214,7 +231,7 @@
                                 <i class="fa fa-fw fa-centerline fa-user-circle"></i> <span id="username">%%USERNAME%%</span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li><button class="dropdown-item" type="button" id="btnLogout"><i class="fa fa-sign-out" aria-hidden="true"></i> Logout</button></li>
+                                <li><button class="dropdown-item" type="button" id="btnLogout"><i class="fa fa-sign-out" aria-hidden="true"></i> <span data-i18n="common.action.logout">Logout</span></button></li>
                             </ul>
 
                         </div>
@@ -240,16 +257,16 @@
     <div class='modal-dialog modal-fullscreen'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5' id='reloadModalLabel'>Reload LibreQoS</h1>
-                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+                <h1 class='modal-title fs-5' id='reloadModalLabel' data-i18n="common.action.reload">Reload LibreQoS</h1>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close' data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class='modal-body'>
           <pre id='reloadLibreResult' style='overflow: auto; height: 100%; width: 100%;'>
           </pre>
-                <div class='small text-secondary mt-2'>The bridge keeps shaping; traffic is not interrupted.</div>
+                <div class='small text-secondary mt-2' data-i18n="common.reload.bridge_note">The bridge keeps shaping; traffic is not interrupted.</div>
             </div>
             <div class='modal-footer'>
-                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal' data-i18n="common.action.close">Close</button>
             </div>
         </div>
     </div>
@@ -260,14 +277,14 @@
     <div class='modal-dialog modal-xl modal-dialog-scrollable'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5' id='schedulerModalLabel'>System Health</h1>
-                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+                <h1 class='modal-title fs-5' id='schedulerModalLabel' data-i18n="common.nav.system_health">System Health</h1>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close' data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class='modal-body'>
                 <div id='schedulerDetailsBody' class='lqos-scheduler-modal-body'></div>
             </div>
             <div class='modal-footer'>
-                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal' data-i18n="common.action.close">Close</button>
             </div>
         </div>
     </div>
@@ -278,24 +295,25 @@
     <div class='modal-dialog modal-xl modal-dialog-scrollable'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Alerts</h1>
-                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all alerts' aria-label='Acknowledge all alerts'><i class='fa fa-times' aria-hidden='true'></i></button>
-                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel' data-i18n="common.nav.alerts">Alerts</h1>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all alerts' data-i18n-title="common.alerts.acknowledge_all" aria-label='Acknowledge all alerts' data-i18n-aria-label="common.alerts.acknowledge_all"><i class='fa fa-times' aria-hidden='true'></i></button>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close' data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class='modal-body'>
                 <div id='urgentListContainer'>
-                    <div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>
+                    <div class="text-center text-muted" data-i18n="common.state.loading"><i class='fa fa-spinner fa-spin'></i> Loading...</div>
                 </div>
             </div>
             <div class='modal-footer'>
-                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal' data-i18n="common.action.close">Close</button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- translatable: false — "LibreQoS %%VERSION%%." is the product name and its version token, not copy to translate -->
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
-    LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
+    LibreQoS %%VERSION%%. <span data-i18n="common.footer.copyright">&copy; Copyright 2022-</span><span id="year"></span><span data-i18n="common.footer.rights">, LibreQoE LLC. All Rights Reserved.</span>
 </footer>
 
     <script src="template.js%CACHEBUSTERS%"></script>

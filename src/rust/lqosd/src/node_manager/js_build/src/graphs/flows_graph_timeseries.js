@@ -2,6 +2,7 @@ import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
 
 const wsClient = get_ws_client();
 
@@ -20,7 +21,7 @@ export class FlowCountGraphTimescale extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withTimeAxis()
-            .withScaledAbsYAxis("Tracked Flows", 30)
+            .withScaledAbsYAxis(t("graph.axis.tracked_flows"), 30)
             .withLeftGridSize("15%")
             .build();
         this.option.series = [

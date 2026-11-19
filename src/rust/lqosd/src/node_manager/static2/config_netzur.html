@@ -5,45 +5,45 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Netzur Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Configure API access and timeout behavior for automated imports from Netzur CRM.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.netzur.title">Netzur Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.netzur.subtitle">Configure API access and timeout behavior for automated imports from Netzur CRM.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableNetzur">
-                <label class="form-check-label" for="enableNetzur">Enable Netzur Integration</label>
-                <div class="form-text">Toggle automated imports from Netzur CRM</div>
+                <label class="form-check-label" for="enableNetzur" data-i18n="config.netzur.enable">Enable Netzur Integration</label>
+                <div class="form-text" data-i18n="config.netzur.enable_help">Toggle automated imports from Netzur CRM</div>
             </div>
 
             <div class="mb-3">
-                <label for="netzurApiKey" class="form-label">API Key</label>
+                <label for="netzurApiKey" class="form-label" data-i18n="config.netzur.api_key">API Key</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="netzurApiKey" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearNetzurApiKey">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearNetzurApiKey" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="netzurApiKeyStatus"></div>
-                <div class="form-text">Bearer token generated within Netzur</div>
+                <div class="form-text" data-i18n="config.netzur.api_key_help">Bearer token generated within Netzur</div>
             </div>
 
             <div class="mb-3">
-                <label for="netzurApiUrl" class="form-label">API URL</label>
+                <label for="netzurApiUrl" class="form-label" data-i18n="config.netzur.api_url">API URL</label>
                 <input type="text" class="form-control" id="netzurApiUrl">
-                <div class="form-text">Base endpoint serving the zones/customers payload</div>
+                <div class="form-text" data-i18n="config.netzur.api_url_help">Base endpoint serving the zones/customers payload</div>
             </div>
 
             <div class="mb-3">
-                <label for="netzurTimeout" class="form-label">Request Timeout (seconds)</label>
+                <label for="netzurTimeout" class="form-label" data-i18n="config.netzur.timeout">Request Timeout (seconds)</label>
                 <input type="number" class="form-control" id="netzurTimeout" min="15" step="5">
-                <div class="form-text">Adjust only if the API routinely needs more than 60 seconds</div>
+                <div class="form-text" data-i18n="config.netzur.timeout_help">Adjust only if the API routinely needs more than 60 seconds</div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveNetzur" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveNetzur" class="btn btn-outline-primary" data-i18n="config.netzur.save">Save Changes</button>
         </div>
     </form>
 </div>

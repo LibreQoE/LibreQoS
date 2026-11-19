@@ -5,6 +5,10 @@ node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
 display_cobrand = false
+# Node-wide default UI language (a locale tag such as "es"). Leave it out for no
+# operator default: each browser then follows its Accept-Language, then English.
+# A language chosen in the browser (the lqos_lang cookie) wins over this value.
+#ui_language = "es"
 enable_circuit_heatmaps = true
 enable_site_heatmaps = true
 enable_asn_heatmaps = true
@@ -19,6 +23,10 @@ tx_usecs = 8
 disable_rxvlan = true
 disable_txvlan = true
 disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
+# Per-worker expected-throughput capacity (Mbps, EFFECTIVE — no headroom).
+# Default 1125; high-performance preset 2000. This is the soft cold-placement
+# packing objective, not a commit/ceiling cap.
+worker_capacity_mbps = 1125
 
 # EITHER:
 [bridge]

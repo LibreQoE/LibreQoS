@@ -236,6 +236,7 @@ export function linkToTreeNode(nodeName, nodeIdLookup) {
     return `tree.html?parent=${encodeURIComponent(nodeId)}`;
 }
 
+// translatable: false — "Site" "Circuit" "Asn" — the entity-kind tokens the server emits and this switch maps to a badge word; the visible and screen-reader labels are rendered from the badge word by executive_heat_labels.mjs
 export function badgeForEntityKind(entityKind) {
     switch (String(entityKind || "")) {
     case "Site":

@@ -1,0 +1,71 @@
+{
+  "schema_version": 2,
+  "id": "wave_ap_legacy",
+  "detect": {
+    "pin_only": true
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "identity",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "model", "oid": "1.3.6.1.4.1.41112.1.11.1.2.2.1", "parser": "utf8" },
+          { "name": "name", "oid": "1.3.6.1.4.1.41112.1.11.1.2.3.1", "parser": "utf8" },
+          { "name": "frequency_mhz", "oid": "1.3.6.1.4.1.41112.1.11.1.1.2.1", "parser": "u32" },
+          { "name": "channel_width_mhz", "oid": "1.3.6.1.4.1.41112.1.11.1.1.3.1", "parser": "u32" }
+        ]
+      }
+    },
+    {
+      "id": "stations",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.1", "parser": "octet_mac" },
+            { "name": "ul_rssi", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.3", "parser": "i64" },
+            { "name": "ul_snr", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.4", "parser": "i64" },
+            { "name": "tx_capacity", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.7", "parser": "u32" },
+            { "name": "rx_capacity", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.8", "parser": "u32" },
+            { "name": "dl_rate_mbps", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.7", "parser": "kbps_to_mbps" },
+            { "name": "model", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.13", "parser": "utf8" },
+            { "name": "hostname", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.14", "parser": "utf8" },
+            { "name": "dl_rssi", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.18", "parser": "i64" },
+            { "name": "dl_snr", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.19", "parser": "i64" },
+            { "name": "ip", "oid": "1.3.6.1.4.1.41112.1.11.1.3.1.20", "parser": "ip_address" }
+          ],
+          "index": { "kind": "station_mac" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["identity.name"] }
+    ],
+    "details": {
+      "stations": "stations",
+      "radio": "identity"
+    },
+    "residuals": [
+      {
+        "name": "pin-only-selection",
+        "source": "The 20-column Wave AP (sysObjectID 1.3.6.1.4.1.41112, legacy .11.1.3.1 table) shares its exact OID with wave_ap; this document is pin-only and must be selected through [ap_polling].device_adapter"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 64,
+    "max_rows": 256,
+    "max_bytes": 65536,
+    "deadline_ms": 8000
+  }
+}

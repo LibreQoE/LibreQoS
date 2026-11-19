@@ -5,11 +5,11 @@
             <div class="lqos-table-wrap">
                 <table class="lqos-table lqos-table-compact lqos-circuit-header-table">
                     <tr>
-                        <td class="table-label-cell">Parent</td>
+                        <td class="table-label-cell" data-i18n="common.table.parent">Parent</td>
                         <td class="table-value-cell"><a id="parentNode" class="redactable lqos-circuit-parent-link lqos-ellipsis-inline" href="#"></a></td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Max</td>
+                        <td class="table-label-cell" data-i18n="circuit.rate.max">Max</td>
                         <td class="table-value-cell">
                             <span class="lqos-inline-value-badge">
                                 <span id="bwMax" class="lqos-inline-value-badge-text"></span>
@@ -19,7 +19,7 @@
                                     class="badge rounded-pill text-bg-warning ms-2 d-none lqos-inline-value-badge-item"
                                     href="#"
                                     tabindex="0"
-                                    aria-label="Ethernet speed warning"
+                                    aria-label="Ethernet speed warning" data-i18n-aria-label="circuit.ethernet.warning_aria"
                                     data-bs-toggle="tooltip"
                                     data-bs-placement="top"
                                 >
@@ -29,7 +29,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Min</td>
+                        <td class="table-label-cell" data-i18n="circuit.rate.min">Min</td>
                         <td class="table-value-cell"><span id="bwMin"></span></td>
                     </tr>
                     <tr>
@@ -37,16 +37,16 @@
                         <td class="table-value-cell">
                             <div class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox" id="excludeRttToggle">
-                            <label class="form-check-label" for="excludeRttToggle">
+                            <label class="form-check-label" for="excludeRttToggle" data-i18n="circuit.rtt.exclude">
                                 Exclude
                                 <span
                                     class="ms-1 text-muted"
                                     role="button"
                                         tabindex="0"
-                                        aria-label="Exclude from RTT information"
+                                        aria-label="Exclude from RTT information" data-i18n-aria-label="circuit.rtt.exclude_aria"
                                         data-bs-toggle="tooltip"
                                         data-bs-placement="top"
-                                        title="Exclude this circuit from RTT heatmaps and QoO RTT scoring. QoO will show as unknown."
+                                        title="Exclude this circuit from RTT heatmaps and QoO RTT scoring. QoO will show as unknown." data-i18n-title="circuit.rtt.exclude_title"
                                     ><i class="fas fa-info-circle"></i></span>
                                 </label>
                             </div>
@@ -77,7 +77,7 @@
             <div id="throughputGraph">
                 <div class="lqos-loading-block lqos-loading-block-sm">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading throughput…</span>
+                    <span data-i18n="circuit.loading.throughput">Loading throughput…</span>
                 </div>
             </div>
         </div>
@@ -87,7 +87,7 @@
             <div id="rxmitGraph">
                 <div class="lqos-loading-block lqos-loading-block-sm">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading retransmits…</span>
+                    <span data-i18n="circuit.loading.retransmits">Loading retransmits…</span>
                 </div>
             </div>
         </div>
@@ -96,37 +96,37 @@
 
 <ul class="nav nav-tabs lqos-pill-tabs lqos-circuit-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="queuing-tab" data-bs-toggle="tab" data-bs-target="#queuing" type="button" role="tab" aria-controls="queuing" aria-selected="true">
+        <button class="nav-link active" id="queuing-tab" data-bs-toggle="tab" data-bs-target="#queuing" type="button" role="tab" aria-controls="queuing" aria-selected="true" data-i18n="circuit.tab.queuing">
             <i class="fa fa-wave-square"></i> Queue Dynamics
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="devs-tab" data-bs-toggle="tab" data-bs-target="#devs" type="button" role="tab" aria-controls="devs" aria-selected="false">
+        <button class="nav-link" id="devs-tab" data-bs-toggle="tab" data-bs-target="#devs" type="button" role="tab" aria-controls="devs" aria-selected="false" data-i18n="common.table.devices">
             <i class="fa fa-server"></i> Devices
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false">
+        <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false" data-i18n="circuit.tab.sankey">
             <i class="fa fa-map"></i> Flow Sankey <span id="activeFlowCount" class="badge">0</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="top-asns-tab" data-bs-toggle="tab" data-bs-target="#top-asns" type="button" role="tab" aria-controls="top-asns" aria-selected="false">
+        <button class="nav-link" id="top-asns-tab" data-bs-toggle="tab" data-bs-target="#top-asns" type="button" role="tab" aria-controls="top-asns" aria-selected="false" data-i18n="circuit.tab.top_asns">
             <i class="fa fa-building-columns"></i> Top ASNs <span id="topAsnCount" class="badge">0</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false">
+        <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false" data-i18n="circuit.tab.traffic">
             <i class="fa fa-table"></i> Traffic Flows <span id="trafficFlowCount" class="badge">0</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="funnel-tab" data-bs-toggle="tab" data-bs-target="#funnel" type="button" role="tab" aria-controls="contact" aria-selected="false">
+        <button class="nav-link" id="funnel-tab" data-bs-toggle="tab" data-bs-target="#funnel" type="button" role="tab" aria-controls="contact" aria-selected="false" data-i18n="circuit.tab.queue_tree">
             <i class="fa fa-tree"></i> Queue Tree
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="cake-tab" data-bs-toggle="tab" data-bs-target="#cake" type="button" role="tab" aria-controls="contact" aria-selected="false">
+        <button class="nav-link" id="cake-tab" data-bs-toggle="tab" data-bs-target="#cake" type="button" role="tab" aria-controls="contact" aria-selected="false" data-i18n="circuit.tab.queue_stats">
             <i class="fa fa-birthday-cake"></i> Queue Stats
         </button>
     </li>
@@ -136,29 +136,29 @@
         <div class="lqos-circuit-activity-panel">
             <div class="lqos-circuit-activity-header">
                 <div class="lqos-circuit-activity-title">
-                    <h5>Queue Dynamics</h5>
+                    <h5 data-i18n="circuit.tab.queuing">Queue Dynamics</h5>
                 </div>
                 <div class="lqos-circuit-activity-controls">
-                    <div class="lqos-circuit-activity-legend" aria-label="Queue Dynamics Legend">
+                    <div class="lqos-circuit-activity-legend" aria-label="Queue Dynamics Legend" data-i18n-aria-label="circuit.queuing.legend_aria">
                         <span class="lqos-circuit-activity-legend-item">
                             <span id="queuingActivityLegendEnqueuedDown" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
                             <span id="queuingActivityLegendEnqueuedUp" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
-                            <span>Enqueued</span>
+                            <span data-i18n="circuit.queuing.enqueued">Enqueued</span>
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
                             <span id="queuingActivityLegendThroughputDown" class="lqos-circuit-activity-legend-dot is-throughput"></span>
                             <span id="queuingActivityLegendThroughputUp" class="lqos-circuit-activity-legend-dot is-throughput"></span>
-                            <span>Throughput</span>
+                            <span data-i18n="common.table.throughput">Throughput</span>
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
                             <span id="queuingActivityLegendCeilingDown" class="lqos-circuit-activity-legend-dot is-ceiling"></span>
                             <span id="queuingActivityLegendCeilingUp" class="lqos-circuit-activity-legend-dot is-ceiling is-ceiling-up"></span>
-                            <span>Ceiling</span>
+                            <span data-i18n="circuit.queuing.ceiling">Ceiling</span>
                         </span>
-                        <span class="lqos-circuit-activity-legend-item" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." aria-label="RTT Access and Internet">
+                        <span class="lqos-circuit-activity-legend-item" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." data-i18n-title="circuit.rtt.legs_title" aria-label="RTT Access and Internet" data-i18n-aria-label="circuit.rtt.legend_aria">
                             <span id="queuingActivityLegendRttDown" class="lqos-circuit-activity-legend-dot is-qoo"></span>
                             <span id="queuingActivityLegendRttUp" class="lqos-circuit-activity-legend-dot is-qoo"></span>
-                            <span>RTT Access / Internet</span>
+                            <span data-i18n="circuit.rtt.legend">RTT Access / Internet</span>
                         </span>
                     </div>
                 </div>
@@ -166,62 +166,62 @@
             <div id="queuingActivityGraph" class="lqos-circuit-activity-chart">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading queue dynamics…</span>
+                    <span data-i18n="circuit.loading.queuing">Loading queue dynamics…</span>
                 </div>
             </div>
             <div class="lqos-circuit-activity-kpis">
                 <div class="lqos-circuit-activity-kpi">
-                    <div class="lqos-circuit-activity-kpi-label">Throughput</div>
+                    <div class="lqos-circuit-activity-kpi-label" data-i18n="common.table.throughput">Throughput</div>
                     <div class="lqos-circuit-activity-kpi-pairs">
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Download" data-i18n-aria-label="common.table.download">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
                             <span id="queuingActivityThroughput" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Upload" data-i18n-aria-label="common.table.upload">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
                             <span id="queuingActivityThroughputUp" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
                     </div>
                 </div>
                 <div class="lqos-circuit-activity-kpi">
-                    <div class="lqos-circuit-activity-kpi-label" title="Enqueued (demand) — the offered rate before shaping" aria-label="Enqueued (demand)">Enqueued</div>
+                    <div class="lqos-circuit-activity-kpi-label" title="Enqueued (demand) — the offered rate before shaping" data-i18n-title="circuit.queuing.enqueued_title" aria-label="Enqueued (demand)" data-i18n-aria-label="circuit.queuing.enqueued_aria" data-i18n="circuit.queuing.enqueued">Enqueued</div>
                     <div class="lqos-circuit-activity-kpi-pairs">
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Download" data-i18n-aria-label="common.table.download">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
                             <span id="queuingActivityEnqueued" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Upload" data-i18n-aria-label="common.table.upload">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
                             <span id="queuingActivityEnqueuedUp" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
                     </div>
                 </div>
                 <div class="lqos-circuit-activity-kpi">
-                    <div class="lqos-circuit-activity-kpi-label">Utilization</div>
+                    <div class="lqos-circuit-activity-kpi-label" data-i18n="circuit.queuing.utilization">Utilization</div>
                     <div class="lqos-circuit-activity-kpi-pairs">
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Download" data-i18n-aria-label="common.table.download">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
                             <span id="queuingActivityUtilization" class="lqos-circuit-activity-kpi-value">0%</span>
                         </span>
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Upload" data-i18n-aria-label="common.table.upload">
                             <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
                             <span id="queuingActivityUtilizationUp" class="lqos-circuit-activity-kpi-value">0%</span>
                         </span>
                     </div>
                 </div>
                 <div class="lqos-circuit-activity-kpi lqos-circuit-activity-kpi-rtt">
-                    <div class="lqos-circuit-activity-kpi-label" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." aria-label="RTT Access, Internet, and Full">RTT</div>
+                    <div class="lqos-circuit-activity-kpi-label" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." data-i18n-title="circuit.rtt.legs_title" aria-label="RTT Access, Internet, and Full" data-i18n-aria-label="circuit.rtt.kpi_aria">RTT</div>
                     <div class="lqos-circuit-activity-kpi-pairs">
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Access">
-                            <span class="lqos-circuit-activity-kpi-mini">Access</span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Access" data-i18n-aria-label="circuit.rtt.access">
+                            <span class="lqos-circuit-activity-kpi-mini" data-i18n="circuit.rtt.access">Access</span>
                             <span id="queuingActivityRtt" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Internet">
-                            <span class="lqos-circuit-activity-kpi-mini">Internet</span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Internet" data-i18n-aria-label="circuit.rtt.internet">
+                            <span class="lqos-circuit-activity-kpi-mini" data-i18n="circuit.rtt.internet">Internet</span>
                             <span id="queuingActivityRttUp" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
-                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Full">
-                            <span class="lqos-circuit-activity-kpi-mini">Full</span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Full" data-i18n-aria-label="circuit.rtt.full">
+                            <span class="lqos-circuit-activity-kpi-mini" data-i18n="circuit.rtt.full">Full</span>
                             <span id="queuingActivityRttFull" class="lqos-circuit-activity-kpi-value">-</span>
                         </span>
                     </div>
@@ -233,15 +233,15 @@
         <div class="lqos-circuit-devices-panel">
             <div class="lqos-circuit-devices-header">
                 <div class="lqos-circuit-devices-header-copy">
-                    <h5><i class="fa fa-server"></i> Devices</h5>
-                    <p class="text-muted small mb-0">Per-device live throughput, RTT, retransmits, and address inventory for this circuit.</p>
+                    <h5 data-i18n="common.table.devices"><i class="fa fa-server"></i> Devices</h5>
+                    <p class="text-muted small mb-0" data-i18n="circuit.devices.intro">Per-device live throughput, RTT, retransmits, and address inventory for this circuit.</p>
                 </div>
             </div>
             <div class="row" id="devices">
                 <div class="col-12">
                     <div class="lqos-loading-block lqos-loading-block-lg">
                         <i class="fa fa-spinner fa-spin"></i>
-                        <span>Loading devices…</span>
+                        <span data-i18n="circuit.loading.devices">Loading devices…</span>
                     </div>
                 </div>
             </div>
@@ -259,7 +259,7 @@
             <div class="col-12" id="topAsnsTable">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading ASN summary…</span>
+                    <span data-i18n="circuit.loading.asns">Loading ASN summary…</span>
                 </div>
             </div>
         </div>
@@ -269,10 +269,10 @@
             <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                 <div class="d-inline-flex align-items-center">
                     <input type="checkbox" id="hideSmallFlows" class="text-secondary">
-                    <label for="hideSmallFlows" class="ms-2">Hide Small Flows</label>
+                    <label for="hideSmallFlows" class="ms-2" data-i18n="circuit.traffic.hide_small">Hide Small Flows</label>
                 </div>
                 <div class="d-inline-flex align-items-center gap-2">
-                    <label for="trafficPageSize" class="small text-muted mb-0">Rows</label>
+                    <label for="trafficPageSize" class="small text-muted mb-0" data-i18n="circuit.traffic.rows">Rows</label>
                     <select id="trafficPageSize" class="form-select form-select-sm w-auto">
                         <option value="100" selected>100</option>
                         <option value="250">250</option>
@@ -282,7 +282,7 @@
                     <button type="button" id="trafficPagePrev" class="btn btn-sm btn-outline-secondary">
                         <i class="fa fa-chevron-left"></i>
                     </button>
-                    <span id="trafficPageInfo" class="small text-muted">Page 1 / 1</span>
+                    <span id="trafficPageInfo" class="small text-muted"></span>
                     <button type="button" id="trafficPageNext" class="btn btn-sm btn-outline-secondary">
                         <i class="fa fa-chevron-right"></i>
                     </button>
@@ -291,7 +291,7 @@
             <div class="col-12" id="allTraffic">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading traffic…</span>
+                    <span data-i18n="circuit.loading.traffic">Loading traffic…</span>
                 </div>
             </div>
         </div>
@@ -300,19 +300,19 @@
         <div class="lqos-funnel-panel">
             <div class="lqos-funnel-header">
                 <div class="lqos-funnel-header-copy">
-                    <h5><i class="fa fa-tree"></i> Queue Tree</h5>
-                    <p class="text-muted small mb-0">Ancestor queue path from this circuit toward root, with live queue telemetry for each upstream node.</p>
+                    <h5 data-i18n="circuit.tab.queue_tree"><i class="fa fa-tree"></i> Queue Tree</h5>
+                    <p class="text-muted small mb-0" data-i18n="circuit.queue_tree.intro">Ancestor queue path from this circuit toward root, with live queue telemetry for each upstream node.</p>
                 </div>
                 <div class="lqos-funnel-meta">
-                    <span class="lqos-funnel-meta-pill">Ancestor path</span>
-                    <span class="lqos-funnel-meta-pill">Live updates</span>
-                    <span class="lqos-funnel-meta-pill">Throughput / Retransmits / Latency</span>
+                    <span class="lqos-funnel-meta-pill" data-i18n="circuit.queue_tree.ancestor_path">Ancestor path</span>
+                    <span class="lqos-funnel-meta-pill" data-i18n="circuit.queue_tree.live_updates">Live updates</span>
+                    <span class="lqos-funnel-meta-pill" data-i18n="circuit.queue_tree.metrics">Throughput / Retransmits / Latency</span>
                 </div>
             </div>
             <div id="theFunnel">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading queue tree…</span>
+                    <span data-i18n="circuit.loading.queue_tree">Loading queue tree…</span>
                 </div>
             </div>
         </div>
@@ -321,13 +321,13 @@
         <div class="lqos-cake-panel">
             <div class="lqos-cake-header">
                 <div class="lqos-cake-header-copy">
-                    <h5><i class="fa fa-birthday-cake"></i> Queue Stats</h5>
-                    <p class="text-muted small mb-0">Raw 1s scatter samples over the last 3 minutes. Hover any queue chart to inspect the same timestamp across all six charts.</p>
+                    <h5 data-i18n="circuit.tab.queue_stats"><i class="fa fa-birthday-cake"></i> Queue Stats</h5>
+                    <p class="text-muted small mb-0" data-i18n="circuit.cake.intro">Raw 1s scatter samples over the last 3 minutes. Hover any queue chart to inspect the same timestamp across all six charts.</p>
                 </div>
                 <div class="lqos-cake-meta">
-                    <span class="lqos-cake-meta-pill">Last 3 minutes</span>
-                    <span class="lqos-cake-meta-pill">1s samples</span>
-                    <span class="lqos-cake-meta-pill">Synchronized hover</span>
+                    <span class="lqos-cake-meta-pill" data-i18n="circuit.cake.last_3_minutes">Last 3 minutes</span>
+                    <span class="lqos-cake-meta-pill" data-i18n="circuit.cake.samples">1s samples</span>
+                    <span class="lqos-cake-meta-pill" data-i18n="circuit.cake.synchronized_hover">Synchronized hover</span>
                 </div>
             </div>
             <div class="row g-3">
@@ -364,16 +364,16 @@
                 <div class="col-12">
                     <div class="lqos-cake-info-card">
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Queue Memory</div>
+                            <div class="lqos-cake-info-label" data-i18n="circuit.cake.queue_memory">Queue Memory</div>
                             <div class="lqos-cake-info-value"><span id="cakeQueueMemory">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Live Queue Type</div>
+                            <div class="lqos-cake-info-label" data-i18n="circuit.cake.queue_type">Live Queue Type</div>
                             <div class="lqos-cake-info-value"><span id="cakeQueueType">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Interpretation</div>
-                            <div class="lqos-cake-info-value text-muted small">Download plots above zero, upload plots below zero. Tooltips always show absolute values with direction labels.</div>
+                            <div class="lqos-cake-info-label" data-i18n="circuit.cake.interpretation">Interpretation</div>
+                            <div class="lqos-cake-info-value text-muted small" data-i18n="circuit.cake.interpretation_text">Download plots above zero, upload plots below zero. Tooltips always show absolute values with direction labels.</div>
                         </div>
                     </div>
                 </div>
@@ -392,17 +392,17 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="circuitRateModalLabel">Edit Circuit Rates</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" id="circuitRateModalLabel" data-i18n="circuit.rates.title">Edit Circuit Rates</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" data-i18n-aria-label="common.action.close"></button>
             </div>
             <div class="modal-body">
                 <div id="circuitRateFields"></div>
                 <div id="circuitRateError" class="text-danger small mt-2 d-none"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-outline-warning" id="circuitRateRevert">Revert to plan</button>
-                <button type="button" class="btn btn-primary" id="circuitRateSave">Save Override</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="common.action.cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-warning" id="circuitRateRevert" data-i18n="circuit.rates.revert">Revert to plan</button>
+                <button type="button" class="btn btn-primary" id="circuitRateSave" data-i18n="circuit.rates.save">Save Override</button>
             </div>
         </div>
     </div>

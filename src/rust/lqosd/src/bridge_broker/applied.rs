@@ -13,7 +13,7 @@
 //! `BRIDGE_APPLIED_DIVERGENCE`).
 
 use lqos_dataplane_types::DataplaneTransaction;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A2: the PROVENANCE of the applied belief. Surfaced in the convergence report
 /// so an operator can tell an ADOPTED base (truth) from a FOLDED one (interim)
@@ -103,6 +103,11 @@ pub(crate) struct AppliedGeneration {
     /// `lqos-8h8` (a): the per-slot placement owner (`Vec<u16>`, parallel to
     /// `slot_order`), if reported.
     pub owners: Option<Vec<u16>>,
+    /// `lqos-74t.191` MUST 2 (v4 review): the ACTUAL numeric slot of each
+    /// `slot_order` entry (`Vec<u64>`, parallel). `None` = a pre-MUST-2
+    /// bridge, in which case the owner table is rejected whole rather than
+    /// indexed by dense position (which misassigns after a slot hole).
+    pub slot_numbers: Option<Vec<u64>>,
 }
 
 /// The ONE owner of the broker's applied belief (A3). The ONLY writer of the
@@ -131,6 +136,26 @@ pub struct AppliedState {
     /// = a pre-owner bridge (the reparent twin is inert). The broker reads this
     /// so it can call the SHARED owner-set predicates without forking placement.
     owners: BTreeMap<String, u16>,
+    /// `lqos-74t.191` P0.1: the SAME reported owner vector, indexed by the
+    /// bridge's ACTUAL NUMERIC SLOT (`index == bridge_circuit_id`). Index 0
+    /// (reserved best-effort) and every post-remove hole are `u16::MAX`; the
+    /// vector is sized to the highest reported slot. MUST 2 (v4 review):
+    /// built from the report's explicit `slot_numbers`, never from dense
+    /// position. Empty when no consistent table was reported — never a
+    /// partially/wrongly indexed vector.
+    slot_owners: Vec<u16>,
+    /// W3: the report's live name order and explicit numerics (parallel to
+    /// `owners`) for the placement-identity compare. Empty when no report.
+    slot_order: Vec<String>,
+    slot_numbers: Vec<u64>,
+    /// W3: the last map adopted under the same (desired key, generation). A
+    /// changed ordered layout under the SAME key+generation is a divergence
+    /// (stale), not a new world; a new key/generation resets it.
+    converged_slot_order: Vec<String>,
+    converged_slot_numbers: Vec<u64>,
+    converged_slot_owners: Vec<u16>,
+    has_converged_map: bool,
+    slot_map_diverged: bool,
     /// `lqos-74t.118.2`: whether the last adopted report actually CARRIED a
     /// placement-owner table (`slot_order` + `owners`, both present). This
     /// distinguishes a supported zero-circuit world (`owners` empty but
@@ -163,7 +188,13 @@ fn owners_reported_from_report(reported: &AppliedGeneration, tx: &DataplaneTrans
         && reported
             .owners
             .as_ref()
-            .is_some_and(|owners| !owners.is_empty());
+            .is_some_and(|owners| !owners.is_empty())
+        // MUST 2 (v4 review): without explicit slot numbers the table cannot
+        // be indexed safely, so it is not a usable owner table.
+        && reported
+            .slot_numbers
+            .as_ref()
+            .is_some_and(|slots| !slots.is_empty());
     let tx_has_leaves = tx
         .leaf_ops
         .iter()
@@ -171,10 +202,142 @@ fn owners_reported_from_report(reported: &AppliedGeneration, tx: &DataplaneTrans
     owners_table || (both_empty && !tx_has_leaves)
 }
 
+/// `lqos-74t.191` P0.1: build the name-keyed owner map AND the SLOT-indexed
+/// owner vector from ONE consistent report.
+///
+/// Consistency is a hard gate: `slot_order` and `owners` must be parallel,
+/// every name must be unique/non-empty and must exist as an applied leaf, and
+/// the owner must be a real worker id. On ANY mismatch both outputs are empty
+/// (the detector then groups NOTHING) instead of pairing names to the wrong
+/// slots — the v2 attempt's service-id/slot bug.
+///
+/// `slot_order` excludes the reserved best-effort slot 0 and is DENSE over
+/// the live circuits, but a completed remove leaves holes in the numeric
+/// domain. The report therefore carries explicit `slot_numbers` parallel to
+/// `slot_order`; the returned vector is sized to the highest reported slot
+/// (index 0 and every hole are `u16::MAX`) so `vec[slot]` is directly
+/// indexable by `CircuitLiveRow.bridge_circuit_id`.
+///
+/// MUST 2 (v4 review): a report without `slot_numbers` (pre-MUST-2 bridge) is
+/// rejected whole — dense-position indexing is exactly the off-by-one that
+/// misassigned every slot after a hole. Grouping nothing is the safe result.
+fn owner_tables_from_report(
+    reported: &AppliedGeneration,
+    tx: &DataplaneTransaction,
+) -> (BTreeMap<String, u16>, Vec<u16>) {
+    let (Some(order), Some(owners), Some(slot_numbers)) = (
+        reported.slot_order.as_ref(),
+        reported.owners.as_ref(),
+        reported.slot_numbers.as_ref(),
+    ) else {
+        return (BTreeMap::new(), Vec::new());
+    };
+    if order.is_empty() && owners.is_empty() && slot_numbers.is_empty() {
+        return (BTreeMap::new(), Vec::new());
+    }
+    let leaves: BTreeSet<&str> = tx
+        .leaf_ops
+        .iter()
+        .filter_map(|op| match op {
+            lqos_dataplane_types::DataplaneLeafOp::Upsert { circuit_id, .. } => {
+                Some(circuit_id.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut previous_slot: Option<u64> = None;
+    let mut consistent = !order.is_empty()
+        && order.len() == owners.len()
+        && order.len() == slot_numbers.len();
+    let mut max_slot = 0u64;
+    if consistent {
+        for ((name, owner), slot) in order.iter().zip(owners.iter()).zip(slot_numbers.iter()) {
+            // Slots are the bridge's append-only numeric ids: nonzero, unique,
+            // and strictly increasing because `slot_order` is slot-sorted.
+            let slot_ok = *slot != 0
+                && *slot != u64::MAX
+                && previous_slot.is_none_or(|previous| *slot > previous);
+            if name.is_empty()
+                || !seen.insert(name.as_str())
+                || !leaves.contains(name.as_str())
+                || *owner == u16::MAX
+                || !slot_ok
+            {
+                consistent = false;
+                break;
+            }
+            previous_slot = Some(*slot);
+            max_slot = max_slot.max(*slot);
+        }
+    }
+    // Never allocate an unbounded vector from a malformed report. Live numeric
+    // ids are bounded by the bridge's slot-table capacity; a value far beyond
+    // the live count is a corrupt table, not a real slot domain.
+    let bounded = max_slot <= (order.len() as u64).saturating_mul(4).saturating_add(1024);
+    if !consistent || !bounded {
+        tracing::warn!(
+            slots = order.len(),
+            owners = owners.len(),
+            slot_numbers = slot_numbers.len(),
+            max_slot,
+            "APPLIED-OWNER-TABLE rejected: slot_order/owners/slot_numbers are not a \
+             consistent parallel table for the applied leaves; owner grouping is \
+             disabled (never a wrong group)"
+        );
+        return (BTreeMap::new(), Vec::new());
+    }
+    let map = order
+        .iter()
+        .cloned()
+        .zip(owners.iter().copied())
+        .collect::<BTreeMap<String, u16>>();
+    let mut slot_owners = vec![u16::MAX; usize::try_from(max_slot).unwrap_or(0) + 1];
+    for (slot, owner) in slot_numbers.iter().zip(owners.iter()) {
+        if let Ok(index) = usize::try_from(*slot) {
+            slot_owners[index] = *owner;
+        }
+    }
+    (map, slot_owners)
+}
+
 impl AppliedState {
     /// `lqos-8h8` (a): the reported per-circuit placement owner map.
     pub fn owners(&self) -> &BTreeMap<String, u16> {
         &self.owners
+    }
+
+    /// `lqos-74t.191` P0.1: the reported owner vector indexed by the bridge's
+    /// numeric SLOT (`bridge_circuit_id`). Empty when the last report carried
+    /// no consistent slot/owner table; callers must then group nothing rather
+    /// than guess a worker.
+    pub fn slot_owners(&self) -> &[u16] {
+        &self.slot_owners
+    }
+
+    /// W3: the report's live name order (parallel to `slot_numbers`/owners).
+    pub fn slot_order(&self) -> &[String] {
+        &self.slot_order
+    }
+
+    /// W3: the report's explicit numeric slots (parallel to `slot_order`).
+    pub fn slot_numbers(&self) -> &[u64] {
+        &self.slot_numbers
+    }
+
+    /// W3: a changed ordered slot map under the SAME (desired key, generation)
+    /// — a permanent false-stale is prevented by resetting on a new world.
+    pub fn slot_map_diverged(&self) -> bool {
+        self.slot_map_diverged
+    }
+
+    /// Test-only: inject a hole into a numeric slot (to exercise the live-slot
+    /// guard; a valid report cannot carry one).
+    #[cfg(test)]
+    pub(crate) fn set_slot_owner_for_test(&mut self, slot: usize, owner: u16) {
+        if let Some(entry) = self.slot_owners.get_mut(slot) {
+            *entry = owner;
+        }
     }
 
     /// `lqos-74t.118.2`: did the last report carry an owner table? `false` =
@@ -193,6 +356,14 @@ impl AppliedState {
         self.provenance = Some(BaseProvenance::Reset);
         self.diverged = false;
         self.owners.clear();
+        self.slot_owners.clear();
+        self.slot_order.clear();
+        self.slot_numbers.clear();
+        self.converged_slot_order.clear();
+        self.converged_slot_numbers.clear();
+        self.converged_slot_owners.clear();
+        self.has_converged_map = false;
+        self.slot_map_diverged = false;
         self.owners_reported = false;
     }
 
@@ -207,20 +378,41 @@ impl AppliedState {
             && self.key.as_deref() != Some(reported.content_key.as_str());
         // Compute before `reported.content_key` is moved into `self.key`.
         let owners_reported = owners_reported_from_report(&reported, &tx);
-        self.desired_key = Some(
-            reported
-                .desired_world_content_key
-                .unwrap_or_else(|| reported.content_key.clone()),
-        );
+        // P0.1: ONE consistent slot/name table, or none at all.
+        let (owners, slot_owners) = owner_tables_from_report(&reported, &tx);
+        let slot_order = reported.slot_order.clone().unwrap_or_default();
+        let slot_numbers = reported.slot_numbers.clone().unwrap_or_default();
+        let new_desired_key = reported
+            .desired_world_content_key
+            .clone()
+            .unwrap_or_else(|| reported.content_key.clone());
+        let same_desired = self.desired_key.as_deref() == Some(new_desired_key.as_str());
+        let same_generation = self
+            .tx
+            .as_ref()
+            .is_some_and(|prev| prev.generation == tx.generation);
+        let map_changed = self.converged_slot_order != slot_order
+            || self.converged_slot_numbers != slot_numbers
+            || self.converged_slot_owners != slot_owners;
+        if !self.has_converged_map || !same_desired || !same_generation {
+            self.converged_slot_order = slot_order.clone();
+            self.converged_slot_numbers = slot_numbers.clone();
+            self.converged_slot_owners = slot_owners.clone();
+            self.has_converged_map = true;
+            self.slot_map_diverged = false;
+        } else if map_changed {
+            self.slot_map_diverged = true;
+        } else {
+            self.slot_map_diverged = false;
+        }
+        self.desired_key = Some(new_desired_key);
         self.key = Some(reported.content_key);
         self.owners_reported = owners_reported;
         self.tx = Some(tx);
-        self.owners = match (reported.slot_order.as_ref(), reported.owners.as_ref()) {
-            (Some(names), Some(owners)) => {
-                names.iter().cloned().zip(owners.iter().copied()).collect()
-            }
-            _ => BTreeMap::new(),
-        };
+        self.owners = owners;
+        self.slot_owners = slot_owners;
+        self.slot_order = slot_order;
+        self.slot_numbers = slot_numbers;
         self.provenance = Some(BaseProvenance::Report);
         self.diverged = diverged;
         diverged
@@ -234,20 +426,40 @@ impl AppliedState {
     pub fn adopt_late(&mut self, reported: AppliedGeneration, tx: DataplaneTransaction) {
         // Compute before `reported.content_key` is moved into `self.key`.
         let owners_reported = owners_reported_from_report(&reported, &tx);
-        self.desired_key = Some(
-            reported
-                .desired_world_content_key
-                .unwrap_or_else(|| reported.content_key.clone()),
-        );
+        let (owners, slot_owners) = owner_tables_from_report(&reported, &tx);
+        let slot_order = reported.slot_order.clone().unwrap_or_default();
+        let slot_numbers = reported.slot_numbers.clone().unwrap_or_default();
+        let new_desired_key = reported
+            .desired_world_content_key
+            .clone()
+            .unwrap_or_else(|| reported.content_key.clone());
+        let same_desired = self.desired_key.as_deref() == Some(new_desired_key.as_str());
+        let same_generation = self
+            .tx
+            .as_ref()
+            .is_some_and(|prev| prev.generation == tx.generation);
+        let map_changed = self.converged_slot_order != slot_order
+            || self.converged_slot_numbers != slot_numbers
+            || self.converged_slot_owners != slot_owners;
+        if !self.has_converged_map || !same_desired || !same_generation {
+            self.converged_slot_order = slot_order.clone();
+            self.converged_slot_numbers = slot_numbers.clone();
+            self.converged_slot_owners = slot_owners.clone();
+            self.has_converged_map = true;
+            self.slot_map_diverged = false;
+        } else if map_changed {
+            self.slot_map_diverged = true;
+        } else {
+            self.slot_map_diverged = false;
+        }
+        self.desired_key = Some(new_desired_key);
         self.key = Some(reported.content_key);
         self.owners_reported = owners_reported;
         self.tx = Some(tx);
-        self.owners = match (reported.slot_order.as_ref(), reported.owners.as_ref()) {
-            (Some(names), Some(owners)) => {
-                names.iter().cloned().zip(owners.iter().copied()).collect()
-            }
-            _ => BTreeMap::new(),
-        };
+        self.owners = owners;
+        self.slot_owners = slot_owners;
+        self.slot_order = slot_order;
+        self.slot_numbers = slot_numbers;
         self.provenance = Some(BaseProvenance::Report);
         self.diverged = false;
     }
@@ -411,6 +623,7 @@ mod tests {
             desired_world_content_key: Some(desired_key.clone()),
             slot_order: None,
             owners: None,
+            slot_numbers: None,
         };
         assert!(
             !applied.adopt(reported, folded),
@@ -444,6 +657,7 @@ mod tests {
             desired_world_content_key: Some(desired_key.clone()),
             slot_order: None,
             owners: None,
+            slot_numbers: None,
         };
         assert!(
             !applied.adopt(reported, folded),
@@ -501,6 +715,7 @@ mod tests {
                 desired_world_content_key: None,
                 slot_order: Some(vec![]),
                 owners: Some(vec![]),
+                slot_numbers: Some(vec![]),
             },
             boot_world,
         );
@@ -520,6 +735,7 @@ mod tests {
                 desired_world_content_key: None,
                 slot_order: Some(vec![]),
                 owners: Some(vec![]),
+                slot_numbers: Some(vec![]),
             },
             zero_world,
         );
@@ -538,10 +754,172 @@ mod tests {
                 desired_world_content_key: None,
                 slot_order: Some(vec!["c1".to_string()]),
                 owners: Some(vec![0]),
+                slot_numbers: Some(vec![1]),
             },
             owned_world,
         );
         assert!(owned.owners_reported());
+    }
+
+    /// `lqos-74t.191` P0.1: the adoption gate pairs names to SLOTS. A table
+    /// that is not a consistent parallel slot_order/owners vector is rejected
+    /// WHOLE — the detector then groups nothing rather than a wrong worker.
+    #[test]
+    fn inconsistent_slot_name_table_is_rejected_whole() {
+        let cases = [
+            // (slot_order, owners) — length mismatch.
+            (vec!["c1".to_string()], vec![0u16, 1]),
+            // A name that is not an applied leaf.
+            (vec!["c1".to_string(), "ghost".to_string()], vec![0, 1]),
+            // Duplicate name (two positions would claim different owners).
+            (vec!["c1".to_string(), "c1".to_string()], vec![0, 1]),
+            // The bridge's unresolved-owner sentinel.
+            (vec!["c1".to_string(), "c2".to_string()], vec![0, u16::MAX]),
+        ];
+        for (slot_order, owners) in cases {
+            let world = tx("g", &["c1", "c2"]);
+            let key = seam_key(&world);
+            let mut applied = AppliedState::default();
+            applied.adopt(
+                AppliedGeneration {
+                    generation: "g".to_string(),
+                    content_key: key,
+                    desired_world_content_key: None,
+                    slot_order: Some(slot_order.clone()),
+                    owners: Some(owners.clone()),
+                    // Match the owner vector's length; the gate rejects the
+                    // length/duplicate/sentinel cases before slot identity.
+                    slot_numbers: Some((1..=owners.len() as u64).collect()),
+                },
+                world,
+            );
+            assert!(
+                applied.owners().is_empty(),
+                "no name-keyed owner map for {slot_order:?}/{owners:?}"
+            );
+            assert!(
+                applied.slot_owners().is_empty(),
+                "no slot-indexed owner vector for {slot_order:?}/{owners:?}"
+            );
+        }
+
+        // MUST 2 (v4 review): a pre-MUST-2 report with a dense name/owner
+        // table but NO explicit slot numbers is rejected whole — the old
+        // `position + 1` assumption is exactly the hole misassignment.
+        let world = tx("g", &["c1", "c2"]);
+        let key = seam_key(&world);
+        let mut applied = AppliedState::default();
+        applied.adopt(
+            AppliedGeneration {
+                generation: "g".to_string(),
+                content_key: key,
+                desired_world_content_key: None,
+                slot_order: Some(vec!["c1".to_string(), "c2".to_string()]),
+                owners: Some(vec![5, 7]),
+                slot_numbers: None,
+            },
+            world,
+        );
+        assert!(
+            applied.slot_owners().is_empty(),
+            "a missing slot_numbers table is never indexed by dense position"
+        );
+
+        // The consistent case builds BOTH: index 0 is the reserved
+        // best-effort sentinel and slots come from the reported numbers.
+        let world = tx("g", &["c1", "c2"]);
+        let key = seam_key(&world);
+        let mut applied = AppliedState::default();
+        applied.adopt(
+            AppliedGeneration {
+                generation: "g".to_string(),
+                content_key: key,
+                desired_world_content_key: None,
+                slot_order: Some(vec!["c1".to_string(), "c2".to_string()]),
+                owners: Some(vec![5, 7]),
+                slot_numbers: Some(vec![1, 2]),
+            },
+            world,
+        );
+        assert_eq!(applied.owners().get("c1"), Some(&5));
+        assert_eq!(applied.slot_owners(), &[u16::MAX, 5, 7]);
+    }
+
+    /// MUST 2 (v4 review): a slot hole after a remove must not shift the
+    /// tail. Without explicit slot numbers, `[0] + owners` put c18's owner at
+    /// index 17 and returned `None` for the last circuit.
+    #[test]
+    fn slot_holes_keep_owner_identity_and_the_tail() {
+        let world = tx("holes", &["c1", "c3", "c4"]);
+        let key = seam_key(&world);
+        let mut applied = AppliedState::default();
+        applied.adopt(
+            AppliedGeneration {
+                generation: "holes".to_string(),
+                content_key: key,
+                desired_world_content_key: None,
+                slot_order: Some(vec![
+                    "c1".to_string(),
+                    "c3".to_string(),
+                    "c4".to_string(),
+                ]),
+                owners: Some(vec![4, 6, 7]),
+                // c2's slot (2) was removed: slots 1, 3, 4 are live.
+                slot_numbers: Some(vec![1, 3, 4]),
+            },
+            world,
+        );
+        assert_eq!(applied.owners().get("c3"), Some(&6));
+        assert_eq!(applied.slot_owners().len(), 5, "sized to the highest slot");
+        assert_eq!(applied.slot_owners()[1], 4);
+        assert_eq!(applied.slot_owners()[2], u16::MAX, "the hole is not c3");
+        assert_eq!(applied.slot_owners()[3], 6, "c3 stays on slot 3");
+        assert_eq!(applied.slot_owners()[4], 7, "the tail is addressable");
+    }
+
+    /// MUST 2 (v4 review): the field's 2,028-circuit world with one removed
+    /// slot must resolve EVERY live circuit by its actual slot, leave the
+    /// hole unowned, and keep the last slot addressable through the broker.
+    #[test]
+    fn two_thousand_twenty_eight_circuits_index_by_actual_slot() {
+        // 2,028 live circuits; slot 17 was removed, so their actual slots run
+        // 1..=16 then 18..=2029. `slot_order` stays dense (2,028 names).
+        let live = 2_028usize;
+        let names: Vec<String> = (1..=live).map(|i| format!("c{i}")).collect();
+        let mut slot_numbers = Vec::with_capacity(live);
+        let mut owners = Vec::with_capacity(live);
+        for (index, slot) in (1..=live as u64 + 1).filter(|s| *s != 17).enumerate() {
+            slot_numbers.push(slot);
+            owners.push(u16::try_from(index % 34).expect("worker id fits"));
+        }
+        assert_eq!(slot_numbers.len(), live);
+        assert_eq!(slot_numbers.last(), Some(&2029u64));
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let world = tx("field-2028", &name_refs);
+        let key = seam_key(&world);
+        let mut applied = AppliedState::default();
+        applied.adopt(
+            AppliedGeneration {
+                generation: "field-2028".to_string(),
+                content_key: key,
+                desired_world_content_key: None,
+                slot_order: Some(names.clone()),
+                owners: Some(owners.clone()),
+                slot_numbers: Some(slot_numbers.clone()),
+            },
+            world,
+        );
+        assert_eq!(applied.slot_owners().len(), 2030);
+        for (slot, owner) in slot_numbers.iter().zip(owners.iter()) {
+            let index = usize::try_from(*slot).expect("slot fits");
+            assert_eq!(applied.slot_owners()[index], *owner);
+        }
+        assert_eq!(applied.slot_owners()[17], u16::MAX, "the remove hole");
+        assert_eq!(
+            applied.slot_owners()[2029],
+            owners[owners.len() - 1],
+            "the last live slot is not shifted off the tail"
+        );
     }
 
     fn seam_key(tx: &DataplaneTransaction) -> String {
@@ -557,6 +935,7 @@ mod tests {
             desired_world_content_key: None,
             slot_order: None,
             owners: None,
+            slot_numbers: None,
         };
         applied.adopt(reported, world)
     }

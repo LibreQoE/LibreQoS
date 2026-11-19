@@ -1,6 +1,11 @@
 import {FlowCountGraph} from "../graphs/flows_graph";
 import {FlowCountGraphTimescale} from "../graphs/flows_graph_timeseries";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+
+// translatable: false — "FlowCount" is the websocket event name the dashlet filters on, not a label
 
 const LIVE_SAMPLE_LIMIT = 300;
 
@@ -11,11 +16,11 @@ export class TrackedFlowsCount extends DashletBaseInsight{
     }
 
     title() {
-        return "Tracked Flows";
+        return t("dashlet.name.tracked_flows_counter");
     }
 
     tooltip() {
-        return "<h5>Tracked Flows</h5><p>Number of flows tracked by LibreQoS. Flows are either a TCP connection, or a UDP/ICMP connection with matching endpoints and port/request type numbers. Completed flows are flows that have finished transmitting data, and have been submitted to netflow and the flow analysis system.</p>";
+        return `<h5>${t("graph.axis.tracked_flows")}</h5><p>${t("dashlet.tracked_flows.tooltip")}</p>`;
     }
 
     supportsZoom() {

@@ -1,5 +1,6 @@
 import {StormguardAdjustmentsGraph} from "../graphs/stormguard_adjustments_graph";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class StormguardStatusDashlet extends DashletBaseInsight {
     constructor(slot) {
@@ -9,11 +10,11 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
     }
 
     title() {
-        return "Stormguard Bandwidth";
+        return t("dashlet.name.stormguard_bandwidth_adjustments");
     }
 
     tooltip() {
-        return "<h5>Stormguard Bandwidth</h5><p>Real-time visualization of bandwidth limits for monitored sites over the last 5 minutes. Shows download bandwidth (solid lines above zero) and upload bandwidth (dashed lines below zero) for each site.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.stormguard_bandwidth.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -27,12 +28,12 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
 
         let caption = document.createElement("div");
         caption.classList.add("text-muted", "small");
-        caption.innerText = "Live StormGuard queue limits";
+        caption.innerText = t("dashlet.stormguard_bandwidth.caption");
 
         let debugLink = document.createElement("a");
         debugLink.href = "stormguard_debug.html";
         debugLink.classList.add("btn", "btn-sm", "btn-outline-primary");
-        debugLink.innerHTML = "<i class='fas fa-bug'></i> Debug view";
+        debugLink.innerHTML = `<i class="fas fa-bug"></i> ${t("dashlet.stormguard.debug_view")}`;
 
         controls.appendChild(caption);
         controls.appendChild(debugLink);

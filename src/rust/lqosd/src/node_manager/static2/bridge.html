@@ -40,65 +40,65 @@
     <section class="lqos-config-panel">
         <div class="lqos-config-panel-header">
             <div>
-                <h5 class="lqos-config-panel-title"><i class="fa fa-circle-nodes me-2"></i>Bridge</h5>
-                <div class="lqos-config-panel-subtitle">
+                <h5 class="lqos-config-panel-title" data-i18n="common.nav.bridge"><i class="fa fa-circle-nodes me-2"></i>Bridge</h5>
+                <div class="lqos-config-panel-subtitle" data-i18n="bridge.page.subtitle">
                     Shaping control-plane health and convergence. The control plane never freezes
                     the world: an unappliable change is held on its own while everything else keeps
                     applying.
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="badge bg-secondary" id="bridgePageState">Loading…</span>
-                <span class="text-muted small" id="bridgePageUpdated">Waiting for data</span>
+                <span class="badge bg-secondary" id="bridgePageState" data-i18n="common.state.loading">Loading...</span>
+                <span class="text-muted small" id="bridgePageUpdated" data-i18n="common.state.waiting">Waiting for data</span>
             </div>
         </div>
 
         <div id="bridgePageStats" class="bridge-stats">
             <div class="bridge-stat">
-                <div class="bridge-stat-label">Service</div>
+                <div class="bridge-stat-label" data-i18n="bridge.page.service">Service</div>
                 <div class="bridge-stat-value" id="bridgePageService">—</div>
-                <div class="bridge-stat-note" id="bridgePageServiceNote">Bridge probe verdict</div>
+                <div class="bridge-stat-note" id="bridgePageServiceNote" data-i18n="bridge.page.service_note">Bridge probe verdict</div>
             </div>
             <div class="bridge-stat">
-                <div class="bridge-stat-label">Convergence</div>
+                <div class="bridge-stat-label" data-i18n="bridge.page.convergence">Convergence</div>
                 <div class="bridge-stat-value" id="bridgePageConvergenceState">—</div>
-                <div class="bridge-stat-note" id="bridgePageConvergenceNote">healthy / converging / held</div>
+                <div class="bridge-stat-note" id="bridgePageConvergenceNote" data-i18n="bridge.page.state_hint">healthy / converging / held</div>
             </div>
             <div class="bridge-stat">
-                <div class="bridge-stat-label">Applied</div>
+                <div class="bridge-stat-label" data-i18n="bridge.page.applied">Applied</div>
                 <div class="bridge-stat-value" id="bridgePageApplied">—</div>
-                <div class="bridge-stat-note" id="bridgePageAppliedNote">Last applied world</div>
+                <div class="bridge-stat-note" id="bridgePageAppliedNote" data-i18n="bridge.page.applied_note">Last applied world</div>
             </div>
             <div class="bridge-stat">
-                <div class="bridge-stat-label">Held changes</div>
+                <div class="bridge-stat-label" data-i18n="bridge.page.held_changes">Held changes</div>
                 <div class="bridge-stat-value" id="bridgePageHeldCount">—</div>
-                <div class="bridge-stat-note">Quarantined, not blocking</div>
+                <div class="bridge-stat-note" data-i18n="bridge.page.held_note">Quarantined, not blocking</div>
             </div>
         </div>
 
         <div class="lqos-config-section">
-            <h6>Convergence</h6>
-            <div id="bridgePageConvergence" class="lqos-config-note lqos-config-note-info">
+            <h6 data-i18n="bridge.page.convergence">Convergence</h6>
+            <div id="bridgePageConvergence" class="lqos-config-note lqos-config-note-info" data-i18n="bridge.page.waiting_convergence">
                 Waiting for the broker’s convergence state…
             </div>
         </div>
 
         <div class="lqos-config-section">
-            <h6>Recent outcomes</h6>
+            <h6 data-i18n="bridge.page.recent_outcomes">Recent outcomes</h6>
             <div class="card">
                 <div class="card-body">
                     <div class="table-responsive lqos-table-wrap">
                         <table class="lqos-table lqos-table-compact align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th>Generation</th>
-                                    <th>State</th>
-                                    <th>Updated</th>
+                                    <th data-i18n="bridge.page.generation">Generation</th>
+                                    <th data-i18n="bridge.page.state">State</th>
+                                    <th data-i18n="bridge.page.updated">Updated</th>
                                 </tr>
                             </thead>
                             <tbody id="bridgePageOutcomes">
                                 <tr>
-                                    <td colspan="3" class="text-muted">Loading bridge publish outcomes…</td>
+                                    <td colspan="3" class="text-muted" data-i18n="bridge.page.loading_outcomes">Loading bridge publish outcomes…</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -108,12 +108,12 @@
         </div>
 
         <div class="lqos-config-section">
-            <h6>Actions</h6>
-            <button id="bridgePageReload" class="btn btn-primary" type="button">
+            <h6 data-i18n="bridge.page.actions">Actions</h6>
+            <button id="bridgePageReload" class="btn btn-primary" type="button" data-i18n="common.action.reload">
                 <i class="fa fa-rotate me-1"></i>Reload LibreQoS
             </button>
             <span class="text-muted small ms-2" id="bridgePageReloadResult"></span>
-            <div class="lqos-config-note lqos-config-note-warning mt-2">
+            <div class="lqos-config-note lqos-config-note-warning mt-2" data-i18n="bridge.page.reload_note">
                 Re-syncs the integration and applies the configuration now. There is no
                 “restart the bridge” action — the control plane holds and converges automatically.
             </div>

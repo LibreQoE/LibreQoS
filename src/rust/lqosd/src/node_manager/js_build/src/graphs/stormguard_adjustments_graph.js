@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -18,13 +19,13 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxis("Bandwidth Limit (bps)", 40)
+            .withScaledAbsYAxis(t("graph.stormguard.bandwidth_limit"), 40)
             .build();
 
         // Customize Y-axis to handle both positive and negative values
         this.option.yAxis = {
             type: 'value',
-            name: 'Bandwidth Limit (bps)',
+            name: t("graph.stormguard.bandwidth_limit"),
             nameLocation: 'middle',
             nameGap: 50,
             axisLabel: {
@@ -42,6 +43,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
 
         // Initialize with zero line
         this.option.series = [
+            // translatable: false — "Zero Line" is the internal series identifier the tooltip filters on, never labelled
             {
                 name: 'Zero Line',
                 type: 'line',
@@ -83,7 +85,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
                 if (!params || params.length === 0) return '';
                 const idx = params[0].dataIndex;
                 const ts = this.ringbuffer.getTimestamp(idx);
-                let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
+                let s = `<div><b>${t("graph.tooltip.time")}</b> ${formatTime(ts)}</div>`;
                 
                 // Group by site to show download/upload together
                 const siteData = new Map();
@@ -107,10 +109,10 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
                 for (const [site, data] of siteData) {
                     s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${data.color};"></span><b>${site}:</b></div>`;
                     if (data.download !== undefined) {
-                        s += `<div style="padding-left:15px;">Download (solid): ${scaleNumber(data.download)}</div>`;
+                        s += `<div style="padding-left:15px;">${t("graph.stormguard.download_line", {value: scaleNumber(data.download)})}</div>`;
                     }
                     if (data.upload !== undefined) {
-                        s += `<div style="padding-left:15px;">Upload (dashed): ${scaleNumber(data.upload)}</div>`;
+                        s += `<div style="padding-left:15px;">${t("graph.stormguard.upload_line", {value: scaleNumber(data.upload)})}</div>`;
                     }
                 }
                 
@@ -165,6 +167,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
         
         // sites is Vec<(String, u64, u64)> = [(siteName, download, upload), ...]
         if (!Array.isArray(sites)) {
+            // translatable: false — "StormguardAdjustmentsGraph: Expected array of sites, got:" is a console diagnostic, never rendered
             console.warn("StormguardAdjustmentsGraph: Expected array of sites, got:", sites);
             return;
         }
@@ -185,6 +188,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
             
             // Download series (positive line)
             newSeries.push({
+                // translatable: false — "Download" "Upload" here are the series-name suffixes the tooltip parses; the row labels it renders are translated
                 name: `${siteName} Download`,
                 data: this.ringbuffer.getSeriesForSite(siteName, 'download'),
                 type: 'line',

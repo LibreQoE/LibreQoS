@@ -438,6 +438,7 @@ def run_splynx_pipeline(strategy_name: str):
 					networkJsonId=f"splynx:ap:{ap_id}",
 					latitude=latitude, longitude=longitude)
 				net.addRawNode(node)
+				attachSplynxDeviceRef(net, node, ap_device.get('ip'))
 				created_ap += 1
 			print(f"Created {created_ap} AP nodes (Network Sites mode)")
 			return
@@ -453,6 +454,7 @@ def run_splynx_pipeline(strategy_name: str):
 				latitude, longitude = parse_gps_pair(ap_device.get('gps'))
 				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None, networkJsonId=f"splynx:ap:{ap_id}", latitude=latitude, longitude=longitude)
 				net.addRawNode(node)
+				attachSplynxDeviceRef(net, node, ap_device.get('ip'))
 			return
 		# ap_site and full
 		print("Creating site and AP infrastructure")
@@ -796,15 +798,21 @@ def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID
 	
 	return circuit_id
 
+def attachSplynxDeviceRef(net, node, mgmt_ip):
+	return net.attachDeviceRef(node, mgmt_ip=mgmt_ip, vendor_hint='splynx')
+
+
 def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended, hardware_bandwidth_names=None):
 	"""
 	Create site and AP nodes from monitoring data.
 	"""
 	monitoring_gps = {}
+	monitoring_ips = {}
 	for dev in monitoring:
 		dev_id = normalize_splynx_graph_id(dev.get('id'))
 		if dev_id is not None:
 			monitoring_gps[dev_id] = parse_gps_pair(dev.get('gps'))
+			monitoring_ips[dev_id] = dev.get('ip')
 	for device_num in hardware_name:
 		parent_id = None
 		if device_num in hardware_parent.keys():
@@ -826,6 +834,8 @@ def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, h
 				parentId=parent_id, download=download, upload=upload, address=None,
 				networkJsonId=f"splynx:site:{device_num}", latitude=latitude, longitude=longitude)
 		net.addRawNode(node)
+		if nodeType == 'AP':
+			attachSplynxDeviceRef(net, node, monitoring_ips.get(device_num))
 
 def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter):
 	"""

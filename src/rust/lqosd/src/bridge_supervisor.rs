@@ -12,9 +12,9 @@
 //!   restart-worthy. Busy PROVES the collector answered (liveness OK);
 //!   it resets the failure streak without changing the verdict.
 //! - A successful probe's verdict mirrors the bridge's 3-value
-//!   `status` string: "starting" / "healthy" / "degraded" (an
-//!   unrecognized status is surfaced as Degraded with the raw string
-//!   in the detail — fail-visible, never silently healthy).
+//!   `HealthStatus`: Starting / Healthy / Degraded (an unrecognized
+//!   status is surfaced as Degraded with the raw string in the detail —
+//!   fail-visible, never silently healthy).
 //!
 //! node_manager renders the Supervisor's VERDICT with the raw
 //! `HealthReport` as detail; there is no direct feed path around this
@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use analytics_ipc::{HealthReport, connect_health};
+use analytics_ipc::{HealthReport, HealthStatus, connect_health};
 use arc_swap::ArcSwap;
 use once_cell::sync::Lazy;
 use tracing::{debug, info, warn};
@@ -150,22 +150,28 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// The bridge status -> Supervisor verdict mapping. An unrecognized tag keeps
+/// its raw text in the log and surfaces as Degraded: fail-visible, never
+/// silently healthy.
+fn verdict_for_status(status: &HealthStatus) -> BridgeVerdict {
+    match status {
+        HealthStatus::Healthy => BridgeVerdict::Healthy,
+        HealthStatus::Starting => BridgeVerdict::Starting,
+        HealthStatus::Degraded => BridgeVerdict::Degraded,
+        HealthStatus::Unknown(received) => {
+            warn!("Bridge health: unrecognized status {received:?}; surfacing degraded");
+            BridgeVerdict::Degraded
+        }
+    }
+}
+
 fn probe_once(socket: &PathBuf, fails_to_down: u32, state: &mut ProbeState) {
     let last_probe_unix = Some(now_unix());
     match connect_health(socket) {
         Ok(report) => {
             state.consecutive_failures = 0;
             state.last_success_unix = last_probe_unix;
-            let status = report.status.as_str();
-            state.verdict = match status {
-                "healthy" => BridgeVerdict::Healthy,
-                "starting" => BridgeVerdict::Starting,
-                "degraded" => BridgeVerdict::Degraded,
-                other => {
-                    warn!("Bridge health: unrecognized status {other:?}; surfacing degraded");
-                    BridgeVerdict::Degraded
-                }
-            };
+            state.verdict = verdict_for_status(&report.status);
             state.report = Some(report);
         }
         Err(analytics_ipc::IpcError::Busy) => {
@@ -241,16 +247,17 @@ mod tests {
 
     fn healthy_report() -> HealthReport {
         HealthReport {
-            status: "healthy".to_string(),
+            status: HealthStatus::Healthy,
             version: "test".to_string(),
             uptime_ms: 1_000,
             ..Default::default()
         }
     }
 
-    /// Live-socket probe: a real service answering health requests.
+    /// Live-socket probe: a real service answering health requests keeps the
+    /// typed status and maps it to the verdict.
     #[test]
-    fn live_probe_maps_status_strings() {
+    fn live_probe_maps_the_typed_status() {
         let unique = format!(
             "lqosd-bridge-supervisor-test-{}-{:?}",
             std::process::id(),
@@ -288,6 +295,52 @@ mod tests {
 
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The SECOND hop: lqosd holds the decoded report and re-serializes it to
+    /// JSON for the browser, so the status must leave as the same plain text
+    /// tag — for every arm, including a tag this build does not know.
+    #[test]
+    fn report_json_carries_the_status_text_to_the_browser() {
+        for (status, expected) in [
+            (HealthStatus::Healthy, "healthy"),
+            (HealthStatus::Starting, "starting"),
+            (HealthStatus::Degraded, "degraded"),
+            (HealthStatus::from("throttled".to_string()), "throttled"),
+        ] {
+            let report = HealthReport {
+                status,
+                version: "test".to_string(),
+                ..Default::default()
+            };
+            assert_eq!(
+                serde_json::to_value(&report).expect("the report serializes to JSON")["status"],
+                serde_json::Value::String(expected.to_string()),
+                "the browser hop keeps the plain text tag"
+            );
+        }
+    }
+
+    /// Every shared status maps to its verdict, and an unknown tag keeps its
+    /// raw text while surfacing degraded.
+    #[test]
+    fn status_mapping_preserves_every_verdict() {
+        assert_eq!(
+            verdict_for_status(&HealthStatus::Healthy),
+            BridgeVerdict::Healthy
+        );
+        assert_eq!(
+            verdict_for_status(&HealthStatus::Starting),
+            BridgeVerdict::Starting
+        );
+        assert_eq!(
+            verdict_for_status(&HealthStatus::Degraded),
+            BridgeVerdict::Degraded
+        );
+
+        let unknown = HealthStatus::from("throttled".to_string());
+        assert_eq!(verdict_for_status(&unknown), BridgeVerdict::Degraded);
+        assert_eq!(unknown.as_str(), "throttled", "the raw tag stays readable");
     }
 
     #[test]

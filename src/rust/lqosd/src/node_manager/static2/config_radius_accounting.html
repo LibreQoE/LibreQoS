@@ -5,8 +5,8 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">RADIUS Accounting</h5>
-                    <div class="lqos-config-panel-subtitle">
+                    <h5 class="lqos-config-panel-title" data-i18n="config.radius_accounting.title">RADIUS Accounting</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.radius_accounting.subtitle">
                         Listen for accounting packets and apply RADIUS-backed dynamic circuits.
                     </div>
                 </div>
@@ -15,22 +15,22 @@
             <div class="row g-3">
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Listener</h6>
-                        <div class="lqos-config-section-subtitle">Enable the UDP listener and choose session expiry behavior.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.radius_accounting.listener.title">Listener</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.radius_accounting.listener.subtitle">Enable the UDP listener and choose session expiry behavior.</div>
 
                         <div class="row g-3">
                             <div class="col-12 col-xl-4">
                                 <div class="mb-0 form-check form-switch">
                                     <input type="checkbox" class="form-check-input" id="radiusEnabled">
-                                    <label class="form-check-label" for="radiusEnabled">Enable RADIUS Accounting</label>
-                                    <div class="form-text">Starts the lqosd RADIUS accounting listener.</div>
+                                    <label class="form-check-label" for="radiusEnabled" data-i18n="config.radius_accounting.enable">Enable RADIUS Accounting</label>
+                                    <div class="form-text" data-i18n="config.radius_accounting.enable_help">Starts the lqosd RADIUS accounting listener.</div>
                                 </div>
                             </div>
 
                             <div class="col-12 col-xl-4">
-                                <label for="radiusListen" class="form-label">Listen Address</label>
+                                <label for="radiusListen" class="form-label" data-i18n="config.radius_accounting.listen">Listen Address</label>
                                 <input type="text" class="form-control" id="radiusListen" placeholder="0.0.0.0:1813">
-                                <div class="form-text">UDP socket address used by NAS accounting clients.</div>
+                                <div class="form-text" data-i18n="config.radius_accounting.listen_help">UDP socket address used by NAS accounting clients.</div>
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-2">
@@ -42,7 +42,7 @@
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-2">
-                                <label for="radiusStaleGraceSeconds" class="form-label">Stale Grace</label>
+                                <label for="radiusStaleGraceSeconds" class="form-label" data-i18n="config.radius_accounting.stale_grace">Stale Grace</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="radiusStaleGraceSeconds" min="1" step="1" value="120">
                                     <span class="input-group-text">sec</span>
@@ -54,47 +54,47 @@
 
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Dynamic Circuit Application</h6>
-                        <div class="lqos-config-section-subtitle">Control whether accepted sessions create or refresh dynamic circuits.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.radius_accounting.application.title">Dynamic Circuit Application</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.radius_accounting.application.subtitle">Control whether accepted sessions create or refresh dynamic circuits.</div>
 
                         <div class="row g-3">
                             <div class="col-12 col-xl-4">
                                 <div class="mb-0 form-check form-switch">
                                     <input type="checkbox" class="form-check-input" id="radiusDynamicApplicationEnabled">
-                                    <label class="form-check-label" for="radiusDynamicApplicationEnabled">Apply Dynamic Circuits</label>
-                                    <div class="form-text">Allows RADIUS sessions to update dynamic circuit state.</div>
+                                    <label class="form-check-label" for="radiusDynamicApplicationEnabled" data-i18n="config.radius_accounting.apply_dynamic">Apply Dynamic Circuits</label>
+                                    <div class="form-text" data-i18n="config.radius_accounting.apply_dynamic_help">Allows RADIUS sessions to update dynamic circuit state.</div>
                                 </div>
                             </div>
 
                             <div class="col-12 col-xl-4">
                                 <div class="mb-0 form-check form-switch">
                                     <input type="checkbox" class="form-check-input" id="radiusMatchShapedDevicesByMac">
-                                    <label class="form-check-label" for="radiusMatchShapedDevicesByMac">Match ShapedDevices by MAC</label>
-                                    <div class="form-text">Uses Calling-Station-Id to reuse shaped device metadata.</div>
+                                    <label class="form-check-label" for="radiusMatchShapedDevicesByMac" data-i18n="config.radius_accounting.match_by_mac">Match ShapedDevices by MAC</label>
+                                    <div class="form-text" data-i18n="config.radius_accounting.match_by_mac_help">Uses Calling-Station-Id to reuse shaped device metadata.</div>
                                 </div>
                             </div>
 
                             <div class="col-12 col-xl-4">
                                 <div class="mb-0 form-check form-switch">
                                     <input type="checkbox" class="form-check-input" id="radiusMatchShapedDevicesByUsername">
-                                    <label class="form-check-label" for="radiusMatchShapedDevicesByUsername">Match ShapedDevices by Username</label>
-                                    <div class="form-text">Uses User-Name to match the device MAC field verbatim.</div>
+                                    <label class="form-check-label" for="radiusMatchShapedDevicesByUsername" data-i18n="config.radius_accounting.match_by_username">Match ShapedDevices by Username</label>
+                                    <div class="form-text" data-i18n="config.radius_accounting.match_by_username_help">Uses User-Name to match the device MAC field verbatim.</div>
                                 </div>
                             </div>
 
                             <div class="col-12 col-xl-4">
-                                <label for="radiusFallbackParentNode" class="form-label">Fallback Parent Node</label>
-                                <input type="text" class="form-control" id="radiusFallbackParentNode" placeholder="Optional network node">
+                                <label for="radiusFallbackParentNode" class="form-label" data-i18n="config.radius_accounting.fallback_parent_node">Fallback Parent Node</label>
+                                <input type="text" class="form-control" id="radiusFallbackParentNode" placeholder="Optional network node" data-i18n-placeholder="config.radius_accounting.fallback_parent_node_placeholder">
                             </div>
 
                             <div class="col-12 col-xl-6">
-                                <label for="radiusFallbackParentNodeId" class="form-label">Fallback Parent Node ID</label>
-                                <input type="text" class="form-control" id="radiusFallbackParentNodeId" placeholder="Optional stable node ID">
+                                <label for="radiusFallbackParentNodeId" class="form-label" data-i18n="config.radius_accounting.fallback_parent_node_id">Fallback Parent Node ID</label>
+                                <input type="text" class="form-control" id="radiusFallbackParentNodeId" placeholder="Optional stable node ID" data-i18n-placeholder="config.radius_accounting.fallback_parent_node_id_placeholder">
                             </div>
 
                             <div class="col-12 col-xl-6">
-                                <label for="radiusFallbackAnchorNodeId" class="form-label">Fallback Anchor Node ID</label>
-                                <input type="text" class="form-control" id="radiusFallbackAnchorNodeId" placeholder="Optional stable anchor ID">
+                                <label for="radiusFallbackAnchorNodeId" class="form-label" data-i18n="config.radius_accounting.fallback_anchor_node_id">Fallback Anchor Node ID</label>
+                                <input type="text" class="form-control" id="radiusFallbackAnchorNodeId" placeholder="Optional stable anchor ID" data-i18n-placeholder="config.radius_accounting.fallback_anchor_node_id_placeholder">
                             </div>
                         </div>
                     </div>
@@ -102,19 +102,19 @@
 
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Fallback Speed Profile</h6>
-                        <div class="lqos-config-section-subtitle">Optional rates used when packets and matched shaped devices do not supply rates.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.radius_accounting.speed.title">Fallback Speed Profile</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.radius_accounting.speed.subtitle">Optional rates used when packets and matched shaped devices do not supply rates.</div>
 
                         <div class="row g-3">
                             <div class="col-12">
                                 <div class="mb-0 form-check form-switch">
                                     <input type="checkbox" class="form-check-input" id="radiusFallbackSpeedEnabled">
-                                    <label class="form-check-label" for="radiusFallbackSpeedEnabled">Enable Fallback Speed Profile</label>
+                                    <label class="form-check-label" for="radiusFallbackSpeedEnabled" data-i18n="config.radius_accounting.speed.enable">Enable Fallback Speed Profile</label>
                                 </div>
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-3">
-                                <label for="radiusDownloadMinMbps" class="form-label">Download Min</label>
+                                <label for="radiusDownloadMinMbps" class="form-label" data-i18n="config.radius_accounting.speed.download_min">Download Min</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="radiusDownloadMinMbps" min="0.1" step="0.1">
                                     <span class="input-group-text">Mbps</span>
@@ -122,7 +122,7 @@
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-3">
-                                <label for="radiusUploadMinMbps" class="form-label">Upload Min</label>
+                                <label for="radiusUploadMinMbps" class="form-label" data-i18n="config.radius_accounting.speed.upload_min">Upload Min</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="radiusUploadMinMbps" min="0.1" step="0.1">
                                     <span class="input-group-text">Mbps</span>
@@ -130,7 +130,7 @@
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-3">
-                                <label for="radiusDownloadMaxMbps" class="form-label">Download Max</label>
+                                <label for="radiusDownloadMaxMbps" class="form-label" data-i18n="config.radius_accounting.speed.download_max">Download Max</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="radiusDownloadMaxMbps" min="0.1" step="0.1">
                                     <span class="input-group-text">Mbps</span>
@@ -138,7 +138,7 @@
                             </div>
 
                             <div class="col-12 col-md-6 col-xl-3">
-                                <label for="radiusUploadMaxMbps" class="form-label">Upload Max</label>
+                                <label for="radiusUploadMaxMbps" class="form-label" data-i18n="config.radius_accounting.speed.upload_max">Upload Max</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="radiusUploadMaxMbps" min="0.1" step="0.1">
                                     <span class="input-group-text">Mbps</span>
@@ -150,11 +150,11 @@
 
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Trusted Clients</h6>
-                        <div class="lqos-config-section-subtitle">Allow only known NAS sources and shared secret files.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.radius_accounting.clients.title">Trusted Clients</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.radius_accounting.clients.subtitle">Allow only known NAS sources and shared secret files.</div>
 
                         <div class="d-flex justify-content-end mb-3">
-                            <button type="button" id="addRadiusClient" class="btn btn-outline-primary btn-sm">
+                            <button type="button" id="addRadiusClient" class="btn btn-outline-primary btn-sm" data-i18n="config.radius_accounting.clients.add">
                                 <i class="fa fa-plus me-1"></i>Add Client
                             </button>
                         </div>
@@ -165,10 +165,10 @@
                             <table class="table table-sm table-hover align-middle lqos-config-responsive-table">
                                 <thead>
                                     <tr>
-                                        <th style="min-width: 9rem;">Name</th>
-                                        <th style="min-width: 14rem;">Source IPs or CIDRs</th>
-                                        <th style="min-width: 14rem;">Secret File</th>
-                                        <th style="min-width: 5rem;">Actions</th>
+                                        <th style="min-width: 9rem;" data-i18n="config.radius_accounting.clients.name">Name</th>
+                                        <th style="min-width: 14rem;" data-i18n="config.radius_accounting.clients.source">Source IPs or CIDRs</th>
+                                        <th style="min-width: 14rem;" data-i18n="config.radius_accounting.clients.secret_file">Secret File</th>
+                                        <th style="min-width: 5rem;" data-i18n="common.table.actions">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="radiusClientsBody"></tbody>
@@ -180,7 +180,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.radius_accounting.save">Save Changes</button>
         </div>
     </form>
 </div>

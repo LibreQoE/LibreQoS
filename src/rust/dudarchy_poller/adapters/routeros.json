@@ -1,0 +1,398 @@
+{
+  "schema_version": 2,
+  "id": "routeros",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.14988.1"],
+    "sys_descr_contains": ["RouterOS"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" },
+    { "id": "api", "transport": "routeros_api", "credential_ref": "api" }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "sys_descr", "oid": "1.3.6.1.2.1.1.1.0", "parser": "utf8" },
+          { "name": "sys_name", "oid": "1.3.6.1.2.1.1.5.0", "parser": "utf8" },
+          { "name": "sys_object_id", "oid": "1.3.6.1.2.1.1.2.0", "parser": "oid" }
+        ]
+      }
+    },
+    {
+      "id": "routerboard_serial",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          {
+            "name": "serial",
+            "oid": "1.3.6.1.4.1.14988.1.1.7.3.0",
+            "parser": "utf8"
+          }
+        ]
+      }
+    },
+    {
+      "id": "if_table",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "description", "oid": "1.3.6.1.2.1.2.2.1.2", "parser": "utf8" },
+            { "name": "raw_type", "oid": "1.3.6.1.2.1.2.2.1.3", "parser": "u32" },
+            { "name": "mac", "oid": "1.3.6.1.2.1.2.2.1.6", "parser": "octet_mac" },
+            { "name": "admin_state", "oid": "1.3.6.1.2.1.2.2.1.7", "parser": "u32" },
+            { "name": "oper_state", "oid": "1.3.6.1.2.1.2.2.1.8", "parser": "u32" },
+            { "name": "name", "oid": "1.3.6.1.2.1.31.1.1.1.1", "parser": "utf8" },
+            { "name": "alias", "oid": "1.3.6.1.2.1.31.1.1.1.18", "parser": "utf8" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    },
+    {
+      "id": "lldp",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "local_port", "oid": "1.0.8802.1.1.2.1.4.1.1.2", "parser": "u32" },
+            { "name": "chassis_id", "oid": "1.0.8802.1.1.2.1.4.1.1.5", "parser": "octet_mac" },
+            { "name": "port_id", "oid": "1.0.8802.1.1.2.1.4.1.1.7", "parser": "utf8" },
+            { "name": "sys_name", "oid": "1.0.8802.1.1.2.1.4.1.1.9", "parser": "utf8" },
+            { "name": "sys_descr", "oid": "1.0.8802.1.1.2.1.4.1.1.10", "parser": "utf8" }
+          ],
+          "index": { "kind": "lldp_rem" }
+        }
+      }
+    },
+    {
+      "id": "arp_media",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.22.1.2", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_v4" }
+        }
+      }
+    },
+    {
+      "id": "arp_physical",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.35.1.4", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_typed" }
+        }
+      }
+    },
+    {
+      "id": "fdb",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "port", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2", "parser": "u32" },
+            { "name": "status", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3", "parser": "u32" }
+          ],
+          "index": { "kind": "dot1q_vlan_mac" },
+          "bridge_port_resolution": "dot1d_base_port_ifindex"
+        }
+      }
+    },
+    {
+      "id": "identity",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_identity",
+          "fields": [{ "name": "name", "from": "name" }]
+        }
+      }
+    },
+    {
+      "id": "routerboard",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_routerboard",
+          "fields": [{ "name": "serial", "from": "serial-number" }]
+        }
+      }
+    },
+    {
+      "id": "neighbors",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_neighbor",
+          "fields": [
+            { "name": "mac", "from": "mac-address" },
+            { "name": "address", "from": "address" },
+            { "name": "identity", "from": "identity" },
+            { "name": "interface", "from": "interface" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "interfaces",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "interfaces",
+          "fields": [
+            { "name": "id", "from": ".id" },
+            { "name": "name", "from": "name" },
+            { "name": "raw_type", "from": "type" },
+            { "name": "mac", "from": "mac-address" },
+            { "name": "running", "from": "running" },
+            { "name": "disabled", "from": "disabled" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "addresses",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_address",
+          "fields": [
+            { "name": "address", "from": "address" },
+            { "name": "interface", "from": "interface" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "arp",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_arp",
+          "fields": [
+            { "name": "address", "from": "address" },
+            { "name": "mac", "from": "mac-address" },
+            { "name": "interface", "from": "interface" },
+            { "name": "dynamic", "from": "dynamic" },
+            { "name": "complete", "from": "complete" },
+            { "name": "disabled", "from": "disabled" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_ports",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_port",
+          "fields": [
+            { "name": "bridge", "from": "bridge" },
+            { "name": "interface", "from": "interface" },
+            { "name": "pvid", "from": "pvid" },
+            { "name": "frame_types", "from": "frame-types" },
+            { "name": "status", "from": "status" },
+            { "name": "inactive", "from": "inactive" },
+            { "name": "disabled", "from": "disabled" },
+            { "name": "dynamic", "from": "dynamic" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_vlans",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_vlan",
+          "fields": [
+            { "name": "bridge", "from": "bridge" },
+            { "name": "vlan_ids", "from": "vlan-ids" },
+            { "name": "tagged", "from": "tagged" },
+            { "name": "untagged", "from": "untagged" },
+            { "name": "current_tagged", "from": "current-tagged" },
+            { "name": "current_untagged", "from": "current-untagged" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_hosts",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_host",
+          "fields": [
+            { "name": "mac", "from": "mac-address" },
+            { "name": "interface", "from": "interface" },
+            { "name": "bridge", "from": "bridge" },
+            { "name": "on_interface", "from": "on-interface" },
+            { "name": "age", "from": "age" },
+            { "name": "dynamic", "from": "dynamic" },
+            { "name": "local", "from": "local" },
+            { "name": "external", "from": "external" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "resource",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_resource",
+          "fields": [
+            { "name": "version", "from": "version" },
+            { "name": "board_name", "from": "board-name" },
+            { "name": "platform", "from": "platform" },
+            { "name": "uptime", "from": "uptime" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "health",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_health",
+          "fields": [
+            { "name": "name", "from": "name" },
+            { "name": "celsius", "from": "temperature" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nat",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_firewall_nat",
+          "fields": [
+            { "name": "chain", "from": "chain" },
+            { "name": "action", "from": "action" },
+            { "name": "in_interface", "from": "in-interface" },
+            { "name": "out_interface", "from": "out-interface" },
+            { "name": "src_address", "from": "src-address" },
+            { "name": "dst_address", "from": "dst-address" },
+            { "name": "to_addresses", "from": "to-addresses" },
+            { "name": "disabled", "from": "disabled" },
+            { "name": "comment", "from": "comment" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dhcp_leases",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_dhcp_server_lease",
+          "fields": [
+            { "name": "address", "from": "address" },
+            { "name": "mac", "from": "mac-address" },
+            { "name": "hostname", "from": "host-name" },
+            { "name": "status", "from": "status" },
+            { "name": "dynamic", "from": "dynamic" },
+            { "name": "disabled", "from": "disabled" }
+          ]
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["identity.name"] },
+      { "kind": "serial", "fields": ["routerboard.serial", "routerboard_serial.serial"] },
+      { "kind": "name", "fields": ["neighbors.identity"] },
+      { "kind": "address", "fields": ["neighbors.address", "addresses.address"] },
+      { "kind": "interface", "fields": ["neighbors.interface"] },
+      { "kind": "name", "fields": ["system.sys_name", "lldp.sys_name"] },
+      { "kind": "sysdescr", "fields": ["system.sys_descr", "lldp.sys_descr"] },
+      { "kind": "portid", "fields": ["lldp.port_id"] },
+      { "kind": "localport", "fields": ["lldp.local_port"] }
+    ],
+    "details": {
+      "interfaces": "if_table",
+      "system": "resource",
+      "temperatures": "health",
+      "arp": "arp_media",
+      "bridge_ports": "bridge_ports",
+      "bridge_vlans": "bridge_vlans",
+      "bridge_hosts": "bridge_hosts",
+      "nat": "nat",
+      "dhcp_leases": "dhcp_leases"
+    },
+    "residuals": [
+      {
+        "name": "interface-vlan-enrichment",
+        "source": "host/src/commands.rs: /interface/vlan/print is outside the closed authoring command vocabulary (CommandName::InterfaceVlan was removed), and the model has no VLAN detail slot or join for its rows"
+      },
+      {
+        "name": "health-multi-sensor",
+        "source": "host/src/mikrotik_proto.rs: /system/health/print carries every temperature field as a sibling key; a command field map names one, so boards with cpu/psu sensors report only the mapped temperature"
+      },
+      {
+        "name": "bridge-table-conditional-read",
+        "source": "host/src/adapters/engine.rs: a surface runs every declared probe; the deleted collector skipped the three bridge tables when no interface reported a bridge"
+      },
+      {
+        "name": "firewall-address-lists",
+        "source": "docs/recon/routeros.md: /ip/firewall/address-list/print carries free-form list names and entries; the schema has no list-name convention, so list entries are not collected and a NAT address an entry covers is still probed"
+      },
+      {
+        "name": "ipv6-firewall-nat",
+        "source": "docs/recon/routeros.md: /ipv6/firewall/nat/print is a separate command; the `nat` detail slot collects IPv4 firewall rules only"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 256,
+    "max_rows": 4096,
+    "deadline_ms": 30000
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": 2,
+  "id": "ip-address-without-if-index",
+  "detect": { "sys_descr_contains": ["X"] },
+  "surfaces": [{ "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }],
+  "probes": [{ "id": "addresses", "surface": "snmp", "read": { "kind": "table", "table": { "columns": [{ "name": "netmask", "oid": "1.3.6.1.2.1.4.20.1.3", "parser": "ip_address" }], "index": { "kind": "ip_address_v4" } } } }]
+}

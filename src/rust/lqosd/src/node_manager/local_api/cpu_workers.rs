@@ -433,7 +433,8 @@ mod utilization_section_tests {
     fn rows_are_served_additively() {
         let row = analytics_ipc::WorkerUtilRow {
             queue_id: 3,
-            busy_ppm: 850_000,
+            busy_ppm: 492_000,
+            busy_ppm_recent: Some(780_000),
             idle_ppm: 150_000,
             laps_per_s: 40,
             busy_laps: 34,
@@ -443,7 +444,8 @@ mod utilization_section_tests {
         };
         let section = utilization_section(&[row]);
         assert_eq!(section["available"], true);
-        assert_eq!(section["rows"][0]["busy_ppm"], 850_000);
+        assert_eq!(section["rows"][0]["busy_ppm"], 492_000);
+        assert_eq!(section["rows"][0]["busy_ppm_recent"], 780_000);
         assert_eq!(section["rows"][0]["phase_cycles"][0], 1);
     }
 }

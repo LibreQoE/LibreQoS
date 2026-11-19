@@ -5,42 +5,42 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Flow Tracking</h5>
-                    <div class="lqos-config-panel-subtitle">Control Netflow export of flow data.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.flows.title">Flow Tracking</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.flows.subtitle">Control Netflow export of flow data.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-7">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Netflow Export</h6>
-                        <div class="lqos-config-section-subtitle">Where Netflow exports are sent.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.flows.netflow.title">Netflow Export</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.flows.netflow.subtitle">Where Netflow exports are sent.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="enableNetflow">
-                            <label class="form-check-label" for="enableNetflow">Enable Netflow</label>
-                            <div class="form-text">Enable Netflow export of flow data.</div>
+                            <label class="form-check-label" for="enableNetflow" data-i18n="config.flows.netflow.enable">Enable Netflow</label>
+                            <div class="form-text" data-i18n="config.flows.netflow.enable_help">Enable Netflow export of flow data.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="netflowPort" class="form-label">Netflow Port</label>
+                            <label for="netflowPort" class="form-label" data-i18n="config.flows.netflow.port">Netflow Port</label>
                             <input type="number" class="form-control" id="netflowPort" min="1" max="65535">
-                            <div class="form-text">Port to send Netflow data to (optional).</div>
+                            <div class="form-text" data-i18n="config.flows.netflow.port_help">Port to send Netflow data to (optional).</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="netflowIP" class="form-label">Netflow IP Address</label>
+                            <label for="netflowIP" class="form-label" data-i18n="config.flows.netflow.ip">Netflow IP Address</label>
                             <input type="text" class="form-control" id="netflowIP">
-                            <div class="form-text">IP address to send Netflow data to (optional).</div>
+                            <div class="form-text" data-i18n="config.flows.netflow.ip_help">IP address to send Netflow data to (optional).</div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="netflowVersion" class="form-label">Netflow Version</label>
+                            <label for="netflowVersion" class="form-label" data-i18n="config.flows.netflow.version">Netflow Version</label>
                             <select class="form-select" id="netflowVersion">
-                                <option value="5">Version 5</option>
-                                <option value="9">Version 9</option>
+                                <option value="5" data-i18n="config.flows.netflow.version_5">Version 5</option>
+                                <option value="9" data-i18n="config.flows.netflow.version_9">Version 9</option>
                             </select>
-                            <div class="form-text">Netflow protocol version to use.</div>
+                            <div class="form-text" data-i18n="config.flows.netflow.version_help">Netflow protocol version to use.</div>
                         </div>
                     </div>
                 </div>
@@ -50,18 +50,18 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Do-Not-Track Subnets</h5>
-                    <div class="lqos-config-panel-subtitle">CIDRs whose flows and RTT are excluded from the tracking rollups.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.flows.notrack.title">Do-Not-Track Subnets</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.flows.notrack.subtitle">CIDRs whose flows and RTT are excluded from the tracking rollups.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-7">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Excluded Subnets</h6>
-                        <div class="lqos-config-section-subtitle">Traffic to/from these CIDRs is not recorded in the flow/RTT rollups (e.g. speed tests). One CIDR per line.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.flows.notrack.section">Excluded Subnets</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.flows.notrack.help">Traffic to/from these CIDRs is not recorded in the flow/RTT rollups (e.g. speed tests). One CIDR per line.</div>
                         <div class="mb-0">
-                            <label for="doNotTrackSubnets" class="form-label">CIDRs</label>
+                            <label for="doNotTrackSubnets" class="form-label" data-i18n="config.flows.notrack.label">CIDRs</label>
                             <textarea class="form-control" id="doNotTrackSubnets" rows="4" placeholder="203.0.113.0/24"></textarea>
                         </div>
                     </div>
@@ -70,7 +70,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.flows.save">Save Changes</button>
         </div>
     </form>
 </div>

@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "id": "detail-nat-table",
+  "detect": { "sys_descr_contains": ["X"] },
+  "surfaces": [{ "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }],
+  "probes": [
+    {
+      "id": "arp",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.22.1.2", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_v4" }
+        }
+      }
+    }
+  ],
+  "maps": { "details": { "nat": "arp" } }
+}

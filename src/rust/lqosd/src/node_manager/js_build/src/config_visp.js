@@ -5,6 +5,7 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function validateConfig() {
     const enabled = document.getElementById("enableVisp").checked;
@@ -14,29 +15,29 @@ function validateConfig() {
 
     const clientId = document.getElementById("vispClientId").value.trim();
     if (!clientId) {
-        alert("Client ID is required when VISP integration is enabled");
+        alert(t("config.visp.validation.client_id_required"));
         return false;
     }
 
     if (!secretWillExistAfterSave("visp_integration", "client_secret", "vispClientSecret")) {
-        alert("Client Secret is required when VISP integration is enabled");
+        alert(t("config.visp.validation.client_secret_required"));
         return false;
     }
 
     const username = document.getElementById("vispUsername").value.trim();
     if (!username) {
-        alert("Appuser Username is required when VISP integration is enabled");
+        alert(t("config.visp.validation.username_required"));
         return false;
     }
 
     if (!secretWillExistAfterSave("visp_integration", "password", "vispPassword")) {
-        alert("Appuser Password is required when VISP integration is enabled");
+        alert(t("config.visp.validation.password_required"));
         return false;
     }
 
     const timeout = parseInt(document.getElementById("vispTimeout").value, 10);
     if (Number.isNaN(timeout) || timeout <= 0) {
-        alert("Timeout must be a positive number of seconds");
+        alert(t("config.visp.validation.timeout_positive"));
         return false;
     }
 
@@ -63,6 +64,7 @@ renderConfigMenu('visp');
 
 loadConfig(() => {
     if (!window.config) {
+        // translatable: false — "Configuration not loaded" is a console diagnostic, never rendered
         console.error("Configuration not loaded");
         return;
     }
@@ -92,7 +94,7 @@ loadConfig(() => {
     document.getElementById("saveVisp").addEventListener('click', () => {
         if (validateConfig()) {
             updateConfig();
-            saveConfig(() => alert("VISP configuration saved"));
+            saveConfig(() => alert(t("config.visp.saved")));
         }
     });
 });

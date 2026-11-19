@@ -4,11 +4,12 @@ import {
     formatThroughput,
     retransmitFractionFromSample,
 } from "./scaling";
-import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 import {clearElement} from "./dom_clear.mjs";
+import {t} from "../i18n/index.js";
 export {safeRelativeHref, simpleLinkRow} from "./safe_dom.mjs";
+export {formatLastSeen} from "./last_seen.mjs";
 
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
@@ -85,40 +86,33 @@ export function tooltipsNextFrame(id) {
 
 export function clientTableHeader() {
     let thead = document.createElement("thead");
-    thead.appendChild(theading("Circuit"));
-    thead.appendChild(theading("Device"));
-    const planHeading = theading("Plan (Mbps)");
+    thead.appendChild(theading(t("common.table.circuit")));
+    thead.appendChild(theading(t("common.table.device")));
+    const planHeading = theading(t("common.table.plan_mbps"));
     planHeading.classList.add("lqos-tree-plan-column");
     thead.appendChild(planHeading);
-    thead.appendChild(theading("Parent"));
+    thead.appendChild(theading(t("common.table.parent")));
     thead.appendChild(theading("IP"));
-    thead.appendChild(theading("Last Seen"));
-    thead.appendChild(theading("Throughput", 2));
+    thead.appendChild(theading(t("common.table.last_seen")));
+    thead.appendChild(theading(t("common.table.throughput"), 2));
     thead.appendChild(theading("RTT", 2));
-    thead.appendChild(theading("Re-Xmit", 2));
+    thead.appendChild(theading(t("common.table.rxmit_short"), 2));
     return thead;
 }
 
-export function formatLastSeen(n) {
-    let fiveMinutesInNanos = 300000000000;
-    let result = "-";
-    if (n > fiveMinutesInNanos) {
-        result = "> 5 Minutes ago";
-    } else {
-        result = scaleNanos(n, 0) + " ago";
-    }
-    return result;
-}
+// `formatLastSeen` lives in `./last_seen.mjs` and is re-exported above: it
+// composes the relative-time wording through `i18n/relative_time.mjs`, which a
+// Node test can only reach from a module that has no extensionless imports.
 
 export function topNTableHeader() {
     let th = document.createElement("thead");
     th.classList.add("small");
-    th.appendChild(theading("IP Address/Circuit"));
-    th.appendChild(theading("Plan"));
+    th.appendChild(theading(t("common.table.ip_address_circuit")));
+    th.appendChild(theading(t("common.table.plan")));
     th.appendChild(theading("DL <i class='fa fa-arrow-down'></i>"));
     th.appendChild(theading("UL <i class='fa fa-arrow-up'></i>"));
-    th.appendChild(theading("RTT (ms)"));
-    th.appendChild(theading("TCP Retransmits", 2));
+    th.appendChild(theading(t("common.table.rtt_ms")));
+    th.appendChild(theading(t("common.table.tcp_retransmits"), 2));
     return th;
 }
 

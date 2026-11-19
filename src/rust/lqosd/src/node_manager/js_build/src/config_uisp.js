@@ -5,6 +5,8 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 function currentTopologyMode() {
     return (
@@ -24,72 +26,74 @@ function updateRootSiteRequirement() {
     const siteHelp = document.getElementById("uispSiteHelp");
 
     siteInput.required = required;
-    siteLabel.textContent = required ? "Root UISP Site" : "Root UISP Site (Optional)";
+    siteLabel.textContent = required
+        ? t("config.uisp.site")
+        : t("config.uisp.site_optional");
     siteHelp.textContent = required
-        ? "Required for full topology mode. Enter the exact UISP site name at the root of the network."
-        : "Optional in this topology mode. Leave blank to let LibreQoS choose the import root.";
+        ? t("config.uisp.site_help_required")
+        : t("config.uisp.site_help_optional");
 }
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableUisp").checked) {
         if (!secretWillExistAfterSave("uisp_integration", "token", "uispToken")) {
-            alert("API Token is required when UISP integration is enabled");
+            alert(t("config.uisp.validation.token_required"));
             return false;
         }
 
         const url = document.getElementById("uispUrl").value.trim();
         if (!url) {
-            alert("UISP URL is required when UISP integration is enabled");
+            alert(t("config.uisp.validation.url_required"));
             return false;
         }
         try {
             new URL(url);
         } catch {
-            alert("UISP URL must be a valid URL");
+            alert(t("config.uisp.validation.url_invalid"));
             return false;
         }
 
         const site = document.getElementById("uispSite").value.trim();
         if (rootSiteRequiredForMode(currentTopologyMode()) && !site) {
-            alert("Root UISP Site is required when full topology mode is selected");
+            alert(t("config.uisp.validation.site_required"));
             return false;
         }
 
         const suspendedStrategy = document.getElementById("uispSuspendedStrategy").value.trim();
         if (!suspendedStrategy) {
-            alert("Suspended Strategy is required when UISP integration is enabled");
+            alert(t("config.uisp.validation.suspended_required"));
             return false;
         }
 
         // Validate numeric fields
         const airmaxCapacity = parseFloat(document.getElementById("uispAirmaxCapacity").value);
         if (isNaN(airmaxCapacity) || airmaxCapacity < 0) {
-            alert("Airmax Capacity must be a number greater than or equal to 0");
+            alert(t("config.uisp.validation.airmax_capacity"));
             return false;
         }
 
         const airmaxFlexibleFrameDownloadRatio = parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value);
         if (isNaN(airmaxFlexibleFrameDownloadRatio) || airmaxFlexibleFrameDownloadRatio <= 0 || airmaxFlexibleFrameDownloadRatio >= 1) {
-            alert("AirMax Flexible Frame Download Ratio must be a number greater than 0 and less than 1");
+            alert(t("config.uisp.validation.flexible_ratio"));
             return false;
         }
 
         const ltuCapacity = parseFloat(document.getElementById("uispLtuCapacity").value);
         if (isNaN(ltuCapacity) || ltuCapacity < 0) {
-            alert("LTU Capacity must be a number greater than or equal to 0");
+            alert(t("config.uisp.validation.ltu_capacity"));
             return false;
         }
 
         const bandwidthOverhead = parseFloat(document.getElementById("uispBandwidthOverhead").value);
         if (isNaN(bandwidthOverhead) || bandwidthOverhead <= 0) {
-            alert("Bandwidth Overhead Factor must be a number greater than 0");
+            alert(t("config.uisp.validation.overhead_factor"));
             return false;
         }
 
         const commitMultiplier = parseFloat(document.getElementById("uispCommitMultiplier").value);
         if (isNaN(commitMultiplier) || commitMultiplier <= 0) {
-            alert("Commit Bandwidth Multiplier must be a number greater than 0");
+            alert(t("config.uisp.validation.commit_multiplier"));
             return false;
         }
 
@@ -98,7 +102,7 @@ function validateConfig() {
             const entries = exceptionCpes.split(',');
             for (const entry of entries) {
                 if (!entry.includes(':')) {
-                    alert(`Exception CPE entry "${entry}" must be in "cpe:parent" format`);
+                    alert(t("config.uisp.validation.exception_cpe", {entry: entry}));
                     return false;
                 }
             }
@@ -149,6 +153,14 @@ function updateConfig() {
 
 // Render the configuration menu
 renderConfigMenu('uisp');
+// These paragraphs wrap a literal URL or format token in `<code>`, which the DOM
+// applier cannot keep: they are empty in the page and rendered here.
+renderMarkupText({
+    uispUrlHelp: tHtml("config.uisp.url_help"),
+    uispCompileModeHelp: tHtml("config.uisp.compile_mode_help"),
+    uispFlexibleRatioHelp: tHtml("config.uisp.flexible_ratio_help"),
+    uispExceptionCpesHelp: tHtml("config.uisp.exception_cpes_help"),
+});
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -196,11 +208,12 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.uisp.saved"));
                 });
             }
         });
     } else {
+        // translatable: false — "UISP integration configuration not found in window.config" is a console diagnostic, never rendered
         console.error("UISP integration configuration not found in window.config");
     }
 });

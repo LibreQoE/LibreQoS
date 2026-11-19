@@ -1,4 +1,5 @@
 import { loadConfig, renderConfigMenu, saveConfig } from "./config/config_helper";
+import { t } from "./i18n/index.js";
 
 const DEFAULT_TTL_SECONDS = 900;
 const DEFAULT_STALE_GRACE_SECONDS = 120;
@@ -113,7 +114,7 @@ function renderClientsTable(focusClientIndex = null) {
         const cell = document.createElement("td");
         cell.colSpan = 4;
         cell.className = "text-muted";
-        cell.textContent = "No trusted clients configured.";
+        cell.textContent = t("config.radius_accounting.clients.empty");
         empty.appendChild(cell);
         tbody.appendChild(empty);
         return;
@@ -132,47 +133,47 @@ function renderClientsTable(focusClientIndex = null) {
         const name = document.createElement("input");
         name.type = "text";
         name.className = "form-control form-control-sm";
-        name.placeholder = "NAS name";
+        name.placeholder = t("config.radius_accounting.clients.name_placeholder");
         name.value = String(client?.name ?? "");
-        name.setAttribute("aria-label", `Client ${index + 1} name`);
+        name.setAttribute("aria-label", t("config.radius_accounting.clients.name_aria", {index: index + 1}));
         name.addEventListener("input", (ev) => {
             window.config.radius_accounting.clients[index].name = ev.target.value;
         });
-        addCell("Name", name);
+        addCell(t("config.radius_accounting.clients.name"), name);
 
         const source = document.createElement("textarea");
         source.className = "form-control form-control-sm";
         source.rows = 2;
         source.placeholder = "192.0.2.10\n192.0.2.0/24";
         source.value = sourceListToText(client?.source);
-        source.setAttribute("aria-label", `Client ${index + 1} source IPs or CIDRs`);
+        source.setAttribute("aria-label", t("config.radius_accounting.clients.source_aria", {index: index + 1}));
         source.addEventListener("input", (ev) => {
             window.config.radius_accounting.clients[index].source = textToSourceList(ev.target.value);
         });
-        addCell("Source IPs or CIDRs", source);
+        addCell(t("config.radius_accounting.clients.source"), source);
 
         const secretFile = document.createElement("input");
         secretFile.type = "text";
         secretFile.className = "form-control form-control-sm";
         secretFile.placeholder = "/etc/libreqos/radius/client.secret";
         secretFile.value = String(client?.secret_file ?? "");
-        secretFile.setAttribute("aria-label", `Client ${index + 1} secret file`);
+        secretFile.setAttribute("aria-label", t("config.radius_accounting.clients.secret_file_aria", {index: index + 1}));
         secretFile.addEventListener("input", (ev) => {
             window.config.radius_accounting.clients[index].secret_file = ev.target.value;
         });
-        addCell("Secret File", secretFile);
+        addCell(t("config.radius_accounting.clients.secret_file"), secretFile);
 
         const removeTd = document.createElement("td");
-        removeTd.dataset.label = "Actions";
+        removeTd.dataset.label = t("common.table.actions");
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn btn-sm btn-outline-danger";
-        removeBtn.textContent = "Remove";
-        removeBtn.setAttribute("aria-label", `Remove client ${index + 1}`);
+        removeBtn.textContent = t("config.radius_accounting.clients.remove");
+        removeBtn.setAttribute("aria-label", t("config.radius_accounting.clients.remove_aria", {index: index + 1}));
         removeBtn.addEventListener("click", () => {
             window.config.radius_accounting.clients.splice(index, 1);
             renderClientsTable(Math.min(index, window.config.radius_accounting.clients.length - 1));
-            announceClientChange(`Removed client ${index + 1}.`);
+            announceClientChange(t("config.radius_accounting.clients.removed", {index: index + 1}));
         });
         removeTd.appendChild(removeBtn);
         tr.appendChild(removeTd);
@@ -261,23 +262,23 @@ function validateConfig() {
     const radius = window.config?.radius_accounting;
 
     if (!radius || typeof radius !== "object") {
-        errors.push("radius_accounting section is missing");
+        errors.push(t("config.radius_accounting.validation.section_missing"));
     } else {
         if (radius.enabled && !validateListenAddress(radius.listen)) {
-            errors.push("Listen Address is required when RADIUS accounting is enabled and must include a valid port.");
+            errors.push(t("config.radius_accounting.validation.listen_required"));
         }
 
         if (parsePositiveInt(radius.default_ttl_seconds) === null) {
-            errors.push("TTL must be a positive integer.");
+            errors.push(t("config.radius_accounting.validation.ttl"));
         }
         if (parsePositiveInt(radius.stale_grace_seconds) === null) {
-            errors.push("Stale Grace must be a positive integer.");
+            errors.push(t("config.radius_accounting.validation.stale_grace"));
         }
 
         const application = radius.dynamic_circuit_application || {};
         if (!application.fallback_parent_node
             && (application.fallback_parent_node_id || application.fallback_anchor_node_id)) {
-            errors.push("Fallback Parent Node is required when fallback node IDs are configured.");
+            errors.push(t("config.radius_accounting.validation.fallback_parent"));
         }
 
         if (radius.fallback_speed_profile) {
@@ -288,38 +289,40 @@ function validateConfig() {
             const umax = parsePositiveFloat(profile.upload_max_mbps);
 
             if (dmin === null || umin === null || dmax === null || umax === null) {
-                errors.push("Fallback speed profile values must be positive numbers.");
+                errors.push(t("config.radius_accounting.validation.speed_positive"));
             } else {
-                if (dmin > dmax) errors.push("Fallback Download Min must be <= Download Max.");
-                if (umin > umax) errors.push("Fallback Upload Min must be <= Upload Max.");
+                if (dmin > dmax) errors.push(t("config.radius_accounting.validation.speed_download_order"));
+                if (umin > umax) errors.push(t("config.radius_accounting.validation.speed_upload_order"));
             }
         }
 
         const clients = Array.isArray(radius.clients) ? radius.clients : [];
         if (radius.enabled && clients.length === 0) {
-            errors.push("At least one trusted client is required when RADIUS accounting is enabled.");
+            errors.push(t("config.radius_accounting.validation.client_required"));
         }
 
         clients.forEach((client, index) => {
-            const label = client?.name ? `Client '${client.name}'` : `Client #${index + 1}`;
+            const label = client?.name
+                ? t("config.radius_accounting.validation.client_named", {name: client.name})
+                : t("config.radius_accounting.validation.client_numbered", {index: index + 1});
             const sources = Array.isArray(client?.source) ? client.source : [];
             if (sources.length === 0) {
-                errors.push(`${label}: Source IPs or CIDRs are required.`);
+                errors.push(t("config.radius_accounting.validation.source_required", {label}));
             }
             sources.forEach((source) => {
                 if (!isValidIpOrCidr(source)) {
-                    errors.push(`${label}: '${source}' must be an IP address or CIDR network.`);
+                    errors.push(t("config.radius_accounting.validation.source_invalid", {label, source}));
                 }
             });
             if (!String(client?.secret_file ?? "").trim()) {
-                errors.push(`${label}: Secret File is required.`);
+                errors.push(t("config.radius_accounting.validation.secret_required", {label}));
             }
         });
     }
 
     if (errors.length === 0) return true;
 
-    alert("Validation errors:\n" + errors.join("\n"));
+    alert(`${t("config.radius_accounting.validation.header")}\n${errors.join("\n")}`);
     return false;
 }
 
@@ -363,14 +366,14 @@ loadConfig(() => {
         window.config.radius_accounting.clients.push(getDefaultClient());
         const newIndex = window.config.radius_accounting.clients.length - 1;
         renderClientsTable(newIndex);
-        announceClientChange(`Added client ${newIndex + 1}.`);
+        announceClientChange(t("config.radius_accounting.clients.added", {index: newIndex + 1}));
     });
 
     document.getElementById("saveButton").addEventListener("click", () => {
         updateConfigFromUi();
         if (!validateConfig()) return;
         saveConfig(() => {
-            alert("Configuration saved successfully!");
+            alert(t("config.radius_accounting.saved"));
         });
     });
 });

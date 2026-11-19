@@ -47,6 +47,7 @@ export class PacketsPerSecondTimescale extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
 
         let seconds = periodNameToSeconds(period);
+        // translatable: false — "Requesting Insight History Data" is a console diagnostic for the Insight history request
         console.log("Requesting Insight History Data");
         listenOnceForSeconds("LtsPackets", seconds, (msg) => {
             const data = msg && msg.data ? msg.data : [];

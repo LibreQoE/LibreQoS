@@ -2,7 +2,7 @@
     <div class="col-12">
         <div class="lqos-tree-hero">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <div class="lqos-tree-kicker mb-0"><i class="fa fa-tree"></i> Network Tree</div>
+                <div class="lqos-tree-kicker mb-0" data-i18n="tree.title"><i class="fa fa-tree"></i> Network Tree</div>
                 <div id="nodeOverrideStatus" class="small text-body-secondary lqos-tree-hero-status"></div>
             </div>
             <div class="lqos-tree-hero-bar">
@@ -12,9 +12,9 @@
         </div>
     </div>
     <div class="col-12 d-none" id="treeDetailTabsContainer">
-        <ul class="nav nav-tabs lqos-tree-tabs" id="treeDetailTabs" role="tablist" aria-label="Network tree detail views">
+        <ul class="nav nav-tabs lqos-tree-tabs" id="treeDetailTabs" role="tablist" aria-label="Network tree detail views" data-i18n-aria-label="tree.tabs_aria">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="tree-overview-tab" data-bs-toggle="tab" data-bs-target="#treeOverviewPane" type="button" role="tab" aria-controls="treeOverviewPane" aria-selected="true">
+                <button class="nav-link active" id="tree-overview-tab" data-bs-toggle="tab" data-bs-target="#treeOverviewPane" type="button" role="tab" aria-controls="treeOverviewPane" aria-selected="true" data-i18n="tree.tab.overview">
                     Overview
                 </button>
             </li>
@@ -32,29 +32,29 @@
     <div class="col-lg-4">
         <div class="lqos-tree-panel lqos-tree-state-panel">
             <div class="d-flex align-items-center justify-content-between gap-2">
-                <h5 class="mb-0"><i class="fa fa-gauge-high"></i> Live Queue State</h5>
+                <h5 class="mb-0" data-i18n="tree.state.title"><i class="fa fa-gauge-high"></i> Live Queue State</h5>
                 <div id="nodeStateBadges" class="lqos-tree-state-badges"></div>
             </div>
             <div class="lqos-table-wrap">
                 <table class="lqos-table lqos-table-compact">
                     <thead>
                         <th></th>
-                        <th>Download</th>
-                        <th>Upload</th>
+                        <th data-i18n="common.table.download">Download</th>
+                        <th data-i18n="common.table.upload">Upload</th>
                     </thead>
                     <tbody>
                         <tr class="small">
-                            <td class="table-label-cell">Effective Limit</td>
+                            <td class="table-label-cell" data-i18n="tree.table.effective_limit">Effective Limit</td>
                             <td class="small"><span id="parentEffectiveD"></span></td>
                             <td class="small"><span id="parentEffectiveU"></span></td>
                         </tr>
                         <tr class="small">
-                            <td class="table-label-cell">Configured Limit</td>
+                            <td class="table-label-cell" data-i18n="tree.table.configured_limit">Configured Limit</td>
                             <td class="small"><span id="parentConfiguredD"></span></td>
                             <td class="small"><span id="parentConfiguredU"></span></td>
                         </tr>
                         <tr class="small">
-                            <td class="table-label-cell">Throughput</td>
+                            <td class="table-label-cell" data-i18n="common.table.throughput">Throughput</td>
                             <td><span id="parentTpD"></span></td>
                             <td><span id="parentTpU"></span></td>
                         </tr>
@@ -69,7 +69,7 @@
                             <td><span id="parentQooU"></span></td>
                         </tr>
                         <tr class="small">
-                            <td class="table-label-cell">TCP Retransmits</td>
+                            <td class="table-label-cell" data-i18n="common.table.tcp_retransmits">TCP Retransmits</td>
                             <td><span id="parentRxmitD"></span></td>
                             <td><span id="parentRxmitU"></span></td>
                         </tr>
@@ -81,7 +81,7 @@
     <div class="col-lg-3">
         <div class="lqos-circuit-panel lqos-circuit-gauge-panel lqos-tree-snapshot-panel">
             <div class="d-flex align-items-center justify-content-between gap-2 lqos-tree-panel-heading">
-                <h5 class="mb-0"><i class="fa fa-chart-line"></i> Node Snapshot</h5>
+                <h5 class="mb-0" data-i18n="tree.snapshot.title"><i class="fa fa-chart-line"></i> Node Snapshot</h5>
             </div>
             <div class="lqos-circuit-gauge-grid">
                 <div id="treeBitsGauge" style="width: 100%; height: 180px;"></div>
@@ -92,31 +92,31 @@
     <div class="col-lg-5">
         <div class="lqos-tree-panel lqos-tree-details-panel">
             <div class="d-flex align-items-center justify-content-between gap-2">
-                <h5 class="mb-0"><i class="fa fa-circle-info"></i> Node Details</h5>
+                <h5 class="mb-0" data-i18n="tree.details.title"><i class="fa fa-circle-info"></i> Node Details</h5>
             </div>
             <dl class="lqos-tree-detail-grid">
                 <div class="lqos-tree-detail-item lqos-tree-detail-col-start">
-                    <dt class="lqos-tree-detail-label">Base Configured Rate</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.base_configured">Base Configured Rate</dt>
                     <dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-</dd>
                 </div>
                 <div class="lqos-tree-detail-item lqos-tree-detail-row-end">
-                    <dt class="lqos-tree-detail-label">Effective Now</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.effective_now">Effective Now</dt>
                     <dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-</dd>
                 </div>
                 <div class="lqos-tree-detail-item lqos-tree-detail-col-start">
-                    <dt class="lqos-tree-detail-label">Rate Override</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.rate_override">Rate Override</dt>
                     <dd class="lqos-tree-detail-body" id="nodeSettingsOverride"></dd>
                 </div>
                 <div class="lqos-tree-detail-item lqos-tree-detail-row-end">
-                    <dt class="lqos-tree-detail-label">Limited By</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.limited_by">Limited By</dt>
                     <dd class="lqos-tree-detail-body" id="nodeSettingsLimitedBy">-</dd>
                 </div>
                 <div class="lqos-tree-detail-item lqos-tree-detail-col-start lqos-tree-detail-last-row">
-                    <dt class="lqos-tree-detail-label">Topology Override</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.topology_override">Topology Override</dt>
                     <dd class="lqos-tree-detail-body" id="nodeTopologyOverrideValue"></dd>
                 </div>
                 <div class="lqos-tree-detail-item lqos-tree-detail-row-end lqos-tree-detail-last-row lqos-tree-detail-final-cell">
-                    <dt class="lqos-tree-detail-label">Active Attachment</dt>
+                    <dt class="lqos-tree-detail-label" data-i18n="tree.details.active_attachment">Active Attachment</dt>
                     <dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-</dd>
                 </div>
             </dl>
@@ -135,10 +135,10 @@
                         </div>
                         <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
                             <span id="nodeOverrideCompatibilityIndicator" class="small text-body-secondary"></span>
-                            <button class="btn btn-sm btn-primary" id="nodeOverrideSave" type="button">
+                            <button class="btn btn-sm btn-primary" id="nodeOverrideSave" type="button" data-i18n="common.action.save">
                                 <i class="fa fa-save"></i> Save
                             </button>
-                            <button class="btn btn-sm btn-outline-secondary" id="nodeOverrideClear" type="button">
+                            <button class="btn btn-sm btn-outline-secondary" id="nodeOverrideClear" type="button" data-i18n="tree.action.clear">
                                 <i class="fa fa-eraser"></i> Clear
                             </button>
                         </div>
@@ -149,13 +149,13 @@
                 <div id="nodeTopologyEditorSection">
                     <div class="lqos-tree-editor-row lqos-tree-editor-row-compact">
                         <div class="lqos-tree-editor-field">
-                            <div class="small text-body-secondary">
+                            <div class="small text-body-secondary" data-i18n="tree.topology.note">
                                 Topology edits now live in Topology Manager. Use the dedicated topology editor for parent and attachment changes.
                             </div>
                         </div>
                         <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
                             <span id="nodeTopologyStatus" class="small text-body-secondary"></span>
-                            <a class="btn btn-sm btn-outline-primary" id="nodeTopologyOpenManager" href="/topology_manager.html">
+                            <a class="btn btn-sm btn-outline-primary" id="nodeTopologyOpenManager" href="/topology_manager.html" data-i18n="tree.topology.open_manager">
                                 <i class="fa fa-diagram-project"></i> Open in Topology
                             </a>
                         </div>
@@ -170,12 +170,12 @@
                 <div class="lqos-tree-panel lqos-stormguard-tree-panel">
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
                         <div>
-                            <h5 class="mb-1"><i class="fa fa-bolt" aria-hidden="true"></i> StormGuard Diagnostics</h5>
+                            <h5 class="mb-1" data-i18n="tree.stormguard.title"><i class="fa fa-bolt" aria-hidden="true"></i> StormGuard Diagnostics</h5>
                             <div id="treeStormguardContext" class="small text-body-secondary" aria-live="polite"></div>
                         </div>
                         <div class="d-flex flex-wrap gap-2 align-items-center">
-                            <span id="treeStormguardRuntimeBadge" class="badge text-bg-secondary">Initializing</span>
-                            <a class="btn btn-sm btn-outline-primary" href="/config_stormguard.html">
+                            <span id="treeStormguardRuntimeBadge" class="badge text-bg-secondary" data-i18n="tree.stormguard.initializing">Initializing</span>
+                            <a class="btn btn-sm btn-outline-primary" href="/config_stormguard.html" data-i18n="tree.stormguard.open_config">
                                 <i class="fa fa-gear" aria-hidden="true"></i> Open StormGuard Configuration
                             </a>
                         </div>
@@ -185,40 +185,40 @@
                         <div class="row g-3 mb-3">
                             <div class="col-xl-4 col-md-6">
                                 <div class="lqos-stormguard-summary-card">
-                                    <span>Current Limits</span>
+                                    <span data-i18n="tree.stormguard.current_limits">Current Limits</span>
                                     <strong id="treeStormguardLimits">—</strong>
                                 </div>
                             </div>
                             <div class="col-xl-4 col-md-6">
                                 <div class="lqos-stormguard-summary-card">
-                                    <span>Configured Bounds</span>
+                                    <span data-i18n="tree.stormguard.configured_bounds">Configured Bounds</span>
                                     <strong id="treeStormguardBounds">—</strong>
                                 </div>
                             </div>
                             <div class="col-xl-4 col-md-6">
                                 <div class="lqos-stormguard-summary-card">
-                                    <span>Mode and Strategy</span>
+                                    <span data-i18n="tree.stormguard.mode_strategy">Mode and Strategy</span>
                                     <strong id="treeStormguardMode">—</strong>
                                 </div>
                             </div>
                         </div>
                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                            <div class="btn-group btn-group-sm" role="group" aria-label="StormGuard graph direction">
+                            <div class="btn-group btn-group-sm" role="group" aria-label="StormGuard graph direction" data-i18n-aria-label="tree.stormguard.direction_aria">
                                 <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardDownload" value="download" autocomplete="off" checked>
-                                <label class="btn btn-outline-primary" for="treeStormguardDownload">Download</label>
+                                <label class="btn btn-outline-primary" for="treeStormguardDownload" data-i18n="common.table.download">Download</label>
                                 <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardUpload" value="upload" autocomplete="off">
-                                <label class="btn btn-outline-primary" for="treeStormguardUpload">Upload</label>
+                                <label class="btn btn-outline-primary" for="treeStormguardUpload" data-i18n="common.table.upload">Upload</label>
                             </div>
                             <div id="treeStormguardDecision" class="small text-body-secondary"></div>
                         </div>
-                        <div id="treeStormguardGraph" class="lqos-stormguard-tree-graph" role="img" aria-label="Five minute StormGuard queue, RTT, cooldown, decision, and action history" aria-describedby="treeStormguardGraphSummary"></div>
-                        <p id="treeStormguardGraphSummary" class="small text-body-secondary mt-2 mb-0">No graph history is available yet.</p>
+                        <div id="treeStormguardGraph" class="lqos-stormguard-tree-graph" role="img" aria-label="Five minute StormGuard queue, RTT, cooldown, decision, and action history" data-i18n-aria-label="tree.stormguard.graph_aria" aria-describedby="treeStormguardGraphSummary"></div>
+                        <p id="treeStormguardGraphSummary" class="small text-body-secondary mt-2 mb-0" data-i18n="tree.stormguard.no_history">No graph history is available yet.</p>
                         <dl class="lqos-tree-detail-grid mt-3">
-                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Cooldown</dt><dd id="treeStormguardCooldown" class="lqos-tree-detail-body">—</dd></div>
-                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Decision Reason</dt><dd id="treeStormguardReason" class="lqos-tree-detail-body">—</dd></div>
-                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">RTT Input</dt><dd id="treeStormguardRttSource" class="lqos-tree-detail-body">—</dd></div>
-                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Last Attempt</dt><dd id="treeStormguardOutcome" class="lqos-tree-detail-body">—</dd></div>
-                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Strategy Settings</dt><dd id="treeStormguardSettings" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label" data-i18n="tree.stormguard.cooldown">Cooldown</dt><dd id="treeStormguardCooldown" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label" data-i18n="tree.stormguard.decision_reason">Decision Reason</dt><dd id="treeStormguardReason" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label" data-i18n="tree.stormguard.rtt_input">RTT Input</dt><dd id="treeStormguardRttSource" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label" data-i18n="tree.stormguard.last_attempt">Last Attempt</dt><dd id="treeStormguardOutcome" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label" data-i18n="tree.stormguard.strategy_settings">Strategy Settings</dt><dd id="treeStormguardSettings" class="lqos-tree-detail-body">—</dd></div>
                         </dl>
                     </div>
                 </div>
@@ -228,7 +228,7 @@
 </div>
 <div class="row">
     <div class="col-12" id="tree">
-        <p><i class="fa fa-spin fa-spinner"></i> Loading, Please Wait</p>
+        <p data-i18n="common.state.loading_wait"><i class="fa fa-spin fa-spinner"></i> Loading, Please Wait...</p>
     </div>
 </div>
 <div class="row">

@@ -1,7 +1,7 @@
 //! Product-side transaction COMPILER: effective network + shaping inputs
 //! → a [`DataplaneTransaction`] (schema lives in lqos_dataplane_types — the wire contract).
 
-use lqos_config::{DynamicCircuitRangeRule, TopologyShapingCircuitInput, TopologyShapingInputsFile};
+use lqos_config::{TopologyShapingCircuitInput, TopologyShapingInputsFile};
 use lqos_dataplane_types::*;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -36,38 +36,24 @@ pub fn compile_dataplane_transaction(
     effective_network: &Value,
     shaping_inputs: &TopologyShapingInputsFile,
 ) -> DataplaneTransaction {
-    compile_dataplane_transaction_with_ranges_and_sqm(effective_network, shaping_inputs, &[], "none")
-}
-
-/// Dynamic-ranges H1: compiles the transaction WITH the configured pool ranges
-/// injected at the TRANSACTION stage (post-catalog). Each range emits the
-/// unconfirmed leaf + its prefix Map. These are NEVER shaping-input rows, so
-/// the K1 promotion guard, supersede-prune, analytics preference, and TTL
-/// liveness all keep behaving (a static row would break all four).
-pub fn compile_dataplane_transaction_with_ranges(
-    effective_network: &Value,
-    shaping_inputs: &TopologyShapingInputsFile,
-    ranges: &[DynamicCircuitRangeRule],
-) -> DataplaneTransaction {
-    compile_dataplane_transaction_with_ranges_and_sqm(effective_network, shaping_inputs, ranges, "none")
+    compile_dataplane_transaction_with_sqm(effective_network, shaping_inputs, "none")
 }
 
 /// Compiles the dataplane transaction honoring the box's configured
 /// `[queues] default_sqm` for every circuit WITHOUT a per-circuit override
 /// (the coordinator rev 1716 — the v2→v3 migration must not drop the SQM layer). The
 /// production caller (`publish.rs`) passes `config.queues.default_sqm`.
-pub fn compile_dataplane_transaction_with_ranges_and_sqm(
+///
+/// Every circuit the transaction carries comes from `shaping_inputs`: a
+/// `[[dynamic_circuits.ranges]]` rule is folded into an ordinary circuit row by
+/// the topology fold, so this compiler has no range knowledge and emits no
+/// config-derived leaf or Map of its own (u5).
+pub fn compile_dataplane_transaction_with_sqm(
     effective_network: &Value,
     shaping_inputs: &TopologyShapingInputsFile,
-    ranges: &[DynamicCircuitRangeRule],
     default_sqm: &str,
 ) -> DataplaneTransaction {
-    let range_rows = resolve_range_rows(effective_network, ranges);
-    let range_parent_ids: Vec<String> = range_rows
-        .iter()
-        .map(|row| row.parent_node_id.clone())
-        .collect();
-    let keep = circuit_bearing_nodes(effective_network, shaping_inputs, &range_parent_ids);
+    let keep = circuit_bearing_nodes(effective_network, shaping_inputs);
     let mut inner_ops = Vec::new();
     if let Some(root) = effective_network.as_object() {
         for node in root.values() {
@@ -120,18 +106,6 @@ pub fn compile_dataplane_transaction_with_ranges_and_sqm(
         }
     }
 
-    // Dynamic-ranges H1: the unconfirmed leaf + prefix Map per range. The
-    // prefix Map is a longest-prefix entry, so a promoted /32 shadows it.
-    for row in &range_rows {
-        leaf_ops.push(range_leaf(row, &node_rates));
-        mapping_ops.push(DataplaneMappingOp::Map {
-            prefix_len: row.prefix_len,
-            ip: row.network_address,
-            circuit_id: row.circuit_id.clone(),
-            device_id: row.circuit_id.clone(),
-        });
-    }
-
     DataplaneTransaction {
         generation: shaping_inputs.shaping_generation.clone(),
         inner_ops,
@@ -142,109 +116,6 @@ pub fn compile_dataplane_transaction_with_ranges_and_sqm(
         schema_version: Some(lqos_dataplane_types::wire::PROTOCOL_VERSION),
     
         steering_vlans: Vec::new(), lpm_delta: Vec::new(), apply_mode: Default::default(), circuit_capacity: None, }
-}
-
-/// One resolved range row (config → transaction-stage leaf + Map).
-struct RangeRow {
-    circuit_id: String,
-    parent_node_id: String,
-    prefix_len: u8,
-    network_address: IpAddr,
-    download_min_mbps: f32,
-    download_max_mbps: f32,
-    upload_min_mbps: f32,
-    upload_max_mbps: f32,
-}
-
-/// Resolves the configured ranges against the effective tree. §1.5: an
-/// unresolvable parent DEFERS the whole range row LOUDLY (no leaf, no Map).
-fn resolve_range_rows(
-    effective_network: &Value,
-    ranges: &[DynamicCircuitRangeRule],
-) -> Vec<RangeRow> {
-    if ranges.is_empty() {
-        return Vec::new();
-    }
-    let name_to_id = effective_node_name_to_id(effective_network);
-    let mut rows = Vec::new();
-    for rule in ranges {
-        let range_id = rule.name.trim();
-        let attach = rule.attach_to.trim();
-        // Blank/whitespace attach_to is the dataplane root: the root node is
-        // implicit (never emitted as an inner op) and unclamped, so the range
-        // leaf needs no parent-rate lookup and must not be deferred.
-        let parent_node_id = if attach.is_empty() {
-            DATA_PLANE_ROOT_NODE_ID.to_string()
-        } else {
-            let Some(parent_node_id) = name_to_id.get(attach).cloned() else {
-                tracing::warn!(
-                    "dynamic_range_parent_unresolved: range '{range_id}' attach_to {attach:?} matches no effective node — the range is DEFERRED (no unconfirmed leaf, no prefix Map)"
-                );
-                continue;
-            };
-            parent_node_id
-        };
-        rows.push(RangeRow {
-            circuit_id: format!("dynamic-range:{range_id}"),
-            parent_node_id,
-            prefix_len: rule.ip_range.netmask(),
-            network_address: rule.ip_range.network_address(),
-            download_min_mbps: rule.download_min_mbps,
-            download_max_mbps: rule.download_max_mbps,
-            upload_min_mbps: rule.upload_min_mbps,
-            upload_max_mbps: rule.upload_max_mbps,
-        });
-    }
-    rows
-}
-
-/// Maps each effective-tree node's display name (the `name` field, else the
-/// object key — the fold's fallback) to its node id.
-fn effective_node_name_to_id(root: &Value) -> HashMap<String, String> {
-    fn walk(name: &str, node: &Value, out: &mut HashMap<String, String>) {
-        let Some(obj) = node.as_object() else {
-            return;
-        };
-        let Some(id) = obj.get("id").and_then(Value::as_str) else {
-            return;
-        };
-        let display = obj.get("name").and_then(Value::as_str).unwrap_or(name);
-        out.insert(display.to_string(), id.to_string());
-        if let Some(children) = obj.get("children").and_then(Value::as_object) {
-            for (child_name, child) in children {
-                walk(child_name, child, out);
-            }
-        }
-    }
-    let mut out = HashMap::new();
-    if let Some(root) = root.as_object() {
-        for (name, node) in root {
-            walk(name, node, &mut out);
-        }
-    }
-    out
-}
-
-fn range_leaf(
-    row: &RangeRow,
-    node_rates: &HashMap<String, (DataplaneRatePair, DataplaneRatePair)>,
-) -> DataplaneLeafOp {
-    let parent = node_rates.get(&row.parent_node_id);
-    DataplaneLeafOp::Upsert {
-        circuit_id: row.circuit_id.clone(),
-        parent_node_id: row.parent_node_id.clone(),
-        download: clamp_leaf_to_parent(
-            rate_pair(row.download_min_mbps, row.download_max_mbps),
-            parent.map(|pair| pair.0),
-        ),
-        upload: clamp_leaf_to_parent(
-            rate_pair(row.upload_min_mbps, row.upload_max_mbps),
-            parent.map(|pair| pair.1),
-        ),
-        // The unconfirmed trickle class carries no AQM (the F5 bounded floor).
-        aqm: DataplaneLeafAqm::None,
-        admin_up: true,
-    }
 }
 
 /// §`lqos-74t.30` (encode-once): the LEAF rate pair. The whole-Mbps product
@@ -327,7 +198,6 @@ fn clamp_leaf_to_parent(
 fn circuit_bearing_nodes(
     effective_network: &Value,
     shaping_inputs: &TopologyShapingInputsFile,
-    range_parent_ids: &[String],
 ) -> HashSet<String> {
     fn collect_parents(
         node: &Value,
@@ -380,11 +250,6 @@ fn circuit_bearing_nodes(
     let mut keep = HashSet::new();
     for circuit in &shaping_inputs.circuits {
         keep_ancestry(circuit.effective_parent_node_id.as_str(), &parents, &mut keep);
-    }
-    // Dynamic-ranges H1: the range leaf's parent ancestry must materialize too
-    // (a range under an otherwise circuit-less site would be elided).
-    for parent in range_parent_ids {
-        keep_ancestry(parent.as_str(), &parents, &mut keep);
     }
     // A1 GENERAL rule (the ONE-HOME predicate
     // `lqos_dataplane_types::is_childless_circuitless_unit`) — SUPERSEDING the
@@ -758,12 +623,7 @@ mod tests {
             circuits: vec![circuit("uisp:device:af8cae80", 200.0, 300.0)],
             ..Default::default()
         };
-        let tx = compile_dataplane_transaction_with_ranges_and_sqm(
-            &network,
-            &inputs,
-            &[],
-            "cake diffserv4",
-        );
+        let tx = compile_dataplane_transaction_with_sqm(&network, &inputs, "cake diffserv4");
         assert_eq!(
             leaf_aqm(&tx, "008b8b44"),
             DataplaneLeafAqm::Cake {
@@ -783,12 +643,7 @@ mod tests {
             circuits: vec![c],
             ..Default::default()
         };
-        let tx = compile_dataplane_transaction_with_ranges_and_sqm(
-            &network,
-            &inputs,
-            &[],
-            "cake diffserv4",
-        );
+        let tx = compile_dataplane_transaction_with_sqm(&network, &inputs, "cake diffserv4");
         assert_eq!(
             leaf_aqm(&tx, "008b8b44"),
             DataplaneLeafAqm::Cake {
@@ -806,8 +661,7 @@ mod tests {
             circuits: vec![circuit("uisp:device:af8cae80", 200.0, 300.0)],
             ..Default::default()
         };
-        let tx =
-            compile_dataplane_transaction_with_ranges_and_sqm(&network, &inputs, &[], "none");
+        let tx = compile_dataplane_transaction_with_sqm(&network, &inputs, "none");
         assert_eq!(leaf_aqm(&tx, "008b8b44"), DataplaneLeafAqm::None);
     }
 
@@ -853,7 +707,7 @@ mod orphans_umbrella_tests {
             }
         });
         let inputs = TopologyShapingInputsFile::default();
-        let keep = circuit_bearing_nodes(&effective, &inputs, &[]);
+        let keep = circuit_bearing_nodes(&effective, &inputs);
         assert!(
             keep.contains(lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID),
             "the orphans umbrella must always be kept"

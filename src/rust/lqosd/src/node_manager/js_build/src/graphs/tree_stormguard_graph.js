@@ -1,4 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {t} from "../i18n/index.js";
 
 function line(name, data, xAxisIndex, yAxisIndex, color, extra = {}) {
     return {
@@ -62,17 +63,17 @@ export class TreeStormguardGraph extends DashboardGraph {
             ],
             yAxis: [
                 {type: "value", gridIndex: 0, name: "Mbps", min: 0},
-                {type: "value", gridIndex: 1, name: "RTT ms", min: 0},
-                {type: "value", gridIndex: 2, name: "Decision"},
-                {type: "value", gridIndex: 2, name: "Cooldown s", position: "right", min: 0},
+                {type: "value", gridIndex: 1, name: t("graph.stormguard.axis_rtt_ms"), min: 0},
+                {type: "value", gridIndex: 2, name: t("graph.stormguard.axis_decision")},
+                {type: "value", gridIndex: 2, name: t("graph.stormguard.axis_cooldown_s"), position: "right", min: 0},
             ],
             series: [
-                line("Queue limit", seriesData(points, "queueMbps"), 0, 0, palette[0]),
-                line("Throughput", seriesData(points, "throughputMbps"), 0, 0, palette[1]),
-                line("Minimum", seriesData(points, "minMbps"), 0, 0, palette[2], {lineStyle: {type: "dashed"}}),
-                line("Maximum", seriesData(points, "maxMbps"), 0, 0, palette[3], {lineStyle: {type: "dashed"}}),
+                line(t("graph.stormguard.queue_limit"), seriesData(points, "queueMbps"), 0, 0, palette[0]),
+                line(t("graph.stormguard.throughput"), seriesData(points, "throughputMbps"), 0, 0, palette[1]),
+                line(t("graph.stormguard.minimum"), seriesData(points, "minMbps"), 0, 0, palette[2], {lineStyle: {type: "dashed"}}),
+                line(t("graph.stormguard.maximum"), seriesData(points, "maxMbps"), 0, 0, palette[3], {lineStyle: {type: "dashed"}}),
                 {
-                    name: "Actions",
+                    name: t("graph.stormguard.actions"),
                     type: "scatter",
                     data: markers,
                     xAxisIndex: 0,
@@ -81,13 +82,13 @@ export class TreeStormguardGraph extends DashboardGraph {
                     symbolSize: 12,
                     tooltip: {formatter: (item) => item.data.name},
                 },
-                line("Effective RTT", seriesData(points, "effectiveRttMs"), 1, 1, palette[0]),
-                line("Passive RTT", seriesData(points, "passiveRttMs"), 1, 1, palette[1]),
-                line("Active RTT", seriesData(points, "activeRttMs"), 1, 1, palette[3]),
-                line("Baseline", seriesData(points, "baselineRttMs"), 1, 1, palette[2], {lineStyle: {type: "dashed"}}),
-                line("Delay", seriesData(points, "delayMs"), 1, 1, palette[4]),
-                line("Score", seriesData(points, "decisionScore"), 2, 2, palette[0]),
-                line("Cooldown", seriesData(points, "cooldownSeconds"), 2, 3, palette[3]),
+                line(t("graph.stormguard.effective_rtt"), seriesData(points, "effectiveRttMs"), 1, 1, palette[0]),
+                line(t("graph.stormguard.passive_rtt"), seriesData(points, "passiveRttMs"), 1, 1, palette[1]),
+                line(t("graph.stormguard.active_rtt"), seriesData(points, "activeRttMs"), 1, 1, palette[3]),
+                line(t("graph.stormguard.baseline"), seriesData(points, "baselineRttMs"), 1, 1, palette[2], {lineStyle: {type: "dashed"}}),
+                line(t("graph.stormguard.delay"), seriesData(points, "delayMs"), 1, 1, palette[4]),
+                line(t("graph.stormguard.score"), seriesData(points, "decisionScore"), 2, 2, palette[0]),
+                line(t("graph.stormguard.cooldown"), seriesData(points, "cooldownSeconds"), 2, 3, palette[3]),
             ],
         };
         this.option = option;

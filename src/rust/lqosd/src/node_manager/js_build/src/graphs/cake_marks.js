@@ -6,6 +6,7 @@ import {
     cakeCommonXAxis,
     cakeHistoryWindow,
     cakeScatterSeries,
+    cakeLegendFormatter,
     cakeTooltip,
     cakePerDirectionOption,
     formatCakePackets,
@@ -13,6 +14,7 @@ import {
     attachLegendPairMirror,
     cakeTinIndexFor,
 } from "./cake_history";
+import {t} from "../i18n/index.js";
 
 export class CakeMarks extends DashboardGraph {
     constructor(id) {
@@ -21,18 +23,20 @@ export class CakeMarks extends DashboardGraph {
         attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
-            title: cakeChartTitle("ECN Marks", "Packets per sample"),
+            title: cakeChartTitle(t("graph.cake.ecn_marks"), t("graph.axis.packets_per_sample")),
             grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
                 // do NOT set selectedMode:false — it disables the legend + the mirror
+                formatter: cakeLegendFormatter,
                 textStyle: {
                     color: '#aaa'
                 },
                 data: [
                     {
+            // translatable: false — "Bulk" "Best Effort" "RT Video" "Voice" "Bulk Up" "Best Effort Up" "RT Video Up" "RT Voice Up" — CAKE tin series identifiers the legend formatter and the paired-upload mirror match on
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {
@@ -98,7 +102,7 @@ export class CakeMarks extends DashboardGraph {
         this.chart.hideLoading();
 
         if (msg && msg.per_direction) {
-            this.option = cakePerDirectionOption(msg, "ECN Marks (per-direction)", "marks", formatCakePackets);
+            this.option = cakePerDirectionOption(msg, t("graph.cake.ecn_marks_per_direction"), "marks", formatCakePackets);
             this.chart.setOption(this.option, true);
             return;
         }

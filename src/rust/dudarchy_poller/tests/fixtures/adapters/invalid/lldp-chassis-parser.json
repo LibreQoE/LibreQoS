@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "id": "lldp-chassis-parser",
+  "detect": {
+    "sys_descr_contains": [
+      "X"
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "snmp",
+      "transport": "snmp_v2c",
+      "credential_ref": "snmp"
+    }
+  ],
+  "probes": [
+    {
+      "id": "probe",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            {
+              "name": "chassis_id",
+              "oid": "1.0.8802.1.1.2.1.4.1.1.5",
+              "parser": "utf8"
+            }
+          ],
+          "index": {
+            "kind": "lldp_rem"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {t} from "../i18n/index.js";
 import {StormguardAdjustmentsGraph} from "../graphs/stormguard_adjustments_graph";
 import {mkBadge} from "./bakery_shared";
 import {
@@ -30,7 +31,7 @@ function renderDirectionTable(direction, fallbackRatesLabel) {
     if (!direction) {
         return `
             <div class="small text-muted">
-                No live debug metrics yet. Current enforced rate: ${fallbackRatesLabel}.
+                ${t("dashlet.stormguard.detail.no_debug", {rate: fallbackRatesLabel})}
             </div>
         `;
     }
@@ -39,18 +40,18 @@ function renderDirectionTable(direction, fallbackRatesLabel) {
         <div class="table-responsive lqos-table-wrap">
             <table class="lqos-table lqos-table-compact mb-0">
                 <tbody>
-                    ${metricRow("Queue", `${formatStormguardMbps(direction.queue_mbps)} Mbps`)}
-                    ${metricRow("Min / Max", `${formatStormguardMbps(direction.min_mbps)} / ${formatStormguardMbps(direction.max_mbps)} Mbps`)}
-                    ${metricRow("State", direction.state || "—")}
-                    ${metricRow("Last Action", direction.last_action || "—")}
-                    ${metricRow("Action Age", formatStormguardAgeSeconds(direction.last_action_age_secs))}
-                    ${metricRow("Cooldown", direction.cooldown_remaining_secs != null ? formatStormguardAgeSeconds(direction.cooldown_remaining_secs) : "—")}
-                    ${metricRow("Throughput", `${formatStormguardMbps(direction.throughput_mbps)} / ${formatStormguardMbps(direction.throughput_ma_mbps)} Mbps`)}
-                    ${metricRow("Retrans", `${formatStormguardPercent(direction.retrans)} / ${formatStormguardPercent(direction.retrans_ma)}`)}
-                    ${metricRow("RTT", `${formatStormguardMs(direction.rtt)} / ${formatStormguardMs(direction.rtt_ma)}`)}
-                    ${metricRow("Baseline / Delay", `${formatStormguardMs(direction.baseline_rtt_ms)} / ${formatStormguardMs(direction.delay_ms)}`)}
-                    ${metricRow("Saturation", `${direction.saturation_current || "—"} / ${direction.saturation_max || "—"}`)}
-                    ${metricRow("Can +/-", `${direction.can_increase ? "Yes" : "No"} / ${direction.can_decrease ? "Yes" : "No"}`)}
+                    ${metricRow(t("tree.limit.kind.queue"), `${formatStormguardMbps(direction.queue_mbps)} Mbps`)}
+                    ${metricRow(t("dashlet.stormguard.table.min_max"), `${formatStormguardMbps(direction.min_mbps)} / ${formatStormguardMbps(direction.max_mbps)} Mbps`)}
+                    ${metricRow(t("scheduler.panel.state"), direction.state || "—")}
+                    ${metricRow(t("dashlet.stormguard.table.last_action"), direction.last_action || "—")}
+                    ${metricRow(t("dashlet.stormguard.table.action_age"), formatStormguardAgeSeconds(direction.last_action_age_secs))}
+                    ${metricRow(t("tree.stormguard.cooldown"), direction.cooldown_remaining_secs != null ? formatStormguardAgeSeconds(direction.cooldown_remaining_secs) : "—")}
+                    ${metricRow(t("common.table.throughput"), `${formatStormguardMbps(direction.throughput_mbps)} / ${formatStormguardMbps(direction.throughput_ma_mbps)} Mbps`)}
+                    ${metricRow(t("asn_analysis.col.retrans"), `${formatStormguardPercent(direction.retrans)} / ${formatStormguardPercent(direction.retrans_ma)}`)}
+                    ${metricRow(t("dashlet.stormguard.table.rtt"), `${formatStormguardMs(direction.rtt)} / ${formatStormguardMs(direction.rtt_ma)}`)}
+                    ${metricRow(t("dashlet.stormguard.table.baseline_delay"), `${formatStormguardMs(direction.baseline_rtt_ms)} / ${formatStormguardMs(direction.delay_ms)}`)}
+                    ${metricRow(t("dashlet.stormguard.table.saturation"), `${direction.saturation_current || "—"} / ${direction.saturation_max || "—"}`)}
+                    ${metricRow(t("dashlet.stormguard.table.can_change"), `${direction.can_increase ? t("config.ssl.value.yes") : t("config.ssl.value.no")} / ${direction.can_decrease ? t("config.ssl.value.yes") : t("config.ssl.value.no")}`)}
                 </tbody>
             </table>
         </div>
@@ -66,11 +67,11 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
     }
 
     title() {
-        return "StormGuard Site Detail";
+        return t("dashlet.name.stormguard_site_detail");
     }
 
     tooltip() {
-        return "<h5>StormGuard Site Detail</h5><p>Explains the selected site’s current enforced limits, last actions, cooldown state, and the signals StormGuard is evaluating in each direction.</p>";
+        return t("dashlet.stormguard.site_detail.tooltip");
     }
 
     subscribeTo() {
@@ -147,14 +148,14 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
     renderSnapshot(snapshot) {
         const site = stormguardSelectedSite(snapshot);
         if (!site) {
-            this.titleEl.textContent = "No StormGuard site selected";
+            this.titleEl.textContent = t("dashlet.stormguard.detail.none_selected");
             this.badgesEl.replaceChildren();
             this.downCard.innerHTML = "";
             this.upCard.innerHTML = "";
             this.downDetail.innerHTML = "";
             this.upDetail.innerHTML = "";
             this.graph.update([]);
-            this.emptyEl.textContent = "When StormGuard begins watching sites, this panel will explain the selected site’s live decisions.";
+            this.emptyEl.textContent = t("dashlet.stormguard.detail.empty");
             return;
         }
 
@@ -163,19 +164,19 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
         this.badgesEl.replaceChildren(
             summaryBadge(site.downloadSummary),
             summaryBadge(site.uploadSummary),
-            mkBadge(site.inCooldown ? "Cooldown Active" : "No Cooldown", site.inCooldown ? "bg-warning-subtle text-warning border border-warning-subtle" : "bg-light text-secondary border"),
+            mkBadge(site.inCooldown ? t("dashlet.stormguard.badge.cooldown_active") : t("dashlet.stormguard.badge.no_cooldown"), site.inCooldown ? "bg-warning-subtle text-warning border border-warning-subtle" : "bg-light text-secondary border"),
         );
 
         this.downCard.innerHTML = `
             <div class="border rounded p-3 h-100">
-                <div class="text-muted small text-uppercase mb-1"><i class="fa fa-arrow-down text-primary me-1"></i> Download</div>
+                <div class="text-muted small text-uppercase mb-1"><i class="fa fa-arrow-down text-primary me-1"></i> ${t("common.table.download")}</div>
                 <div class="fs-4 fw-semibold">${formatStormguardMbps(site.currentDownMbps)} Mbps</div>
                 <div class="small text-muted mt-1">${directionReason(site.download)}</div>
             </div>
         `;
         this.upCard.innerHTML = `
             <div class="border rounded p-3 h-100">
-                <div class="text-muted small text-uppercase mb-1"><i class="fa fa-arrow-up text-success me-1"></i> Upload</div>
+                <div class="text-muted small text-uppercase mb-1"><i class="fa fa-arrow-up text-success me-1"></i> ${t("common.table.upload")}</div>
                 <div class="fs-4 fw-semibold">${formatStormguardMbps(site.currentUpMbps)} Mbps</div>
                 <div class="small text-muted mt-1">${directionReason(site.upload)}</div>
             </div>
@@ -184,7 +185,7 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
         this.downDetail.innerHTML = `
             <div class="border rounded p-3 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="mb-0 text-secondary">Download evaluation</h6>
+                    <h6 class="mb-0 text-secondary">${t("dashlet.stormguard.detail.download_evaluation")}</h6>
                     ${summaryBadge(site.downloadSummary).outerHTML}
                 </div>
                 ${renderDirectionTable(site.download, `${formatStormguardMbps(site.currentDownMbps)} Mbps`)}
@@ -193,7 +194,7 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
         this.upDetail.innerHTML = `
             <div class="border rounded p-3 h-100">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="mb-0 text-secondary">Upload evaluation</h6>
+                    <h6 class="mb-0 text-secondary">${t("dashlet.stormguard.detail.upload_evaluation")}</h6>
                     ${summaryBadge(site.uploadSummary).outerHTML}
                 </div>
                 ${renderDirectionTable(site.upload, `${formatStormguardMbps(site.currentUpMbps)} Mbps`)}
@@ -202,7 +203,7 @@ export class StormguardSiteDetailDashlet extends BaseDashlet {
 
         this.graph.update([[site.site, site.currentDownMbps ?? 0, site.currentUpMbps ?? 0]]);
         this.emptyEl.textContent = snapshot.singleSite
-            ? "Single-site deployment: this panel is the primary StormGuard view."
-            : "Use the site list to switch focus. The graph here follows the selected site only.";
+            ? t("dashlet.stormguard.detail.single_site")
+            : t("dashlet.stormguard.detail.follow_selection");
     }
 }

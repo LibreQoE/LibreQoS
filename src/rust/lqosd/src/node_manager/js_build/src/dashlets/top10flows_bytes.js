@@ -5,6 +5,9 @@ import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
 
 const wsClient = get_ws_client();
 const MAX_VISIBLE_ASN_CHARS = 12;
@@ -40,11 +43,11 @@ export class Top10FlowsBytes extends DashletBaseInsight {
     }
 
     title() {
-        return "Top 10 Flows (by total bytes)";
+        return t("dashlet.name.top_10_flows_total_bytes");
     }
 
     tooltip() {
-        return "<h5>Top 10 Flows (by total bytes)</h5><p>Top 10 flows by total bytes, including protocol, local and remote IP addresses, download and upload rates, total bytes, and remote ASN.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.topflows.bytes.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -66,30 +69,30 @@ export class Top10FlowsBytes extends DashletBaseInsight {
         if (msg.event === "TopFlowsBytes" && window.timePeriods.activePeriod === "Live") {
             let target = document.getElementById(this.id);
 
-            let t = document.createElement("table");
-            t.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topflow-table", "lqos-topn-plain");
+            let table = document.createElement("table");
+            table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topflow-table", "lqos-topn-plain");
 
             let th = document.createElement("thead");
             th.classList.add("small");
-            const keyHeading = theading("IP/Circuit");
+            const keyHeading = theading(t("common.table.ip_circuit"));
             keyHeading.classList.add("lqos-topflow-key-cell");
             th.appendChild(keyHeading);
-            const protocolHeading = theading("Protocol");
+            const protocolHeading = theading(t("circuit.traffic.protocol"));
             protocolHeading.classList.add("lqos-topflow-protocol-cell");
             th.appendChild(protocolHeading);
-            const dlHeading = theading("DL ⬇️");
+            const dlHeading = theading(t("common.table.dl_abbr"));
             dlHeading.classList.add("lqos-topflow-rate-cell");
             th.appendChild(dlHeading);
-            const ulHeading = theading("UL ⬆️");
+            const ulHeading = theading(t("common.table.ul_abbr"));
             ulHeading.classList.add("lqos-topflow-rate-cell");
             th.appendChild(ulHeading);
-            const totalHeading = theading("Total");
+            const totalHeading = theading(t("common.table.total"));
             totalHeading.classList.add("lqos-topflow-total-cell");
             th.appendChild(totalHeading);
-            const asnHeading = theading("Remote ASN");
+            const asnHeading = theading(t("common.table.remote_asn"));
             asnHeading.classList.add("lqos-asn-cell");
             th.appendChild(asnHeading);
-            t.appendChild(th);
+            table.appendChild(th);
 
             let tbody = document.createElement("tbody");
             msg.data.forEach((r) => {
@@ -157,13 +160,13 @@ export class Top10FlowsBytes extends DashletBaseInsight {
 
                 tbody.appendChild(row);
             });
-            t.appendChild(tbody);
+            table.appendChild(tbody);
 
             // Display it
             clearDashDiv(this.id, target);
             const tableWrap = document.createElement("div");
             tableWrap.classList.add("lqos-table-wrap");
-            tableWrap.appendChild(t);
+            tableWrap.appendChild(table);
             target.appendChild(tableWrap);
         }
     }
@@ -172,7 +175,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
         super.onTimeChange();
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
         let spinnerDiv = document.createElement("div");
-        spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        spinnerDiv.innerHTML = `<i class='fas fa-spinner fa-spin'></i> ${t("common.state.fetching_insight")}`;
         let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
         target.appendChild(spinnerDiv);
@@ -183,14 +186,14 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             let table = document.createElement("table");
             table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
             let thead = document.createElement("thead");
-            thead.appendChild(theading("Circuit"));
-            thead.appendChild(theading("Protocol"));
-            thead.appendChild(theading("DL"));
-            thead.appendChild(theading("UL"));
-            thead.appendChild(theading("RTT DL"));
-            thead.appendChild(theading("RTT UL"));
-            thead.appendChild(theading("Rxmits DL"));
-            thead.appendChild(theading("Rxmits UL"));
+            thead.appendChild(theading(t("common.table.circuit")));
+            thead.appendChild(theading(t("circuit.traffic.protocol")));
+            thead.appendChild(theading(t("common.table.dl")));
+            thead.appendChild(theading(t("common.table.ul")));
+            thead.appendChild(theading(t("common.table.rtt_dl")));
+            thead.appendChild(theading(t("common.table.rtt_ul")));
+            thead.appendChild(theading(t("common.table.rxmits_dl")));
+            thead.appendChild(theading(t("common.table.rxmits_ul")));
                 const asnHeading = theading("ASN");
                 asnHeading.classList.add("lqos-asn-cell");
                 thead.appendChild(asnHeading);

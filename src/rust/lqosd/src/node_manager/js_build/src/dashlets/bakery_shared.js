@@ -1,9 +1,14 @@
+import {t} from "../i18n/index.js";
+import {formatDateTime} from "../i18n/format.js";
+
+// translatable: false — "Idle" is the bakery mode token the switch compares against; the badge renders the catalog label
+
 export function formatUnixSecondsToLocalDateTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
     if (!Number.isFinite(n) || n <= 0) {
         return "—";
     }
-    return new Date(n * 1000).toLocaleString(undefined, {
+    return formatDateTime(n * 1000, {
         year: "numeric",
         month: "short",
         day: "2-digit",
@@ -34,19 +39,19 @@ export function formatElapsedSince(unixSeconds) {
     }
     const delta = Math.max(0, Math.floor(Date.now() / 1000) - n);
     if (delta < 60) {
-        return `${delta}s`;
+        return t("bakery.elapsed.seconds", {seconds: delta});
     }
     if (delta < 3600) {
-        return `${Math.floor(delta / 60)}m ${delta % 60}s`;
+        return t("bakery.elapsed.min_sec", {minutes: Math.floor(delta / 60), seconds: delta % 60});
     }
     if (delta < 86_400) {
         const hours = Math.floor(delta / 3600);
         const mins = Math.floor((delta % 3600) / 60);
-        return `${hours}h ${mins}m`;
+        return t("bakery.elapsed.hour_min", {hours, minutes: mins});
     }
     const days = Math.floor(delta / 86_400);
     const hours = Math.floor((delta % 86_400) / 3600);
-    return `${days}d ${hours}h`;
+    return t("bakery.elapsed.day_hour", {days, hours});
 }
 
 export function mkBadge(text, className, title = "") {
@@ -63,28 +68,28 @@ export function bakeryModeBadge(modeRaw) {
     const mode = (modeRaw ?? "").toString();
     switch (mode) {
         case "ApplyingFullReload":
-            return mkBadge("Applying Full Reload", "bg-warning-subtle text-warning border border-warning-subtle");
+            return mkBadge(t("bakery.mode.full_reload"), "bg-warning-subtle text-warning border border-warning-subtle");
         case "ApplyingLiveChange":
-            return mkBadge("Applying Live Change", "bg-info-subtle text-info border border-info-subtle");
+            return mkBadge(t("bakery.mode.live_change"), "bg-info-subtle text-info border border-info-subtle");
         case "Idle":
         default:
-            return mkBadge("Idle", "bg-light text-secondary border");
+            return mkBadge(t("scheduler.badge.idle"), "bg-light text-secondary border");
     }
 }
 
 export function bakeryPreflightBadge(preflight) {
     if (!preflight) {
-        return mkBadge("Unknown", "bg-light text-secondary border");
+        return mkBadge(t("circuit.queue_tree.unknown_node"), "bg-light text-secondary border");
     }
     if (preflight.ok) {
-        return mkBadge("Within Budget", "bg-success-subtle text-success border border-success-subtle", preflight.message || "");
+        return mkBadge(t("bakery.preflight.within_budget"), "bg-success-subtle text-success border border-success-subtle", preflight.message || "");
     }
     const interfaces = Array.isArray(preflight.interfaces) ? preflight.interfaces : [];
     const safeBudget = Number.isFinite(preflight.safeBudget) ? preflight.safeBudget : null;
     const overBudget = safeBudget !== null
         && interfaces.some((entry) => Number.isFinite(entry?.plannedQdiscs) && entry.plannedQdiscs > safeBudget);
     if (!overBudget && preflight.memoryOk === false) {
-        return mkBadge("Memory Blocked", "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
+        return mkBadge(t("bakery.preflight.memory_blocked"), "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
     }
-    return mkBadge("Over Budget", "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
+    return mkBadge(t("bakery.preflight.over_budget"), "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
 }

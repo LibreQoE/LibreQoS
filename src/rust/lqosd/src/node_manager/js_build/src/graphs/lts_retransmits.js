@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 export class LtsRetransmitsGraph extends DashboardGraph {
     constructor(id, period) {
@@ -32,13 +33,13 @@ export class LtsRetransmitsGraph extends DashboardGraph {
                 selectMode: false,
                 data: [
                     {
-                        name: "Download",
+                        name: t("graph.series.download"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[0]
                         }
                     }, {
-                        name: "Upload",
+                        name: t("graph.series.upload"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[1]
@@ -50,6 +51,7 @@ export class LtsRetransmitsGraph extends DashboardGraph {
                 },
             },
             series: [
+            // translatable: false — "Download Error" "Download Error2" "Upload Error" "Upload Error2" — invisible stacked scaffolding series that draw the min/max band; they carry no legend entry and no tooltip
                 {
                     name: 'Download Error',
                     type: 'line',
@@ -97,13 +99,13 @@ export class LtsRetransmitsGraph extends DashboardGraph {
                     },
                 },
                 {
-                    name: 'Download',
+                    name: t("graph.series.download"),
                     type: 'line',
                     data: [],
                     symbol: 'none',
                 },
                 {
-                    name: 'Upload',
+                    name: t("graph.series.upload"),
                     type: 'line',
                     data: [],
                     symbol: 'none',

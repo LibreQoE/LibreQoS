@@ -349,21 +349,6 @@ fn persisted_single_bdf_at(env_file: &Path) -> Result<Option<String>, String> {
 
 /// Derive the engine topology from `[single_interface]`. `None` for a
 /// `[bridge]`/unset config (the explicit WAN/LAN BDF pair is its orientation).
-fn derive_single_interface_topology_at(
-    sysfs: &Path,
-    net_sysfs: &Path,
-    config: &Config,
-    recorded_device: Option<&str>,
-) -> Result<Option<StickTopology>, String> {
-    derive_single_interface_topology_at_with_env_file(
-        sysfs,
-        net_sysfs,
-        config,
-        recorded_device,
-        Path::new(BRIDGE_ENV_PATH),
-    )
-}
-
 fn derive_single_interface_topology_at_with_env_file(
     sysfs: &Path,
     net_sysfs: &Path,

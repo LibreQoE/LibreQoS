@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.1.0",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.1.1.0", "value": { "type": "octet_string", "text": "SwOS 2.13" } }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.5.0",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.1.5.0", "value": { "type": "octet_string", "text": "swos-core" } }
+      ]
+    },
+    {
+      "op": "get",
+      "oid": "1.3.6.1.2.1.1.2.0",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.1.2.0", "value": { "type": "oid", "value": "1.3.6.1.4.1.14988.2" } }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.2.2.1",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.2.2.1.2.1", "value": { "type": "octet_string", "text": "Management" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.2.2", "value": { "type": "octet_string", "text": "10G Bridge Mgmt" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.2.5", "value": { "type": "octet_string", "text": "Paquin Apts" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.3.1", "value": { "type": "integer", "value": 6 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.3.2", "value": { "type": "integer", "value": 6 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.3.5", "value": { "type": "integer", "value": 6 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.6.1", "value": { "type": "octet_string", "hex": "00:0c:42:00:00:01" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.6.2", "value": { "type": "octet_string", "hex": "00:0c:42:00:00:02" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.6.5", "value": { "type": "octet_string", "hex": "00:0c:42:00:00:05" } },
+        { "oid": "1.3.6.1.2.1.2.2.1.7.1", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.7.2", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.7.5", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.8.1", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.8.2", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.2.2.1.8.5", "value": { "type": "integer", "value": 2 } }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.31.1.1.1",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.31.1.1.1.1.1", "value": { "type": "octet_string", "text": "Management" } },
+        { "oid": "1.3.6.1.2.1.31.1.1.1.1.2", "value": { "type": "octet_string", "text": "10G Bridge Mgmt" } },
+        { "oid": "1.3.6.1.2.1.31.1.1.1.1.5", "value": { "type": "octet_string", "text": "Paquin Apts" } },
+        { "oid": "1.3.6.1.2.1.31.1.1.1.18.1", "value": { "type": "octet_string", "text": "" } }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.0.8802.1.1.2.1.4.1",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.0.8802.1.1.2.1.4.1.1.5.0.5.25", "value": { "type": "octet_string", "hex": "02:1f:5e:aa:bb:01" } },
+        { "oid": "1.0.8802.1.1.2.1.4.1.1.7.0.5.25", "value": { "type": "octet_string", "text": "ether1" } },
+        { "oid": "1.0.8802.1.1.2.1.4.1.1.9.0.5.25", "value": { "type": "octet_string", "text": "core-tik" } }
+      ]
+    },
+    {
+      "op": "walk",
+      "root": "1.0.8802.1.1.2.1.4.2",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.0.8802.1.1.2.1.3.7",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.4.22.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.4.35.1",
+      "outcome": "empty"
+    },
+    {
+      "op": "walk",
+      "root": "1.3.6.1.2.1.17.4.3.1",
+      "outcome": "present",
+      "varbinds": [
+        { "oid": "1.3.6.1.2.1.17.4.3.1.1.0.5.183.0.0.1", "value": { "type": "octet_string", "hex": "00:05:b7:00:00:01" } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.2.0.5.183.0.0.1", "value": { "type": "integer", "value": 5 } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.3.0.5.183.0.0.1", "value": { "type": "integer", "value": 3 } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.1.0.37.144.0.0.2", "value": { "type": "octet_string", "hex": "00:25:90:00:00:02" } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.2.0.37.144.0.0.2", "value": { "type": "integer", "value": 1 } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.3.0.37.144.0.0.2", "value": { "type": "integer", "value": 4 } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.1.2.24.187.0.0.3", "value": { "type": "octet_string", "hex": "02:18:bb:00:00:03" } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.2.2.24.187.0.0.3", "value": { "type": "integer", "value": 26 } },
+        { "oid": "1.3.6.1.2.1.17.4.3.1.3.2.24.187.0.0.3", "value": { "type": "integer", "value": 3 } }
+      ]
+    }
+  ]
+}

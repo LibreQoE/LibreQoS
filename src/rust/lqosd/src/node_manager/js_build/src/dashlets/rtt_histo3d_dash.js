@@ -1,5 +1,6 @@
 import {RttHistogram3D} from "../graphs/rtt_histo_3d";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class RttHisto3dDash extends DashletBaseInsight{
     constructor(slot) {
@@ -7,11 +8,11 @@ export class RttHisto3dDash extends DashletBaseInsight{
     }
 
     title() {
-        return "Round-Trip Time Histogram 3D";
+        return t("dashlet.name.round_trip_time_histogram_3d");
     }
 
     tooltip() {
-        return "<h5>Round-Trip Time Histogram 3D</h5><p>Round-Trip Time Histogram, expanded to include time as a third dimension. This can be helpful for seeing how your performance is changing over time.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.rtt_histo3d.tooltip")}</p>`;
     }
 
     supportsZoom() {

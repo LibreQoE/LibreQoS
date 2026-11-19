@@ -5,6 +5,7 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function validateConfig() {
     const enabled = document.getElementById("enableNetzur").checked;
@@ -13,26 +14,26 @@ function validateConfig() {
     }
 
     if (!secretWillExistAfterSave("netzur_integration", "api_key", "netzurApiKey")) {
-        alert("API Key is required when Netzur integration is enabled");
+        alert(t("config.netzur.validation.key_required"));
         return false;
     }
 
     const urlValue = document.getElementById("netzurApiUrl").value.trim();
     if (!urlValue) {
-        alert("API URL is required when Netzur integration is enabled");
+        alert(t("config.netzur.validation.url_required"));
         return false;
     }
 
     try {
         new URL(urlValue);
     } catch (_) {
-        alert("API URL must be a valid URL");
+        alert(t("config.netzur.validation.url_invalid"));
         return false;
     }
 
     const timeout = parseInt(document.getElementById("netzurTimeout").value, 10);
     if (Number.isNaN(timeout) || timeout <= 0) {
-        alert("Timeout must be a positive number of seconds");
+        alert(t("config.netzur.validation.timeout_positive"));
         return false;
     }
 
@@ -52,6 +53,7 @@ renderConfigMenu('netzur');
 
 loadConfig(() => {
     if (!window.config) {
+        // translatable: false — "Configuration not loaded" is a console diagnostic, never rendered
         console.error("Configuration not loaded");
         return;
     }
@@ -70,7 +72,7 @@ loadConfig(() => {
     document.getElementById("saveNetzur").addEventListener('click', () => {
         if (validateConfig()) {
             updateConfig();
-            saveConfig(() => alert("Netzur configuration saved"));
+            saveConfig(() => alert(t("config.netzur.saved")));
         }
     });
 });

@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "id": "empty-columns",
+  "detect": {
+    "sys_descr_contains": [
+      "X"
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "snmp",
+      "transport": "snmp_v2c",
+      "credential_ref": "snmp"
+    }
+  ],
+  "probes": [
+    {
+      "id": "probe",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [],
+          "index": {
+            "kind": "single"
+          }
+        }
+      }
+    }
+  ]
+}

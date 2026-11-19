@@ -3,6 +3,7 @@ import {sponsorTag} from "./toasts/sponsor_us";
 import {globalWarningToasts} from "./toasts/global_warnings";
 import {showTimeControls} from "./components/timescale";
 import {DashletMenu, widgetFactory} from "./dashlets/dashlet_index";
+import {t} from "./i18n/index.js";
 
 const defaultLayout = {
     version: 3,
@@ -10,7 +11,7 @@ const defaultLayout = {
     tabs: [
         {
             id: "executive-summary",
-            name: "Executive Summary",
+            name: t("dashboard.tab.executive_summary"),
             dashlets: [
                 { tag: "throughputRing30", size: 12 },
                 { tag: "executiveGlobalHeatmap", size: 12 },
@@ -23,7 +24,7 @@ const defaultLayout = {
         },
         {
             id: "overview",
-            name: "Overview",
+            name: t("dashboard.tab.overview"),
             dashlets: [
                 { tag: "throughputRing", size: 12 },
                 { tag: "shaperTopAsnDown", size: 6 },
@@ -36,7 +37,7 @@ const defaultLayout = {
         },
         {
             id: "system-overview",
-            name: "System Overview",
+            name: t("dashboard.tab.system_overview"),
             dashlets: [
                 { tag: "throughputBps", size: 2 },
                 { tag: "shapedUnshaped", size: 2 },
@@ -49,7 +50,7 @@ const defaultLayout = {
         },
         {
             id: "network",
-            name: "Network",
+            name: t("dashboard.tab.network"),
             dashlets: [
                 { tag: "networkTreeSankey", size: 6 },
                 { tag: "treeSummary", size: 6 }
@@ -57,7 +58,7 @@ const defaultLayout = {
         },
         {
             id: "top-10",
-            name: "Top 10",
+            name: t("dashboard.tab.top_10"),
             dashlets: [
                 { tag: "top10downloaders", size: 6 },
                 { tag: "worst10downloaders", size: 6 },
@@ -70,7 +71,7 @@ const defaultLayout = {
         },
         {
             id: "protocols-cake",
-            name: "Protocols & Cake",
+            name: t("dashboard.tab.protocols_cake"),
             dashlets: [
                 { tag: "etherProtocols", size: 6 },
                 { tag: "ipProtocols", size: 6 },

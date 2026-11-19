@@ -1,4 +1,6 @@
 mod auth;
+mod locale;
+mod setup_code;
 pub(crate) mod local_api;
 mod run;
 mod runtime_onboarding;

@@ -1,4 +1,10 @@
 import {enableTooltips} from "../helpers/content_builders";
+import {t} from "../../i18n/index.js";
+
+// translatable: false — "_graph" "_zoomed_graph" "_zoomed" "_btn_" "_btn" are DOM id suffixes this class appends, not labels
+// translatable: false — "hover focus" is the Bootstrap tooltip trigger list
+// translatable: false — "Failed to set up zoomed dashlet" and "Failed to tear down zoomed dashlet" are developer console diagnostics
+// translatable: false — "Live" is the time-period token the period buttons compare against, not a label
 
 export class BaseDashlet {
     constructor(slotNumber) {
@@ -38,7 +44,7 @@ export class BaseDashlet {
     }
 
     title() {
-        return "Someone forgot to set a title";
+        return t("dashlet.title_missing");
     }
 
     tooltip() {
@@ -170,7 +176,7 @@ export class BaseDashlet {
             let button = document.createElement("button");
             button.type = "button";
             button.title = tt;
-            button.setAttribute("aria-label", `${this.title()} information`);
+            button.setAttribute("aria-label", t("dashlet.info_button", {title: this.title()}));
             button.setAttribute("data-bs-toggle", "tooltip");
             button.setAttribute("data-bs-placement", "top");
             button.setAttribute("data-bs-html", "true");
@@ -185,8 +191,8 @@ export class BaseDashlet {
             zoom.style.marginLeft = "5px";
             let button = document.createElement("button");
             button.type = "button";
-            button.title = "Zoom";
-            button.setAttribute("aria-label", `Zoom ${this.title()}`);
+            button.title = t("dashlet.zoom");
+            button.setAttribute("aria-label", t("dashlet.zoom_label", {title: this.title()}));
             button.innerHTML = "<i class='fas fa-search-plus'></i>";
             button.onclick = () => {
                 this.openZoom();
@@ -222,7 +228,7 @@ export class BaseDashlet {
         zoomDiv.classList.add("dashbox");
         zoomDiv.setAttribute("role", "dialog");
         zoomDiv.setAttribute("aria-modal", "false");
-        zoomDiv.setAttribute("aria-label", `Zoomed ${this.title()}`);
+        zoomDiv.setAttribute("aria-label", t("dashlet.zoomed_label", {title: this.title()}));
 
         let title = document.createElement("h5");
         title.classList.add("dashbox-title");
@@ -230,8 +236,8 @@ export class BaseDashlet {
 
         let closeBtn = document.createElement("button");
         closeBtn.type = "button";
-        closeBtn.title = "Close zoom";
-        closeBtn.setAttribute("aria-label", `Close zoomed ${this.title()}`);
+        closeBtn.title = t("dashlet.close_zoom");
+        closeBtn.setAttribute("aria-label", t("dashlet.close_zoomed_label", {title: this.title()}));
         closeBtn.innerHTML = "<i class='fas fa-search-minus'></i>";
         closeBtn.style.marginLeft = "5px";
         closeBtn.onclick = () => {

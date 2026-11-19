@@ -3,16 +3,17 @@
     <div class="col-md-8 col-lg-6">
       <div class="card shadow">
         <div class="card-header bg-light">
-          <h4 class="mb-0"><i class="fas fa-check-circle text-success"></i> Insight Trial Created</h4>
+          <h4 class="mb-0" data-i18n="trial.success.title"><i class="fas fa-check-circle text-success"></i> Insight Trial Created</h4>
         </div>
         <div class="card-body">
-          <p class="lead mb-3">Your trial is almost active.</p>
-          <p class="text-muted">Watch for an email from Insight to add billing details within 2 days. No charge occurs until the trial ends, and you can cancel any time.</p>
+          <p class="lead mb-3" data-i18n="trial.success.lead">Your trial is almost active.</p>
+          <p class="text-muted" data-i18n="trial.activated.billing">Billing details are required at sign-up. You will not be charged until the trial ends, and you can cancel any time.</p>
+          <p class="text-body-tertiary small mb-0" data-cancel-cap-notice></p>
           <div class="d-grid gap-2 mt-4">
-            <a class="btn btn-outline-primary" href="/index.html">
+            <a class="btn btn-outline-primary" href="/index.html" data-i18n="trial.actions.dashboard">
               <i class="fas fa-columns"></i> Go to Dashboard
             </a>
-            <a class="btn btn-outline-secondary" href="/lts_trial.html">
+            <a class="btn btn-outline-secondary" href="/lts_trial.html" data-i18n="trial.activated.back">
               <i class="fas fa-arrow-left"></i> Back to Trial Page
             </a>
           </div>

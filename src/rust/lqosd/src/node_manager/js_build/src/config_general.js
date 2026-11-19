@@ -1,4 +1,5 @@
 import {saveConfig, loadConfig, loadQooProfiles, renderConfigMenu} from "./config/config_helper";
+import {t, tHtml} from "./i18n/index.js";
 
 let qooProfiles = null;
 
@@ -38,10 +39,10 @@ async function uploadCobrandIfSelected() {
         return;
     }
     if (!selectedCobrandLooksLikePng(file)) {
-        throw new Error("Cobrand image must be a PNG file.");
+        throw new Error(t("config.general.cobrand.error.not_png"));
     }
 
-    setCobrandUploadStatus("info", "Uploading cobrand.png...");
+    setCobrandUploadStatus("info", t("config.general.cobrand.uploading"));
     const response = await fetch("/local-api/config/cobrand", {
         method: "POST",
         credentials: "same-origin",
@@ -53,12 +54,12 @@ async function uploadCobrandIfSelected() {
 
     if (!response.ok) {
         const detail = (await response.text().catch(() => "")).trim();
-        const message = detail || `Upload failed with HTTP ${response.status}.`;
+        const message = detail || t("config.general.cobrand.upload_failed_http", {status: response.status});
         throw new Error(message);
     }
 
     document.getElementById("cobrandFile").value = "";
-    setCobrandUploadStatus("success", "Uploaded cobrand.png. Saving configuration...");
+    setCobrandUploadStatus("success", t("config.general.cobrand.uploaded"));
 }
 
 function getProfilesPath() {
@@ -108,7 +109,7 @@ function renderQooProfileSelect() {
 
     const options = [];
     const defaultLabel = qooProfiles ? defaultQooProfileLabel() : "web_browsing";
-    options.push({ value: "", label: `(default) ${defaultLabel}` });
+    options.push({ value: "", label: t("config.general.qoo.option_default", {profile: defaultLabel}) });
 
     profiles.forEach((p) => {
         const id = p?.id ? String(p.id) : "";
@@ -119,7 +120,7 @@ function renderQooProfileSelect() {
 
     const isKnown = configuredId && profiles.some(p => p.id === configuredId);
     if (configuredId && !isKnown) {
-        options.push({ value: configuredId, label: `Unknown (configured): ${configuredId}` });
+        options.push({ value: configuredId, label: t("config.general.qoo.option_unknown", {id: configuredId}) });
     }
 
     select.innerHTML = options
@@ -135,7 +136,7 @@ function renderQooProfilesTable() {
 
     const profiles = Array.isArray(qooProfiles?.profiles) ? qooProfiles.profiles : null;
     if (!profiles || profiles.length === 0) {
-        body.innerHTML = `<tr><td colspan="4" class="text-muted small">No profile data loaded.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="4" class="text-muted small">${t("config.general.qoo.no_data")}</td></tr>`;
         return;
     }
 
@@ -151,8 +152,8 @@ function renderQooProfilesTable() {
         const isDefault = id === defaultId;
         const isSelected = id === effectiveSelected;
         const flags = [
-            isDefault ? `<span class="badge bg-secondary me-1">Default</span>` : "",
-            isSelected ? `<span class="badge bg-primary">Selected</span>` : "",
+            isDefault ? `<span class="badge bg-secondary me-1">${t("config.general.qoo.badge_default")}</span>` : "",
+            isSelected ? `<span class="badge bg-primary">${t("config.general.qoo.badge_selected")}</span>` : "",
         ].join("");
 
         const rowClass = isSelected ? "table-active" : "";
@@ -171,13 +172,13 @@ function validateConfig() {
     // Validate required fields
     const nodeName = document.getElementById("nodeName").value.trim();
     if (!nodeName) {
-        alert("Node Name is required");
+        alert(t("config.general.node.name_required"));
         return false;
     }
 
     const packetCaptureTime = parseInt(document.getElementById("packetCaptureTime").value);
     if (isNaN(packetCaptureTime) || packetCaptureTime < 1) {
-        alert("Packet Capture Time must be a number greater than 0");
+        alert(t("config.general.node.capture_time_invalid"));
         return false;
     }
 
@@ -186,7 +187,7 @@ function validateConfig() {
     if (webserverListen) {
         const parts = webserverListen.split(':');
         if (parts.length !== 2 || isNaN(parseInt(parts[1]))) {
-            alert("Web Server Listen Address must be in format IP:PORT");
+            alert(t("config.general.node.listen_invalid"));
             return false;
         }
     }
@@ -217,6 +218,20 @@ function updateConfig() {
     } else {
         window.config.webserver_listen = webserverListen ? webserverListen : null;
     }
+}
+
+// The prose the page renders itself: each paragraph wraps a literal path or file
+// name in markup, so it cannot ride a `data-i18n` attribute (that applier writes
+// text). The messages carry the markup; the placeholders carry the literals.
+function renderTranslatedProse(profilesPath) {
+    const defined = document.getElementById("qooProfilesNote");
+    if (defined) defined.innerHTML = tHtml("config.general.qoo.defined_in", {path: profilesPath});
+    const displayHelp = document.getElementById("cobrandDisplaySubtitle");
+    if (displayHelp) displayHelp.innerHTML = tHtml("config.general.cobrand.display_subtitle");
+    const enableHelp = document.getElementById("cobrandEnableHelp");
+    if (enableHelp) enableHelp.innerHTML = tHtml("config.general.cobrand.enable_help");
+    const uploadHelp = document.getElementById("cobrandUploadSubtitle");
+    if (uploadHelp) uploadHelp.innerHTML = tHtml("config.general.cobrand.upload_subtitle");
 }
 
 // Render the configuration menu
@@ -253,7 +268,7 @@ loadConfig(() => {
         document.getElementById("displayCobrand").checked = window.config.display_cobrand ?? false;
         setCobrandUploadStatus(
             "secondary",
-            "Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.",
+            tHtml("config.general.cobrand.pending"),
         );
 
         const cobrandInput = document.getElementById("cobrandFile");
@@ -263,24 +278,23 @@ loadConfig(() => {
                 if (!file) {
                     setCobrandUploadStatus(
                         "secondary",
-                        "Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.",
+                        tHtml("config.general.cobrand.pending"),
                     );
                     return;
                 }
                 if (!selectedCobrandLooksLikePng(file)) {
-                    setCobrandUploadStatus("warning", "Selected file does not look like a PNG. Choose a .png file.");
+                    setCobrandUploadStatus("warning", t("config.general.cobrand.wrong_file"));
                     return;
                 }
                 setCobrandUploadStatus(
                     "info",
-                    `Selected ${escapeHtml(file.name)}. It will be saved as <code>cobrand.png</code> when you click Save Changes.`,
+                    tHtml("config.general.cobrand.selected", {name: file.name}),
                 );
             });
         }
 
         const profilesPath = getProfilesPath();
-        const profilesPathEl = document.getElementById("qooProfilesPath");
-        if (profilesPathEl) profilesPathEl.textContent = profilesPath;
+        renderTranslatedProse(profilesPath);
 
         const qooSelect = document.getElementById("qooProfileId");
         if (qooSelect) {
@@ -290,7 +304,7 @@ loadConfig(() => {
                     if (selectedId && !qooProfiles.profiles.some(p => p.id === selectedId)) {
                         setQooProfilesAlert(
                             "warning",
-                            `Selected QoO profile '${selectedId}' was not found in ${profilesPath}.`,
+                            t("config.general.qoo.selected_missing", {id: selectedId, path: profilesPath}),
                         );
                     } else {
                         setQooProfilesAlert("", "");
@@ -313,7 +327,7 @@ loadConfig(() => {
                     if (!known) {
                         setQooProfilesAlert(
                             "warning",
-                            `Configured QoO profile '${configuredId}' was not found in ${profilesPath}.`,
+                            t("config.general.qoo.configured_missing", {id: configuredId, path: profilesPath}),
                         );
                     }
                 }
@@ -324,7 +338,7 @@ loadConfig(() => {
                 renderQooProfilesTable();
                 setQooProfilesAlert(
                     "warning",
-                    `Unable to load QoO profiles. Create or fix ${profilesPath}, then reload this page.`,
+                    t("config.general.qoo.load_failed", {path: profilesPath}),
                 );
             },
         );
@@ -337,25 +351,26 @@ loadConfig(() => {
                     updateConfig();
                     saveConfig((msg) => {
                         if (!msg?.ok) {
-                            const message = msg?.message || "Configuration save failed.";
+                            const message = msg?.message || t("config.general.save_failed");
                             setCobrandUploadStatus("danger", escapeHtml(message));
                             return;
                         }
                         setCobrandUploadStatus(
                             "success",
-                            "Cobrand settings saved. The sidebar will show the image when display is enabled and cobrand.png exists.",
+                            t("config.general.cobrand.saved"),
                         );
                     }, (msg) => {
-                        const message = msg?.message || "Configuration save failed.";
+                        const message = msg?.message || t("config.general.save_failed");
                         setCobrandUploadStatus("danger", escapeHtml(message));
                     });
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : "Cobrand upload failed.";
+                    const message = error instanceof Error ? error.message : t("config.general.cobrand.upload_failed");
                     setCobrandUploadStatus("danger", escapeHtml(message));
                 }
             }
         });
     } else {
+        // translatable: false — "Configuration not found in window.config" is a console diagnostic for a missing payload, never rendered
         console.error("Configuration not found in window.config");
     }
 });

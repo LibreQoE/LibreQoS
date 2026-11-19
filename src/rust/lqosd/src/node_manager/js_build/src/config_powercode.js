@@ -5,24 +5,25 @@ import {
     saveConfig,
     secretWillExistAfterSave,
 } from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enablePowercode").checked) {
         if (!secretWillExistAfterSave("powercode_integration", "powercode_api_key", "powercodeApiKey")) {
-            alert("API Key is required when Powercode integration is enabled");
+            alert(t("config.powercode.validation.key_required"));
             return false;
         }
 
         const apiUrl = document.getElementById("powercodeApiUrl").value.trim();
         if (!apiUrl) {
-            alert("API URL is required when Powercode integration is enabled");
+            alert(t("config.powercode.validation.url_required"));
             return false;
         }
         try {
             new URL(apiUrl);
         } catch {
-            alert("API URL must be a valid URL");
+            alert(t("config.powercode.validation.url_invalid"));
             return false;
         }
     }
@@ -67,11 +68,12 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.powercode.saved"));
                 });
             }
         });
     } else {
+        // translatable: false — "Powercode integration configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Powercode integration configuration not found in window.config");
     }
 });

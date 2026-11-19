@@ -31,6 +31,7 @@ function lerpViridis(t) {
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 import {isRedacted} from "../helpers/redact";
+import {t} from "../i18n/index.js";
 
 export class TopNSankey extends DashboardGraph {
     constructor(id, upload=false) {
@@ -61,9 +62,10 @@ export class TopNSankey extends DashboardGraph {
         let nodes = [];
         let links = [];
 
+        // translatable: false — "Root" is the root node identifier the sankey links name as their source; its label renders through t()
         nodes.push({
             name: "Root",
-            label: "Root",
+            label: t("graph.sankey.root"),
             itemStyle: {
                 color: isColorBlindMode() ? "#440154" : "green",
                 borderWidth: 1,
@@ -78,6 +80,7 @@ export class TopNSankey extends DashboardGraph {
                 fontSize: 9,
                 color: "#999"
             };
+            // translatable: false — "Illegible" is the font family redacted labels render in, not a label
             if (isRedacted()) label.fontFamily = "Illegible";
 
             let name = r.ip_address;

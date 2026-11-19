@@ -1,0 +1,218 @@
+{
+  "schema_version": 2,
+  "id": "routeros-router",
+  "detect": {
+    "sys_descr_contains": ["RouterOS"]
+  },
+  "surfaces": [
+    { "id": "api", "transport": "routeros_api", "credential_ref": "api" }
+  ],
+  "probes": [
+    {
+      "id": "identity",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_identity",
+          "fields": [{ "name": "name", "from": "name" }]
+        }
+      }
+    },
+    {
+      "id": "routerboard",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_routerboard",
+          "fields": [{ "name": "serial", "from": "serial-number" }]
+        }
+      }
+    },
+    {
+      "id": "neighbors",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_neighbor",
+          "fields": [
+            { "name": "mac", "from": "mac-address" },
+            { "name": "address", "from": "address" },
+            { "name": "identity", "from": "identity" },
+            { "name": "interface", "from": "interface" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "interfaces",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "interfaces",
+          "fields": [
+            { "name": "name", "from": "name" },
+            { "name": "raw_type", "from": "type" },
+            { "name": "mac", "from": "mac-address" },
+            { "name": "running", "from": "running" },
+            { "name": "disabled", "from": "disabled" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "addresses",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_address",
+          "fields": [
+            { "name": "address", "from": "address" },
+            { "name": "interface", "from": "interface" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "arp",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "ip_arp",
+          "fields": [
+            { "name": "mac", "from": "mac-address" },
+            { "name": "address", "from": "address" },
+            { "name": "interface", "from": "interface" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_ports",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_port",
+          "fields": [
+            { "name": "interface", "from": "interface" },
+            { "name": "bridge", "from": "bridge" },
+            { "name": "pvid", "from": "pvid" },
+            { "name": "status", "from": "status" },
+            { "name": "inactive", "from": "inactive" },
+            { "name": "disabled", "from": "disabled" },
+            { "name": "dynamic", "from": "dynamic" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_vlans",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_vlan",
+          "fields": [
+            { "name": "bridge", "from": "bridge" },
+            { "name": "vlan_ids", "from": "vlan-ids" },
+            { "name": "tagged", "from": "tagged" },
+            { "name": "untagged", "from": "untagged" },
+            { "name": "current_tagged", "from": "current-tagged" },
+            { "name": "current_untagged", "from": "current-untagged" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bridge_hosts",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "bridge_host",
+          "fields": [
+            { "name": "mac", "from": "mac-address" },
+            { "name": "interface", "from": "interface" },
+            { "name": "bridge", "from": "bridge" },
+            { "name": "on_interface", "from": "on-interface" },
+            { "name": "age", "from": "age" },
+            { "name": "dynamic", "from": "dynamic" },
+            { "name": "local", "from": "local" },
+            { "name": "external", "from": "external" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "resource",
+      "surface": "api",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_resource",
+          "fields": [
+            { "name": "version", "from": "version" },
+            { "name": "board_name", "from": "board-name" },
+            { "name": "platform", "from": "platform" },
+            { "name": "uptime", "from": "uptime" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "health",
+      "surface": "api",
+      "on_absent": "optional",
+      "read": {
+        "kind": "command",
+        "command": {
+          "name": "system_health",
+          "fields": [
+            { "name": "name", "from": "name" },
+            { "name": "celsius", "from": "temperature" }
+          ]
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "serial", "fields": ["routerboard.serial"] },
+      { "kind": "name", "fields": ["identity.name", "neighbors.identity"] },
+      { "kind": "address", "fields": ["neighbors.address", "addresses.address"] },
+      { "kind": "interface", "fields": ["neighbors.interface"] }
+    ],
+    "details": {
+      "interfaces": "interfaces",
+      "system": "resource",
+      "temperatures": "health",
+      "arp": "arp",
+      "bridge_ports": "bridge_ports",
+      "bridge_vlans": "bridge_vlans",
+      "bridge_hosts": "bridge_hosts"
+    },
+    "residuals": [
+      {
+        "name": "interface-vlan-enrichment",
+        "source": "host/src/commands.rs: /interface/vlan/print is outside the closed authoring command vocabulary (CommandName::InterfaceVlan was removed), and the model has no VLAN detail slot or join for its rows"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 256,
+    "max_rows": 4096,
+    "deadline_ms": 15000
+  }
+}

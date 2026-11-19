@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {applyCircuitDeviceChartTheme} from "./circuit_device_chart_theme";
+import {t} from "../i18n/index.js";
 
 // Helper to format time as HH:MM:SS
 function formatTime(ts) {
@@ -37,13 +38,13 @@ export class CircuitTotalGraph extends DashboardGraph {
                 selectMode: false,
                 data: [
                     {
-                        name: "Download",
+                        name: t("graph.series.download"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[0]
                         }
                     }, {
-                        name: "Upload",
+                        name: t("graph.series.upload"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[1]
@@ -65,7 +66,7 @@ export class CircuitTotalGraph extends DashboardGraph {
             },
             series: [
                 {
-                    name: 'Download',
+                    name: t("graph.series.download"),
                     data: [],
                     type: 'line',
                     lineStyle: {
@@ -74,7 +75,7 @@ export class CircuitTotalGraph extends DashboardGraph {
                     symbol: 'none',
                 },
                 {
-                    name: 'Upload',
+                    name: t("graph.series.upload"),
                     data: [],
                     type: 'line',
                     lineStyle: {
@@ -93,7 +94,7 @@ export class CircuitTotalGraph extends DashboardGraph {
                     if (!params || params.length === 0) return '';
                     const idx = params[0].dataIndex;
                     const ts = ringbuffer.getTimestamp(idx);
-                    let s = `<div><b>Time:</b> ${formatTimeRef(ts)}</div>`;
+                    let s = `<div><b>${t("graph.tooltip.time")}</b> ${formatTimeRef(ts)}</div>`;
                     for (const p of params) {
                         s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value), 1)}</b></div>`;
                     }

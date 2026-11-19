@@ -3,6 +3,9 @@ import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/sca
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {effectiveMax} from "../helpers/network_rates.mjs";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "_table" is the DOM id suffix this dashlet appends
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
@@ -21,11 +24,11 @@ export class TopTreeSummary extends DashletBaseInsight {
     }
 
     title() {
-        return "Network Tree";
+        return t("dashlet.name.network_tree_summary");
     }
 
     tooltip() {
-        return "<h5>Network Tree</h5><p>Summary of the top-level network tree, including branch name, download and upload rates, TCP retransmits, Cake marks, and Cake drops.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.tree_summary.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -41,21 +44,21 @@ export class TopTreeSummary extends DashletBaseInsight {
         scroll.style.height = "250px";
         scroll.style.overflow = "auto";
 
-        let t = document.createElement("table");
-        t.id = this.id + "_table";
-        t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "mytable", "small");
+        let table = document.createElement("table");
+        table.id = this.id + "_table";
+        table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "mytable", "small");
 
         let th = document.createElement("thead");
         th.classList.add('small');
-        th.appendChild(theading("Branch"));
-        th.appendChild(theading("DL ⬇️"));
-        th.appendChild(theading("UL ⬆️"));
-        th.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
-        th.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
-        th.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
-        t.appendChild(th);
+        th.appendChild(theading(t("topology_manager.details.branch")));
+        th.appendChild(theading(t("common.table.dl_abbr")));
+        th.appendChild(theading(t("common.table.ul_abbr")));
+        th.appendChild(theading(t("tree.table.retr"), 2, `<h5>${t("dashlet.tree_summary.retr_heading")}</h5><p>${t("dashlet.tree_summary.retr_help")}</p>`, "tts_retransmits"));
+        th.appendChild(theading(t("tree.table.marks"), 2, `<h5>${t("dashlet.tree_summary.marks_heading")}</h5><p>${t("dashlet.tree_summary.marks_help")}</p>`, "tts_marks"));
+        th.appendChild(theading(t("tree.table.drops"), 2, `<h5>${t("dashlet.tree_summary.drops_heading")}</h5><p>${t("dashlet.tree_summary.drops_help")}</p>`, "tts_drops"));
+        table.appendChild(th);
 
-        scroll.appendChild(t);
+        scroll.appendChild(table);
         base.appendChild(scroll);
 
         return base;

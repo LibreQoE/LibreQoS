@@ -1,5 +1,6 @@
 import {FlowDurationsGraph} from "../graphs/flow_durations_graph";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class FlowDurationDash extends DashletBaseInsight{
     constructor(slot) {
@@ -7,11 +8,11 @@ export class FlowDurationDash extends DashletBaseInsight{
     }
 
     title() {
-        return "Flow Duration";
+        return t("dashlet.name.flow_duration");
     }
 
     tooltip() {
-        return "<h5>Flow Duration</h5><p>How long do flows last in seconds? Most flows are very short, while some can last a very long time.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.flow_duration.tooltip")}</p>`;
     }
 
     subscribeTo() {

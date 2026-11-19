@@ -9,6 +9,31 @@ import {
     setLocalApiKeyCreationPending,
     validateLocalApiKeyName,
 } from "./local_api_token.js";
+import {clearCatalogs, EN, ES, installCatalogs, installKeyEchoCatalogs} from "../../i18n/test_catalogs.mjs";
+
+function pendingStatus() {
+    const status = { className: "", textContent: "" };
+    setLocalApiKeyCreationPending({ disabled: false, setAttribute() {}, removeAttribute() {} },
+        { querySelectorAll() { return []; } }, status, true);
+    return status.textContent;
+}
+
+async function copyFailure(input, documentApi) {
+    try {
+        await copyLocalApiToken(input, undefined, documentApi, false);
+    } catch (error) {
+        return error.message;
+    }
+    return null;
+}
+
+test.beforeEach(() => {
+    installCatalogs();
+});
+
+test.afterEach(() => {
+    clearCatalogs();
+});
 
 test("name validation trims and rejects blank duplicate and long names", () => {
     assert.deepEqual(validateLocalApiKeyName("  Monitoring  "), { ok: true, name: "Monitoring" });
@@ -21,6 +46,37 @@ test("metadata formatters abbreviate IDs and handle invalid dates", () => {
     assert.equal(abbreviateLocalApiKeyId("12345678-1234"), "12345678…");
     assert.equal(formatLocalApiKeyCreatedAt(0), "Unknown");
     assert.notEqual(formatLocalApiKeyCreatedAt(1, "en-US"), "Unknown");
+});
+
+test("every dialog message maps to a key both catalogs define", async () => {
+    installKeyEchoCatalogs();
+    const rendered = [
+        validateLocalApiKeyName("").message,
+        validateLocalApiKeyName("x".repeat(65)).message,
+        validateLocalApiKeyName("a", ["a"]).message,
+        formatLocalApiKeyCreatedAt(0),
+        pendingStatus(),
+        await copyFailure({ value: "  ", type: "password" }),
+        await copyFailure({ value: "token", type: "password", focus() {}, select() {} },
+            { activeElement: null, execCommand() { return false; } }),
+    ];
+    for (const key of rendered) {
+        assert.equal(typeof EN.messages[key], "string", `${key} is missing from en.json`);
+        assert.equal(typeof ES.messages[key], "string", `${key} is missing from es.json`);
+    }
+});
+
+test("the dialog messages follow the Spanish catalog", async () => {
+    installCatalogs(ES);
+    assert.equal(validateLocalApiKeyName("").message, "Introduzca un nombre para esta clave de API.");
+    assert.equal(validateLocalApiKeyName("a", ["A"]).message, "Ya existe una clave de API con ese nombre.");
+    assert.equal(formatLocalApiKeyCreatedAt(0), "Desconocida");
+    assert.equal(pendingStatus(), "Generando la clave de API…");
+    assert.equal(
+        await copyFailure({ value: "token", type: "password", focus() {}, select() {} },
+            { activeElement: null, execCommand() { return false; } }),
+        "No se pudo copiar la clave de API. Muéstrela y cópiela manualmente.",
+    );
 });
 
 test("closing the dialog clears and hides the one-time secret", () => {

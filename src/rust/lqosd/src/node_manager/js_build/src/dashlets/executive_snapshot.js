@@ -1,6 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {formatCount} from "./executive_heatmap_shared";
+import {t} from "../i18n/index.js";
 
 const SNAPSHOT_HELPER = {
     loading(msg) {
@@ -16,10 +17,12 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     canBeSlowedDown() { return true; }
-    title() { return "Network Snapshot"; }
-    tooltip() { return "Headline health metrics for the executive view."; }
+    title() { return t("dashlet.name.network_snapshot"); }
+    tooltip() { return t("executive.snapshot.tooltip"); }
+    // translatable: false — "Throughput" is the websocket event name this dashlet subscribes to and matches, not a label
     subscribeTo() { return ["ExecutiveDashboardSummary", "Throughput"]; }
 
+    // translatable: false — "_snapshot" is the element-id suffix this dashlet appends, not a label
     buildContainer() {
         const container = super.buildContainer();
         const wrap = document.createElement("div");
@@ -28,7 +31,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         this._contentId = `${this.id}_snapshot`;
         const snapshot = document.createElement("div");
         snapshot.id = this._contentId;
-        snapshot.innerHTML = SNAPSHOT_HELPER.loading("Collecting headline metrics…");
+        snapshot.innerHTML = SNAPSHOT_HELPER.loading(t("executive.snapshot.collecting"));
         wrap.appendChild(snapshot);
 
         container.appendChild(wrap);
@@ -58,7 +61,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         const target = document.getElementById(this._contentId);
         if (!target) return;
         if (!header) {
-            target.innerHTML = SNAPSHOT_HELPER.loading("Waiting for executive summary data…");
+            target.innerHTML = SNAPSHOT_HELPER.loading(t("executive.page.waiting_executive"));
             return;
         }
 
@@ -73,11 +76,11 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     inventoryCard(header) {
         const items = [
-            { label: "Circuits", value: formatCount(header.circuit_count) },
-            { label: "Devices", value: formatCount(header.device_count) },
-            { label: "Sites", value: formatCount(header.site_count) },
+            { label: t("common.table.circuits"), value: formatCount(header.circuit_count) },
+            { label: t("common.table.devices"), value: formatCount(header.device_count) },
+            { label: t("common.table.sites"), value: formatCount(header.site_count) },
         ];
-        return this.groupCard("Inventory", "fa-layer-group", "text-primary", items);
+        return this.groupCard(t("executive.snapshot.inventory"), "fa-layer-group", "text-primary", items);
     }
 
     throughputCard() {
@@ -86,23 +89,23 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
             { label: `<i class="fas fa-arrow-down"></i>`, value: this.formatBps(bps?.down) },
             { label: `<i class="fas fa-arrow-up"></i>`, value: this.formatBps(bps?.up) },
         ];
-        return this.groupCard("Throughput", "fa-tachometer-alt", "text-info", items, true);
+        return this.groupCard(t("common.table.throughput"), "fa-tachometer-alt", "text-info", items, true);
     }
 
     insightCard(header) {
         const value = header.insight_connected;
         const badge = value === undefined
-            ? `<span class="badge bg-light text-secondary border exec-badge">Pending</span>`
+            ? `<span class="badge bg-light text-secondary border exec-badge">${t("common.state.pending")}</span>`
             : value
-                ? `<span class="badge bg-success-subtle text-success exec-badge">Connected</span>`
-                : `<span class="badge bg-danger-subtle text-danger exec-badge">Offline</span>`;
+                ? `<span class="badge bg-success-subtle text-success exec-badge">${t("executive.snapshot.connected")}</span>`
+                : `<span class="badge bg-danger-subtle text-danger exec-badge">${t("executive.snapshot.offline")}</span>`;
         return `
             <div class="col">
                 <div class="executive-card h-100">
                     <div class="d-flex align-items-center gap-3">
                         <span class="exec-icon ${value ? "text-success" : "text-danger"}"><i class="fas fa-satellite-dish"></i></span>
                         <div>
-                            <div class="text-secondary small">Control Service</div>
+                            <div class="text-secondary small">${t("config.lts.status.control_service")}</div>
                             <div class="exec-metric-value text-secondary">${badge}</div>
                         </div>
                     </div>
@@ -144,11 +147,11 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         if (!showAlert || !isZero) {
             return `<span class="exec-metric-value ${valueClass}">${value}</span>`;
         }
-        const alertTitle = "No active queues - click 'Reload LibreQoS'";
+        const alertTitle = t("executive.snapshot.no_queues");
         return `
             <span class="exec-metric-value ${valueClass}">${value}</span>
             <span class="ms-2 text-danger small d-inline-flex align-items-center" title="${alertTitle}" aria-label="${alertTitle}">
-                <i class="fas fa-exclamation-triangle me-1"></i>Reload LibreQoS
+                <i class="fas fa-exclamation-triangle me-1"></i>${t("common.action.reload")}
             </span>
         `;
     }

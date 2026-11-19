@@ -1,3 +1,10 @@
+import {t} from "../../i18n/index.js";
+
+// translatable: false — "_blank" is the window.open target name and "noopener,noreferrer" its feature string
+// translatable: false — "modal fade" is a Bootstrap class list, not text
+// translatable: false — "flowRttExcludeModal_ _" is the generated modal id prefix
+// translatable: false — "_label" "_scope" "_host" "_wide" are the element-id suffixes this wizard appends
+
 function isProbablyIpv6(ip) {
     return String(ip || "").includes(":");
 }
@@ -48,7 +55,7 @@ function openConfigFlowsPrefilled(cidr) {
 export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     const ip = String(remoteIp ?? "").trim();
     if (!ip) {
-        alert("No remote IP available for this flow.");
+        alert(t("flow_rtt_exclude.no_ip"));
         return;
     }
 
@@ -85,12 +92,12 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     const title = document.createElement("h5");
     title.className = "modal-title";
     title.id = labelId;
-    title.textContent = "Exclude RTT for Remote Endpoint";
+    title.textContent = t("flow_rtt_exclude.title");
     const closeX = document.createElement("button");
     closeX.type = "button";
     closeX.className = "btn-close";
     closeX.setAttribute("data-bs-dismiss", "modal");
-    closeX.setAttribute("aria-label", "Close");
+    closeX.setAttribute("aria-label", t("common.action.close"));
     header.appendChild(title);
     header.appendChild(closeX);
 
@@ -102,12 +109,14 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     meta.className = "small";
     const sourceLine = document.createElement("div");
     sourceLine.className = "text-muted";
-    sourceLine.textContent = sourceLabel ? `Source: ${sourceLabel}` : "Source: Flow view";
+    sourceLine.textContent = t("flow_rtt_exclude.source", {
+        source: sourceLabel || t("flow_rtt_exclude.source.flow_view"),
+    });
     const remoteLine = document.createElement("div");
     remoteLine.className = "mt-1";
     const remoteLabel = document.createElement("span");
     remoteLabel.className = "text-muted";
-    remoteLabel.textContent = "Remote IP: ";
+    remoteLabel.textContent = `${t("flow_rtt_exclude.remote_ip")} `;
     const remoteCode = document.createElement("code");
     remoteCode.textContent = ip;
     remoteLine.appendChild(remoteLabel);
@@ -117,17 +126,14 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
 
     const explain = document.createElement("div");
     explain.className = "small mt-3";
-    explain.textContent =
-        "This helps you add a Flow Tracking → Do Not Track Subnets entry. " +
-        "RTT samples where the remote IP matches will be ignored for scoring/heatmaps. " +
-        "This is global (affects all circuits). Nothing is saved automatically.";
+    explain.textContent = t("flow_rtt_exclude.explain");
 
     const form = document.createElement("div");
     form.className = "mt-3";
 
     const scopeLabel = document.createElement("div");
     scopeLabel.className = "small fw-semibold mb-2";
-    scopeLabel.textContent = "Choose exclusion scope:";
+    scopeLabel.textContent = t("flow_rtt_exclude.scope.label");
 
     const hostId = `${modalId}_host`;
     const wideId = `${modalId}_wide`;
@@ -148,7 +154,7 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     const hostText = document.createElement("label");
     hostText.className = "form-check-label";
     hostText.htmlFor = hostId;
-    hostText.appendChild(document.createTextNode("Only this host (recommended): "));
+    hostText.appendChild(document.createTextNode(`${t("flow_rtt_exclude.scope.host")} `));
     const hostCode = document.createElement("code");
     hostCode.textContent = hostCidr;
     hostText.appendChild(hostCode);
@@ -171,7 +177,7 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     const wideText = document.createElement("label");
     wideText.className = "form-check-label";
     wideText.htmlFor = wideId;
-    wideText.appendChild(document.createTextNode(`Common wider scope (use cautiously): `));
+    wideText.appendChild(document.createTextNode(`${t("flow_rtt_exclude.scope.wide")} `));
     const wideCode = document.createElement("code");
     wideCode.textContent = wideCidr;
     wideText.appendChild(wideCode);
@@ -180,7 +186,7 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
 
     const selected = document.createElement("div");
     selected.className = "small text-muted mt-3";
-    selected.appendChild(document.createTextNode("Selected: "));
+    selected.appendChild(document.createTextNode(`${t("flow_rtt_exclude.selected")} `));
     const selectedCode = document.createElement("code");
     selectedCode.textContent = selectedCidr;
     selected.appendChild(selectedCode);
@@ -201,18 +207,18 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "btn btn-outline-secondary";
-    copyBtn.textContent = "Copy CIDR";
+    copyBtn.textContent = t("flow_rtt_exclude.copy_cidr");
 
     const openBtn = document.createElement("button");
     openBtn.type = "button";
     openBtn.className = "btn btn-outline-primary";
-    openBtn.textContent = "Open Flow Tracking Config";
+    openBtn.textContent = t("flow_rtt_exclude.open_config");
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "btn btn-secondary";
     closeBtn.setAttribute("data-bs-dismiss", "modal");
-    closeBtn.textContent = "Close";
+    closeBtn.textContent = t("common.action.close");
 
     footer.appendChild(copyBtn);
     footer.appendChild(openBtn);
@@ -234,7 +240,7 @@ export function openFlowRttExcludeWizard({ remoteIp, sourceLabel } = {}) {
         copyBusy = true;
         const original = copyBtn.textContent;
         const ok = await copyTextToClipboard(selectedCidr);
-        copyBtn.textContent = ok ? "Copied!" : "Copy failed";
+        copyBtn.textContent = ok ? t("flow_rtt_exclude.copied") : t("flow_rtt_exclude.copy_failed");
         setTimeout(() => {
             copyBtn.textContent = original;
             copyBusy = false;

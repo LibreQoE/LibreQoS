@@ -2,6 +2,7 @@ import {clearDashDiv, theading} from "../helpers/builders";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {rttNanosAsSpan} from "../helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t, tAttr} from "../i18n/index.js";
 
 export class Top10EndpointsByCountry extends DashletBaseInsight {
     constructor(slot) {
@@ -13,11 +14,11 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
     }
 
     title() {
-        return "Endpoints by Country";
+        return t("dashlet.name.top_10_endpoints_by_country");
     }
 
     tooltip() {
-        return "<h5>Endpoints by Country</h5><p>Top 10 endpoints by country/region, ordered by download speed. This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.country.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -38,18 +39,18 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
         if (msg.event === "EndpointsByCountry") {
             let target = document.getElementById(this.id);
 
-            let t = document.createElement("table");
-            t.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
+            let table = document.createElement("table");
+            table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
 
             let th = document.createElement("thead");
             th.classList.add("small");
             th.appendChild(theading(""));
-            th.appendChild(theading("Country"));
-            th.appendChild(theading("DL ⬇️"));
-            th.appendChild(theading("UL ⬆️"));
-            th.appendChild(theading("⬇ RTT"));
-            th.appendChild(theading("️️⬆ RTT"));
-            t.appendChild(th);
+            th.appendChild(theading(t("circuit.traffic.country")));
+            th.appendChild(theading(t("common.table.dl_abbr")));
+            th.appendChild(theading(t("common.table.ul_abbr")));
+            th.appendChild(theading(t("common.table.rtt_dl_arrow")));
+            th.appendChild(theading(t("common.table.rtt_ul_arrow")));
+            table.appendChild(th);
 
             let tbody = document.createElement("tbody");
             let count = 0;
@@ -63,7 +64,7 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
                 let flag = document.createElement("td");
                 if (r[3] !== null && r[3] !== "") {
                     let flagName = r[3].toLowerCase();
-                    flag.innerHTML = "<img alt='Flag: " + flagName + "' src='flags/" + flagName + ".svg' style='width: 20px; height: 20px;'>";
+                    flag.innerHTML = `<img alt="${tAttr("common.flag_alt", {country: flagName})}" src="flags/${flagName}.svg" style="width: 20px; height: 20px;">`;
                 } else {
                     flag.innerText = "️";
                 }
@@ -92,13 +93,13 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
                 tbody.appendChild(row);
                 count++;
             });
-            t.appendChild(tbody);
+            table.appendChild(tbody);
 
             // Display it
             clearDashDiv(this.id, target);
             const tableWrap = document.createElement("div");
             tableWrap.classList.add("lqos-table-wrap");
-            tableWrap.appendChild(t);
+            tableWrap.appendChild(table);
             target.appendChild(tableWrap);
         }
     }

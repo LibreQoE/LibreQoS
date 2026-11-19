@@ -4,6 +4,11 @@ import {get_ws_client} from "../../pubsub/ws";
 import {heading5Icon} from "../helpers/content_builders";
 import {openDashboardEditor} from "./dashboard_editor";
 import {appendIconText} from "../../helpers/safe_dom.mjs";
+import {t} from "../../i18n/index.js";
+
+// translatable: false — "_tabs", "_tab_content", "_tab_", "_edit", "_cadence", "_pause", "_debug_dump" are DOM id suffixes this file concatenates onto the dashboard's div name, not labels
+// translatable: false — ".dashgraph, .dashgraphZoomed", "# _tabs .nav-link", "# _tab_content .tab-pane", "_tabs .nav-link", "_tab_content .tab-pane" are DOM selectors, not labels
+// translatable: false — "New dashboard layout:" and "Warning: NULL div found in dashlet list" are developer console diagnostics, never rendered
 
 const DIAGNOSTIC_CHANNELS = new Set(["Cpu", "Ram", "RttHistogram"]);
 const DASHBOARD_DATA_STALE_MS = 15000;
@@ -26,7 +31,7 @@ export class Dashboard {
         // Set up the div
         this.parentDiv = document.getElementById(this.divName);
         if (this.parentDiv === null) {
-            throw new Error("No element found with the id '" + this.divName + "'");
+            throw new Error(t("dashboard.missing_element", {id: this.divName}));
         }
 
         // Editor Support
@@ -839,18 +844,16 @@ export class Dashboard {
         if (parent === null) return;
         let editDiv = document.createElement("span");
         editDiv.id = this.divName + "_edit";
-        editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> " + t("dashboard.edit") + "</button>";
         editDiv.onclick = () => {
             // New Editor - pass the full layout with tabs
             let availableElements = [];
             this.dashletMenu.forEach((d) => {
-                let category = "Uncategorized";
-                if (d.category !== null) category = d.category;
                 availableElements.push({
-                    name: d.name,
+                    name: d.name(),
                     size: d.size,
                     tag: d.tag,
-                    category,
+                    category: d.category ? d.category() : t("dashboard.uncategorized"),
                 });
             });
 
@@ -866,7 +869,7 @@ export class Dashboard {
         cadenceDiv.id = this.divName + "_cadence";
         let cadenceLabel = document.createElement("label");
         cadenceLabel.htmlFor = "cadencePicker";
-        cadenceLabel.innerText = "Refresh Rate: ";
+        cadenceLabel.innerText = t("dashboard.refresh_rate");
         let cadencePicker = document.createElement("input");
         cadencePicker.id = "cadencePicker";
         cadencePicker.type = "number";
@@ -884,14 +887,14 @@ export class Dashboard {
         // Pause Button
         let pauseDiv = document.createElement("span");
         pauseDiv.id = this.divName + "_pause";
-        pauseDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm ms-2'><i class='fa fa-pause'></i> Pause</button>";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm ms-2'><i class='fa fa-pause'></i> " + t("dashboard.pause") + "</button>";
         pauseDiv.onclick = () => {
             this.paused = !this.paused;
             let target = document.getElementById(this.divName + "_pause");
             if (this.paused) {
-                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-play'></i> Resume</button>";
+                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-play'></i> " + t("dashboard.resume") + "</button>";
             } else {
-                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-pause'></i> Pause</button>";
+                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-pause'></i> " + t("dashboard.pause") + "</button>";
             }
         };
 
@@ -899,7 +902,7 @@ export class Dashboard {
         if (this.#debugDumpEnabled()) {
             debugDumpDiv = document.createElement("span");
             debugDumpDiv.id = this.divName + "_debug_dump";
-            debugDumpDiv.innerHTML = "<button type='button' class='btn btn-outline-secondary btn-sm ms-2'><i class='fa fa-download'></i> Debug Dump</button>";
+            debugDumpDiv.innerHTML = "<button type='button' class='btn btn-outline-secondary btn-sm ms-2'><i class='fa fa-download'></i> " + t("dashboard.debug_dump") + "</button>";
             debugDumpDiv.onclick = () => {
                 this.#downloadDebugDump();
             };
@@ -934,24 +937,24 @@ export class Dashboard {
 
         let c1 = document.createElement("div");
         c1.classList.add("col-3");
-        c1.appendChild(heading5Icon("gear", "Dashboard Options"));
+        c1.appendChild(heading5Icon("gear", t("dashboard.options")));
         let nuke = document.createElement("button");
         nuke.type = "button";
         nuke.classList.add("btn", "btn-sm", "btn-secondary");
-        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All";
+        nuke.innerHTML = "<i class='fa fa-trash'></i> " + t("dashboard.remove_all");
         nuke.onclick = () => { this.removeAll(); };
         c1.appendChild(nuke);
         let filler = document.createElement("button");
         filler.type = "button";
         filler.classList.add("btn", "btn-sm", "btn-secondary");
-        filler.innerHTML = "<i class='fa fa-plus-square'></i> Add All";
+        filler.innerHTML = "<i class='fa fa-plus-square'></i> " + t("dashboard.add_all");
         filler.onclick = () => { this.addAll(); };
         filler.style.marginLeft = "5px";
         c1.appendChild(filler);
 
         let c2 = document.createElement("div");
         c2.classList.add("col-3");
-        c2.appendChild(heading5Icon("plus", "Add Dashboard Item"));
+        c2.appendChild(heading5Icon("plus", t("dashboard.add_item")));
         let list = document.createElement("div");
         list.classList.add("dropdown");
         list.id = "dropdown-widgets";
@@ -959,7 +962,7 @@ export class Dashboard {
         listBtn.type = "button";
         listBtn.classList.add("btn", "btn-secondary", "btn-sm", "dropdown-toggle");
         listBtn.setAttribute("data-bs-toggle", "dropdown");
-        listBtn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
+        listBtn.innerHTML = "<i class='fa fa-plus'></i> " + t("dashboard.add_widget");
         list.appendChild(listBtn);
         let listUl = document.createElement("ul");
         listUl.classList.add("dropdown-menu", "dropdown-menu-sized");
@@ -967,7 +970,7 @@ export class Dashboard {
             let entry = document.createElement("li");
             let item = document.createElement("a");
             item.classList.add("dropdown-item");
-            item.innerText = d.name;
+            item.innerText = d.name();
             let myTag = d.tag;
             item.onclick = () => {
                 let didSomething = false;
@@ -989,7 +992,7 @@ export class Dashboard {
 
         let c3 = document.createElement("div");
         c3.classList.add("col-3");
-        c3.appendChild(heading5Icon("save", "Save Layout"));
+        c3.appendChild(heading5Icon("save", t("dashboard.save_layout")));
 
         const wsClient = get_ws_client();
         const listenOnce = (eventName, handler) => {
@@ -1021,7 +1024,7 @@ export class Dashboard {
             if (name.length < 1) return;
             listenOnce("DashletSaveResult", (msg) => {
                 if (!msg || !msg.ok) {
-                    alert(msg && msg.error ? msg.error : "Failed to save dashboard layout");
+                    alert(msg && msg.error ? msg.error : t("dashboard.save_failed"));
                     return;
                 }
                 localStorage.setItem("forceEditMode", "true");
@@ -1041,7 +1044,7 @@ export class Dashboard {
 
         let c4 = document.createElement("div");
         c4.classList.add("col-3");
-        c4.appendChild(heading5Icon("save", "Saved Layouts"));
+        c4.appendChild(heading5Icon("save", t("dashboard.saved_layouts")));
         listenOnce("DashletThemes", (data) => {
             let list = document.createElement("ul");
             list.classList.add("list-group", "list-group-numbered");
@@ -1052,11 +1055,11 @@ export class Dashboard {
                 ln.href = "#";
                 appendIconText(ln, ["fa", "fa-save"], d.name);
                 ln.onclick = () => {
-                    let resp = confirm("Load [" + d.name + "] from [" + d.path + "]?");
+                    let resp = confirm(t("dashboard.load_confirm", {name: d.name, path: d.path}));
                     if (resp) {
                         listenOnce("DashletTheme", (x) => {
                             if (!x || !x.entries) {
-                                alert("Failed to load dashboard layout");
+                                alert(t("dashboard.load_failed"));
                                 return;
                             }
                             this.dashletIdentities = x.entries;
@@ -1071,13 +1074,13 @@ export class Dashboard {
                 dl.classList.add("badge","text-bg-danger");
                 dl.style.float = "right";
                 dl.href = "#";
-                dl.innerHTML = "<i class='fa fa-trash'></i> Delete";
+                dl.innerHTML = "<i class='fa fa-trash'></i> " + t("common.action.delete");
                 dl.onclick = () => {
-                    let resp = confirm("Delete [" + d.name + "] from [" + d.path + "]?");
+                    let resp = confirm(t("dashboard.delete_confirm", {name: d.name, path: d.path}));
                     if (resp) {
                         listenOnce("DashletDeleteResult", (msg) => {
                             if (!msg || !msg.ok) {
-                                alert(msg && msg.error ? msg.error : "Failed to delete dashboard layout");
+                                alert(msg && msg.error ? msg.error : t("dashboard.delete_failed"));
                                 return;
                             }
                             localStorage.setItem("forceEditMode", "true");

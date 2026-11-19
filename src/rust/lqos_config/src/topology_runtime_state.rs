@@ -241,6 +241,20 @@ pub struct TopologyShapingDeviceInput {
     /// Free-form operator/integration comment.
     #[serde(default)]
     pub comment: String,
+    /// Design card §3 rule 2: `true` when the topology fold synthesized this
+    /// row from `dynamic_circuits.json` (a RADIUS dynamic circuit), `false`
+    /// for every provisioned row. Topology-layer only: the marker never
+    /// reaches the data plane, it names the origin for the fold's supersede
+    /// rule. Omitted from serialization when false, so a static-only
+    /// `shaping_inputs.json` stays byte-identical across this schema
+    /// addition.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dynamic: bool,
+}
+
+/// Serde helper: omits a `false` flag from a payload.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// A stable tunnel classification identity (T-arc §2.8): the outer VXLAN VNI

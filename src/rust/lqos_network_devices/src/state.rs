@@ -7,12 +7,17 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 #[derive(Clone)]
 struct PublishedShapedState {
     shaped: Arc<ConfigShapedDevices>,
     cache: Arc<ShapedDeviceHashCache>,
+    /// The device ROWS the published rows were synthesized for by the topology
+    /// fold (design card §3 rule 2), keyed `(circuit id, device id)`. Empty when
+    /// the snapshot came from a pre-fold source, which never carries dynamic
+    /// rows.
+    dynamic_origin_rows: Arc<lqos_utils::DynamicOriginRows>,
     generation: u64,
 }
 
@@ -22,11 +27,50 @@ static SHAPED_STATE: Lazy<ArcSwap<PublishedShapedState>> = Lazy::new(|| {
     ArcSwap::new(Arc::new(PublishedShapedState {
         shaped: Arc::new(ConfigShapedDevices::default()),
         cache: Arc::new(ShapedDeviceHashCache::default()),
+        dynamic_origin_rows: Arc::new(lqos_utils::DynamicOriginRows::default()),
         generation: 0,
     }))
 });
 static DYNAMIC_CIRCUITS: Lazy<ArcSwap<Vec<DynamicCircuit>>> =
     Lazy::new(|| ArcSwap::new(Arc::new(Vec::new())));
+
+/// Whether this process holds `dynamic_circuits.json`'s full membership.
+///
+/// A failed startup load must never be mistaken for an empty membership: the
+/// first mutation would rewrite the store from the empty snapshot and delete
+/// every circuit the load never read. `Failed` refuses membership writes until a
+/// later load succeeds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DynamicStoreMembership {
+    /// No load has run yet in this process (the actor loads at startup, before
+    /// it processes commands).
+    Unknown,
+    /// The last load returned the store's membership (a missing file counts: it
+    /// is an empty membership).
+    Loaded,
+    /// The last load failed; the in-memory snapshot is not the membership.
+    Failed,
+}
+
+static DYNAMIC_STORE_MEMBERSHIP: AtomicU8 = AtomicU8::new(0);
+
+pub(crate) fn dynamic_store_membership() -> DynamicStoreMembership {
+    match DYNAMIC_STORE_MEMBERSHIP.load(Ordering::Relaxed) {
+        1 => DynamicStoreMembership::Loaded,
+        2 => DynamicStoreMembership::Failed,
+        _ => DynamicStoreMembership::Unknown,
+    }
+}
+
+/// Records the outcome of the last dynamic-store load.
+pub(crate) fn note_dynamic_store_membership(membership: DynamicStoreMembership) {
+    let value = match membership {
+        DynamicStoreMembership::Unknown => 0,
+        DynamicStoreMembership::Loaded => 1,
+        DynamicStoreMembership::Failed => 2,
+    };
+    DYNAMIC_STORE_MEMBERSHIP.store(value, Ordering::Relaxed);
+}
 static NETWORK_JSON: Lazy<RwLock<NetworkJson>> = Lazy::new(|| RwLock::new(NetworkJson::default()));
 
 pub(crate) fn shaped_devices_snapshot() -> Arc<ConfigShapedDevices> {
@@ -40,6 +84,12 @@ pub(crate) fn shaped_device_hash_cache_snapshot() -> Arc<ShapedDeviceHashCache> 
 pub(crate) fn shaped_devices_catalog() -> ShapedDevicesCatalog {
     let state = SHAPED_STATE.load_full();
     ShapedDevicesCatalog::new(state.shaped.clone(), state.cache.clone(), state.generation)
+}
+
+/// The device rows the published shaped rows were synthesized for by the
+/// topology fold; empty when the snapshot is a pre-fold source.
+pub(crate) fn dynamic_origin_rows() -> Arc<lqos_utils::DynamicOriginRows> {
+    SHAPED_STATE.load().dynamic_origin_rows.clone()
 }
 
 pub(crate) fn dynamic_circuits_snapshot() -> Arc<Vec<DynamicCircuit>> {
@@ -56,25 +106,39 @@ pub(crate) fn with_network_json_write<R>(f: impl FnOnce(&mut NetworkJson) -> R) 
     f(&mut writer)
 }
 
-pub(crate) fn publish_shaped_devices(new_file: ConfigShapedDevices) {
+pub(crate) fn publish_shaped_devices(
+    new_file: ConfigShapedDevices,
+    dynamic_origin_rows: lqos_utils::DynamicOriginRows,
+) {
     let generation = NEXT_SHAPED_GENERATION.fetch_add(1, Ordering::Relaxed);
     let shaped = Arc::new(new_file);
     let cache = Arc::new(ShapedDeviceHashCache::from_devices(&shaped.devices));
     SHAPED_STATE.store(Arc::new(PublishedShapedState {
         shaped,
         cache,
+        dynamic_origin_rows: Arc::new(dynamic_origin_rows),
         generation,
     }));
 }
 
+/// Replaces the published snapshot with an edited copy of the same world.
+///
+/// A swap is the operator/repair edit path: it modifies rows of the world it
+/// replaces, so the row origins carry forward unchanged. Only a full reload
+/// (which re-reads the fold) re-derives them.
 pub(crate) fn swap_shaped_devices_snapshot(
     new_snapshot: Arc<ConfigShapedDevices>,
 ) -> Arc<ConfigShapedDevices> {
     let generation = NEXT_SHAPED_GENERATION.fetch_add(1, Ordering::Relaxed);
     let cache = Arc::new(ShapedDeviceHashCache::from_devices(&new_snapshot.devices));
+    let dynamic_origin_rows = {
+        let current = SHAPED_STATE.load();
+        current.dynamic_origin_rows.clone()
+    };
     let new_state = Arc::new(PublishedShapedState {
         shaped: new_snapshot,
         cache,
+        dynamic_origin_rows,
         generation,
     });
     let old = SHAPED_STATE.swap(new_state);
@@ -99,38 +163,24 @@ pub(crate) fn publish_dynamic_circuits_snapshot(new_snapshot: Vec<DynamicCircuit
     DYNAMIC_CIRCUITS.store(Arc::new(new_snapshot));
 }
 
-pub(crate) fn refresh_dynamic_circuits_last_seen_for_hashes(
-    seen_device_hashes: &HashSet<i64>,
-    seen_circuit_hashes: &HashSet<i64>,
-    now_unix: u64,
-) -> bool {
-    let snapshot = dynamic_circuits_snapshot();
-    if snapshot.is_empty() {
-        return false;
-    }
-
-    let mut updated = snapshot.as_ref().clone();
-    let mut changed = false;
-    for circuit in updated.iter_mut() {
-        let is_seen = seen_device_hashes.contains(&circuit.shaped.device_hash)
-            || seen_circuit_hashes.contains(&circuit.shaped.circuit_hash);
-        if is_seen && circuit.last_seen_unix != now_unix {
-            circuit.last_seen_unix = now_unix;
-            changed = true;
-        }
-    }
-
-    if changed {
-        publish_dynamic_circuits_snapshot(updated);
-    }
-
-    changed
-}
+/// How many refreshed circuit ids the liveness INFO line names before falling
+/// back to a count. Bounds the line on a busy box (the feed runs on the
+/// analytics poll path, one call per poll).
+const LIVENESS_IDS_LOGGED: usize = 8;
 
 /// K1 §1.4: the BRIDGE liveness feed. Touches `last_seen_unix` for dynamic
 /// circuits whose normalized circuit id appears in the bridge's active set.
-/// Distinct from the kernel-observation feed (inert on DPDK-bound NICs) and
-/// from the RADIUS upsert feed (interims).
+///
+/// This is a memory-only touch; the actor's maintenance tick checkpoints the
+/// result into the unhashed liveness file.
+///
+/// Side effects: publishes the updated snapshot and, when at least one stamp
+/// moved, emits ONE bounded INFO line naming the refreshed circuit ids and the
+/// stamp they received (first [`LIVENESS_IDS_LOGGED`] ids, then a count). That
+/// line is the A7 instrument (u17): a row whose TTL clock moved because the
+/// bridge still measured traffic for it is otherwise only inferable from the
+/// checkpoint's value. Bounded on purpose — this runs on the analytics poll
+/// path, so it must never become a per-id or per-packet log.
 pub(crate) fn refresh_dynamic_circuits_last_seen_for_circuit_ids(
     seen_circuit_ids: &HashSet<String>,
     now_unix: u64,
@@ -142,15 +192,28 @@ pub(crate) fn refresh_dynamic_circuits_last_seen_for_circuit_ids(
 
     let mut updated = snapshot.as_ref().clone();
     let mut changed = false;
+    let mut refreshed = 0usize;
+    let mut refreshed_ids: Vec<String> = Vec::new();
     for circuit in updated.iter_mut() {
         let key = lqos_utils::normalize_circuit_id_key(&circuit.shaped.circuit_id);
         if seen_circuit_ids.contains(&key) && circuit.last_seen_unix != now_unix {
             circuit.last_seen_unix = now_unix;
             changed = true;
+            refreshed += 1;
+            if refreshed_ids.len() < LIVENESS_IDS_LOGGED {
+                refreshed_ids.push(circuit.shaped.circuit_id.clone());
+            }
         }
     }
 
     if changed {
+        let mut shown = refreshed_ids.join(", ");
+        if refreshed > refreshed_ids.len() {
+            shown.push_str(&format!(" (+{} more)", refreshed - refreshed_ids.len()));
+        }
+        tracing::info!(
+            "Dynamic liveness: last_seen_unix={now_unix} refreshed {refreshed} circuit(s): {shown}"
+        );
         publish_dynamic_circuits_snapshot(updated);
     }
 
@@ -306,15 +369,12 @@ mod tests {
         );
     }
 
-    /// K1 §1.4 #12-MED: the three liveness feeds are DISTINCT. The kernel
-    /// observation feed with zero observations does not advance `last_seen`;
-    /// the bridge feed advances only for matching circuit ids.
-    static DYNAMIC_FEED_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    /// K1 §1.4 #12-MED: the bridge liveness feed advances only for matching
+    /// circuit ids.
     #[test]
     fn bridge_feed_advances_last_seen_only_for_matching_circuit_ids() {
         use std::collections::HashSet;
-        let _guard = DYNAMIC_FEED_TEST_LOCK.lock().unwrap();
+        let _guard = crate::tests::TEST_LOCK.lock();
         super::publish_dynamic_circuits_snapshot(Vec::new());
         let circuit = lqos_config::DynamicCircuit {
             shaped: lqos_config::ShapedDevice {
@@ -324,14 +384,6 @@ mod tests {
             last_seen_unix: 100,
         };
         super::publish_dynamic_circuits_snapshot(vec![circuit]);
-
-        // Kernel observation feed with NO observations: no advance.
-        assert!(!super::refresh_dynamic_circuits_last_seen_for_hashes(
-            &HashSet::new(),
-            &HashSet::new(),
-            200
-        ));
-        assert_eq!(super::dynamic_circuits_snapshot()[0].last_seen_unix, 100);
 
         // Bridge feed: advances for the matching circuit id.
         let ids: HashSet<String> = ["c1".to_string()].into_iter().collect();
@@ -348,11 +400,11 @@ mod tests {
         assert_eq!(super::dynamic_circuits_snapshot()[0].last_seen_unix, 200);
     }
 
-    /// Stopping BOTH liveness feeds leaves `last_seen` at the last touch, so
+    /// Stopping the liveness feed leaves `last_seen` at the last touch, so
     /// the store's TTL prune expires the circuit.
     #[test]
     fn stopping_both_feeds_expires_at_ttl() {
-        let _guard = DYNAMIC_FEED_TEST_LOCK.lock().unwrap();
+        let _guard = crate::tests::TEST_LOCK.lock();
         super::publish_dynamic_circuits_snapshot(Vec::new());
         let circuit = lqos_config::DynamicCircuit {
             shaped: lqos_config::ShapedDevice {
@@ -363,7 +415,7 @@ mod tests {
         };
         super::publish_dynamic_circuits_snapshot(vec![circuit]);
         // No feed touches last_seen; at ttl+1 the row is expired.
-        let expired = crate::dynamic::expired_dynamic_circuit_ids(
+        let expired = crate::dynamic_engine::expired_dynamic_circuit_ids(
             &super::dynamic_circuits_snapshot(),
             1_000 + 60 + 1,
             60,

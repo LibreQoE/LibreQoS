@@ -23,6 +23,49 @@ use std::net::IpAddr;
 /// Reserved synthetic root node id the bridge attaches top-level nodes under.
 pub const DATA_PLANE_ROOT_NODE_ID: &str = "root";
 
+/// Reserved display NAME of the dataplane's synthetic root node.
+///
+/// The store-side twin of [`DATA_PLANE_ROOT_NODE_ID`]. The root is IMPLICIT in
+/// the effective network — it never appears as an exported node, so it has no
+/// exported id a shaped-device row could cite — and a store row attaches to it
+/// by naming it (`parent_node = "Root"`, no id), which the wire normalizes to
+/// [`DATA_PLANE_ROOT_NODE_ID`].
+///
+/// ONE constant because this is a producer/consumer contract across crates:
+/// `lqos_network_devices` writes the sentinel into the dynamic store and
+/// `lqos_topology`'s fold must recognize exactly it. A rename on either side
+/// silently defers every root-attached row.
+pub const DATA_PLANE_ROOT_NAME: &str = "Root";
+
+/// `lqos-74t.179`: `parent_node_id == ""` is the producer's **legitimate
+/// sentinel for "no topology parent"** (the `RuntimeFallback` runtime path).
+/// ONE normalization, applied at the WIRE BOUNDARY (deserialization of these
+/// types), so every consumer sees `root` and no consumer can observe a
+/// pre-normalization empty parent. Producer emission is unchanged (it still
+/// emits `""`; the sentinel remains `""` on the wire for compatibility).
+pub fn normalize_parent_id(parent: &str) -> &str {
+    if parent.is_empty() {
+        DATA_PLANE_ROOT_NODE_ID
+    } else {
+        parent
+    }
+}
+
+/// Serde adapter for [`normalize_parent_id`]: used on every wire `parent`
+/// field so the normalization happens exactly once, at the boundary, for
+/// JSON, CBOR and every other serde format.
+pub mod parent_id {
+    use serde::{Deserialize, Deserializer};
+
+    /// Deserialize a parent id, mapping the empty sentinel to `root`.
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<String, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Ok(super::normalize_parent_id(&raw).to_string())
+    }
+}
+
 /// The broker's ACK timeout contract (ms). The bridge derives its
 /// `all_world_applied` convergence bound from this value (two thirds), so the
 /// bridge fails closed/R3 before the broker can classify a lost ACK as
@@ -86,7 +129,7 @@ pub fn content_key(tx: &DataplaneTransaction) -> String {
 
 /// The **structural identity** of a world: the sorted inner `(node_id, parent)`
 /// and leaf `(circuit_id, parent)` edges — **RATES IGNORED**. This is the LKG
-/// rebuild TRIGGER (`docs/lkg_as_cache_card.md` §2, flash_1's refinement): a
+/// rebuild TRIGGER (`docs/lkg_as_cache_card.md` §2): a
 /// STRUCTURAL difference ⇒ rebuild; a rate-only difference ⇒ shape the cache and
 /// let the incremental publish apply the rate delta (never an O(world) rebuild
 /// for a rate churn). ONE home: the broker's `translate::structural_identity`
@@ -332,7 +375,9 @@ pub enum DataplaneInnerOp {
     Upsert {
         /// Stable node id.
         node_id: String,
-        /// Parent node id (or the synthetic root).
+        /// Parent node id (or the synthetic root). `""` normalizes to `root`
+        /// at deserialization (`lqos-74t.179`).
+        #[serde(deserialize_with = "parent_id::deserialize")]
         parent_node_id: String,
         /// Download commit/ceil.
         download: DataplaneRatePair,
@@ -348,7 +393,8 @@ pub enum DataplaneInnerOp {
     Move {
         /// Stable node id.
         node_id: String,
-        /// New parent node id.
+        /// New parent node id. `""` normalizes to `root`.
+        #[serde(deserialize_with = "parent_id::deserialize")]
         new_parent_node_id: String,
     },
 }
@@ -361,7 +407,9 @@ pub enum DataplaneLeafOp {
     Upsert {
         /// Stable circuit id.
         circuit_id: String,
-        /// Parent node id.
+        /// Parent node id. `""` normalizes to `root` at deserialization
+        /// (`lqos-74t.179`; the producer still emits the `""` sentinel).
+        #[serde(deserialize_with = "parent_id::deserialize")]
         parent_node_id: String,
         /// Download commit/ceil.
         download: DataplaneRatePair,
@@ -381,7 +429,8 @@ pub enum DataplaneLeafOp {
     Move {
         /// Stable circuit id.
         circuit_id: String,
-        /// New parent node id.
+        /// New parent node id. `""` normalizes to `root`.
+        #[serde(deserialize_with = "parent_id::deserialize")]
         new_parent_node_id: String,
     },
 }
@@ -1583,5 +1632,127 @@ mod d1_mapping_model_tests {
         let w = fold(&base, &d);
         assert_eq!(w.mapping_ops.len(), 1, "one slot per identity");
         assert!(w.mapping_ops.contains(&map("192.0.2.1", "c2")), "last writer wins");
+    }
+}
+
+#[cfg(test)]
+mod empty_parent_normalization_tests {
+    use super::*;
+
+    fn parse(json: &str) -> DataplaneTransaction {
+        serde_json::from_str(json).expect("tx parses")
+    }
+
+    /// The producer's `""` sentinel normalizes to the synthetic root on EVERY
+    /// wire parent field (inner/leaf upsert and move), in every serde format.
+    #[test]
+    fn empty_parent_normalizes_to_root_on_all_four_fields() {
+        let tx = parse(
+            r#"{
+                "generation": "g",
+                "inner_ops": [
+                    {"op": "upsert", "node_id": "n1", "parent_node_id": "",
+                     "download": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "upload": {"commit_kbps": 1, "ceil_kbps": 2}},
+                    {"op": "move", "node_id": "n1", "new_parent_node_id": ""}
+                ],
+                "leaf_ops": [
+                    {"op": "upsert", "circuit_id": "c1", "parent_node_id": "",
+                     "download": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "upload": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "aqm": {"kind": "none"}, "admin_up": true},
+                    {"op": "move", "circuit_id": "c1", "new_parent_node_id": ""}
+                ],
+                "mapping_ops": []
+            }"#,
+        );
+        match &tx.inner_ops[0] {
+            DataplaneInnerOp::Upsert { parent_node_id, .. } => {
+                assert_eq!(parent_node_id, DATA_PLANE_ROOT_NODE_ID)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match &tx.inner_ops[1] {
+            DataplaneInnerOp::Move { new_parent_node_id, .. } => {
+                assert_eq!(new_parent_node_id, DATA_PLANE_ROOT_NODE_ID)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match &tx.leaf_ops[0] {
+            DataplaneLeafOp::Upsert { parent_node_id, .. } => {
+                assert_eq!(parent_node_id, DATA_PLANE_ROOT_NODE_ID)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match &tx.leaf_ops[1] {
+            DataplaneLeafOp::Move { new_parent_node_id, .. } => {
+                assert_eq!(new_parent_node_id, DATA_PLANE_ROOT_NODE_ID)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// A CLOSED world (no empty sentinel) is unchanged by the normalization:
+    /// named parents and an explicit root survive verbatim.
+    #[test]
+    fn named_and_root_parents_are_unchanged() {
+        let tx = parse(
+            r#"{
+                "generation": "g",
+                "inner_ops": [
+                    {"op": "upsert", "node_id": "site", "parent_node_id": "root",
+                     "download": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "upload": {"commit_kbps": 1, "ceil_kbps": 2}}
+                ],
+                "leaf_ops": [
+                    {"op": "upsert", "circuit_id": "c1", "parent_node_id": "site",
+                     "download": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "upload": {"commit_kbps": 1, "ceil_kbps": 2},
+                     "aqm": {"kind": "none"}, "admin_up": true}
+                ],
+                "mapping_ops": []
+            }"#,
+        );
+        match &tx.inner_ops[0] {
+            DataplaneInnerOp::Upsert { parent_node_id, .. } => {
+                assert_eq!(parent_node_id, "root")
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match &tx.leaf_ops[0] {
+            DataplaneLeafOp::Upsert { parent_node_id, .. } => {
+                assert_eq!(parent_node_id, "site")
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(normalize_parent_id("site"), "site");
+        assert_eq!(normalize_parent_id(""), DATA_PLANE_ROOT_NODE_ID);
+    }
+
+    /// CBOR (the live control-channel codec) takes the same boundary path.
+    #[test]
+    fn cbor_empty_parent_normalizes_to_root() {
+        let json = r#"{
+            "generation": "g",
+            "inner_ops": [],
+            "leaf_ops": [
+                {"op": "upsert", "circuit_id": "c1", "parent_node_id": "",
+                 "download": {"commit_kbps": 1, "ceil_kbps": 2},
+                 "upload": {"commit_kbps": 1, "ceil_kbps": 2},
+                 "aqm": {"kind": "none"}, "admin_up": true}
+            ],
+            "mapping_ops": []
+        }"#;
+        let tx = parse(json);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&tx, &mut bytes).expect("cbor encode");
+        let back: DataplaneTransaction =
+            ciborium::from_reader(&bytes[..]).expect("cbor decode");
+        match &back.leaf_ops[0] {
+            DataplaneLeafOp::Upsert { parent_node_id, .. } => {
+                assert_eq!(parent_node_id, DATA_PLANE_ROOT_NODE_ID)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }

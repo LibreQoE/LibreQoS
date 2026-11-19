@@ -1,3 +1,6 @@
+import {formatNumber} from "./i18n/format.js";
+import {t} from "./i18n/index.js";
+
 const HISTORY_SECONDS = 5 * 60;
 const HISTORY_WINDOW_MS = HISTORY_SECONDS * 1000;
 
@@ -9,6 +12,65 @@ function finiteOrNull(value) {
 
 function stringOrEmpty(value) {
     return value === null || value === undefined ? "" : String(value);
+}
+
+// A fixed number of decimals in the active locale's notation ("45.0" / "45,0"),
+// never grouped: these are single readings, not counts.
+function formatFixed(value, digits) {
+    return formatNumber(value, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+        useGrouping: false,
+    });
+}
+
+// The wire direction stays a code ("download"/"upload"); only the word shown
+// comes from the catalog.
+function directionLabel(directionName) {
+    return directionName === "upload" ? t("common.table.upload") : t("common.table.download");
+}
+
+// Action/outcome codes from `lqos_stormguard` (`RecommendationAction::as_str`
+// and the attempt outcome strings). The code is never rewritten; an unknown code
+// is reported as it arrived so a new server value stays visible.
+function actionLabel(code) {
+    switch (code) {
+    case "increase":
+        return t("tree.stormguard.action.increase");
+    case "increase_fast":
+        return t("tree.stormguard.action.increase_fast");
+    case "decrease":
+        return t("tree.stormguard.action.decrease");
+    case "decrease_fast":
+        return t("tree.stormguard.action.decrease_fast");
+    default:
+        return code || t("tree.stormguard.action_fallback");
+    }
+}
+
+function outcomeLabel(code) {
+    switch (code) {
+    case "applied":
+        return t("tree.stormguard.outcome.applied");
+    case "dry_run":
+        return t("tree.stormguard.outcome.dry_run");
+    case "failed":
+        return t("tree.stormguard.outcome.failed");
+    case "skipped":
+        return t("tree.stormguard.outcome.skipped");
+    default:
+        return code || t("tree.stormguard.outcome_fallback");
+    }
+}
+
+function trendLabel(points, field) {
+    const values = points
+        .map((point) => finiteOrNull(point[field]))
+        .filter((value) => value !== null);
+    if (values.length < 2) return t("tree.stormguard.trend.not_enough");
+    const delta = values.at(-1) - values[0];
+    if (Math.abs(delta) < 0.01) return t("tree.stormguard.trend.steady");
+    return delta > 0 ? t("tree.stormguard.trend.increasing") : t("tree.stormguard.trend.decreasing");
 }
 
 export function normalizeStormguardRuntime(payload) {
@@ -40,17 +102,32 @@ export function normalizeStormguardRuntime(payload) {
 
 export function formatStormguardSettings(runtime) {
     const settings = runtime?.settings;
-    if (!settings) return "Settings are not available yet.";
-    const multiplier = (value) => value === null ? "—" : `×${value.toFixed(2)}`;
+    if (!settings) return t("tree.stormguard.settings_unavailable");
+    const missing = "—";
+    const multiplier = (value) => value === null ? missing : `×${formatFixed(value, 2)}`;
+    const decimal = (value, digits) => value === null ? missing : formatFixed(value, digits);
     const parts = [
-        `increase ${multiplier(settings.increaseMultiplier)} (fast ${multiplier(settings.increaseFastMultiplier)})`,
-        `decrease ${multiplier(settings.decreaseMultiplier)} (fast ${multiplier(settings.decreaseFastMultiplier)})`,
+        t("tree.stormguard.settings_increase", {
+            multiplier: multiplier(settings.increaseMultiplier),
+            fast: multiplier(settings.increaseFastMultiplier),
+        }),
+        t("tree.stormguard.settings_decrease", {
+            multiplier: multiplier(settings.decreaseMultiplier),
+            fast: multiplier(settings.decreaseFastMultiplier),
+        }),
     ];
     if (runtime.strategy === "delay_probe" || runtime.strategy === "delay_probe_active") {
         parts.push(
-            `delay ${settings.delayThresholdMs?.toFixed(1) ?? "—"} ms or ${multiplier(settings.delayThresholdRatio)} baseline`,
-            `probe ${settings.probeIntervalSeconds?.toFixed(1) ?? "—"} s`,
-            `passive RTT minimum ${settings.minThroughputMbpsForRtt?.toFixed(2) ?? "—"} Mbps`,
+            t("tree.stormguard.settings_delay", {
+                ms: decimal(settings.delayThresholdMs, 1),
+                ratio: multiplier(settings.delayThresholdRatio),
+            }),
+            t("tree.stormguard.settings_probe", {
+                seconds: decimal(settings.probeIntervalSeconds, 1),
+            }),
+            t("tree.stormguard.settings_passive_min", {
+                mbps: decimal(settings.minThroughputMbpsForRtt, 2),
+            }),
         );
     }
     return parts.join("; ");
@@ -90,11 +167,13 @@ export function stormguardNodeContext(siteName, debugBySite, managedSites) {
         || (managedSites instanceof Set && managedSites.has(normalizedSite));
     let message;
     if (entry !== null) {
-        message = `${normalizedSite} is managed by StormGuard.`;
+        message = t("tree.stormguard.managed", {subject: normalizedSite});
     } else if (managed) {
-        message = `${normalizedSite} is managed by StormGuard, but directional diagnostics are not available yet.`;
+        message = t("tree.stormguard.managed_pending", {subject: normalizedSite});
     } else {
-        message = `${normalizedSite || "The selected node"} is not managed by StormGuard. Select a watched site to see directional diagnostics.`;
+        message = t("tree.stormguard.not_managed", {
+            subject: normalizedSite || t("tree.stormguard.selected_node"),
+        });
     }
     return {
         entry,
@@ -104,34 +183,36 @@ export function stormguardNodeContext(siteName, debugBySite, managedSites) {
     };
 }
 
-function trendLabel(points, field) {
-    const values = points
-        .map((point) => finiteOrNull(point[field]))
-        .filter((value) => value !== null);
-    if (values.length < 2) return "not enough data for a trend";
-    const delta = values.at(-1) - values[0];
-    if (Math.abs(delta) < 0.01) return "steady";
-    return delta > 0 ? "increasing" : "decreasing";
-}
-
 export function summarizeStormguardHistory(points, directionName) {
+    const direction = directionLabel(directionName);
     if (!Array.isArray(points) || points.length === 0) {
-        return `No ${directionName} graph history is available yet.`;
+        return t("tree.stormguard.no_history_for", {direction});
     }
     const latest = points.at(-1);
-    const value = (number, unit) => {
+    const reading = (number) => {
         const numeric = finiteOrNull(number);
-        return numeric === null ? "unavailable" : `${numeric.toFixed(1)} ${unit}`;
+        return numeric === null ? t("tree.stormguard.value_unavailable") : formatFixed(numeric, 1);
     };
     const actions = points
         .filter((point) => point.marker)
         .slice(-3)
-        .map((point) => `${point.marker.action || "action"} ${point.marker.outcome || "unknown"}`);
+        .map((point) => t("tree.stormguard.history_action_entry", {
+            action: actionLabel(point.marker.action),
+            outcome: outcomeLabel(point.marker.outcome),
+        }));
     return [
-        `Five-minute ${directionName} history.`,
-        `Latest queue limit ${value(latest.queueMbps, "Mbps")}; throughput ${value(latest.throughputMbps, "Mbps")}; effective RTT ${value(latest.effectiveRttMs, "ms")}; cooldown ${value(latest.cooldownSeconds, "seconds")}.`,
-        `Queue limit trend: ${trendLabel(points, "queueMbps")}.`,
-        actions.length > 0 ? `Recent actions: ${actions.join(", ")}.` : "No actions are present in this history window.",
+        t("tree.stormguard.history_intro", {direction}),
+        t("tree.stormguard.history_latest", {
+            direction,
+            limit: reading(latest.queueMbps),
+            throughput: reading(latest.throughputMbps),
+            rtt: reading(latest.effectiveRttMs),
+            cooldown: reading(latest.cooldownSeconds),
+        }),
+        t("tree.stormguard.history_trend", {trend: trendLabel(points, "queueMbps")}),
+        actions.length > 0
+            ? t("tree.stormguard.history_actions", {actions: actions.join(", ")})
+            : t("tree.stormguard.history_no_actions"),
     ].join(" ");
 }
 

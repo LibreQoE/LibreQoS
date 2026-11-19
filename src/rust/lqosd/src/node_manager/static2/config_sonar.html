@@ -5,91 +5,91 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Sonar Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Configure Sonar API access plus the SNMP and model metadata LibreQoS uses for wireless device enrichment.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.sonar.title">Sonar Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.sonar.subtitle">Configure Sonar API access plus the SNMP and model metadata LibreQoS uses for wireless device enrichment.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableSonar">
-                <label class="form-check-label" for="enableSonar">Enable Sonar Integration</label>
-                <div class="form-text">Enable integration with Sonar billing system</div>
+                <label class="form-check-label" for="enableSonar" data-i18n="config.sonar.enable">Enable Sonar Integration</label>
+                <div class="form-text" data-i18n="config.sonar.enable_help">Enable integration with Sonar billing system</div>
             </div>
 
             <div class="mb-3">
-                <label for="sonarApiUrl" class="form-label">API URL</label>
+                <label for="sonarApiUrl" class="form-label" data-i18n="config.sonar.api_url">API URL</label>
                 <input type="text" class="form-control" id="sonarApiUrl">
-                <div class="form-text">Base URL for Sonar API (e.g. https://your-sonar.com)</div>
+                <div class="form-text" data-i18n="config.sonar.api_url_help">Base URL for Sonar API (e.g. https://your-sonar.com)</div>
             </div>
 
             <div class="mb-3">
-                <label for="sonarApiKey" class="form-label">API Key</label>
+                <label for="sonarApiKey" class="form-label" data-i18n="config.sonar.api_key">API Key</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="sonarApiKey" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearSonarApiKey">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearSonarApiKey" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="sonarApiKeyStatus"></div>
-                <div class="form-text">Sonar API key for authentication</div>
+                <div class="form-text" data-i18n="config.sonar.api_key_help">Sonar API key for authentication</div>
             </div>
 
             <div class="mb-3">
-                <label for="snmpCommunity" class="form-label">SNMP Community</label>
+                <label for="snmpCommunity" class="form-label" data-i18n="config.sonar.snmp_community">SNMP Community</label>
                 <input type="text" class="form-control" id="snmpCommunity" value="public">
-                <div class="form-text">SNMP community string for device polling</div>
+                <div class="form-text" data-i18n="config.sonar.snmp_community_help">SNMP community string for device polling</div>
             </div>
 
             <div class="mb-3">
-                <label for="airmaxModelIds" class="form-label">Airmax Model IDs</label>
+                <label for="airmaxModelIds" class="form-label" data-i18n="config.sonar.airmax_models">Airmax Model IDs</label>
                 <input type="text" class="form-control" id="airmaxModelIds">
-                <div class="form-text">Comma-separated list of Airmax model IDs</div>
+                <div class="form-text" data-i18n="config.sonar.airmax_models_help">Comma-separated list of Airmax model IDs</div>
             </div>
 
             <div class="mb-3">
-                <label for="ltuModelIds" class="form-label">LTU Model IDs</label>
+                <label for="ltuModelIds" class="form-label" data-i18n="config.sonar.ltu_models">LTU Model IDs</label>
                 <input type="text" class="form-control" id="ltuModelIds">
-                <div class="form-text">Comma-separated list of LTU model IDs</div>
+                <div class="form-text" data-i18n="config.sonar.ltu_models_help">Comma-separated list of LTU model IDs</div>
             </div>
 
             <div class="mb-3">
-                <label for="activeStatusIds" class="form-label">Active Status IDs</label>
+                <label for="activeStatusIds" class="form-label" data-i18n="config.sonar.active_statuses">Active Status IDs</label>
                 <input type="text" class="form-control" id="activeStatusIds">
-                <div class="form-text">Comma-separated list of active status IDs</div>
+                <div class="form-text" data-i18n="config.sonar.active_statuses_help">Comma-separated list of active status IDs</div>
             </div>
 
             <div class="mb-3">
-                <label for="recurringExcludedServiceNames" class="form-label">Recurring Service Exclusions</label>
+                <label for="recurringExcludedServiceNames" class="form-label" data-i18n="config.sonar.exclusions">Recurring Service Exclusions</label>
                 <input type="text" class="form-control" id="recurringExcludedServiceNames">
-                <div class="form-text">Comma-separated recurring service names that should never be treated as internet plans.</div>
+                <div class="form-text" data-i18n="config.sonar.exclusions_help">Comma-separated recurring service names that should never be treated as internet plans.</div>
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Recurring Service Rate Overrides</label>
+                <label class="form-label" data-i18n="config.sonar.rate_overrides">Recurring Service Rate Overrides</label>
                 <div class="table-responsive">
                     <table class="table table-sm align-middle">
                         <thead>
                             <tr>
-                                <th scope="col">Enabled</th>
-                                <th scope="col">Exact Service Name</th>
-                                <th scope="col">Download Mbps</th>
-                                <th scope="col">Upload Mbps</th>
+                                <th scope="col" data-i18n="config.sonar.rates.enabled">Enabled</th>
+                                <th scope="col" data-i18n="config.sonar.rates.service_name">Exact Service Name</th>
+                                <th scope="col" data-i18n="config.sonar.rates.download_mbps">Download Mbps</th>
+                                <th scope="col" data-i18n="config.sonar.rates.upload_mbps">Upload Mbps</th>
                                 <th scope="col"></th>
                             </tr>
                         </thead>
                         <tbody id="recurringServiceRatesBody"></tbody>
                     </table>
                 </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="addRecurringRateRow">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="addRecurringRateRow" data-i18n="config.sonar.rates.add">
                     <i class="fa fa-plus"></i> Add Recurring Rate
                 </button>
-                <div class="form-text">Used only when an active account has no usable DATA service. Match names exactly and whitelist only internet plans.</div>
+                <div class="form-text" data-i18n="config.sonar.rates.help">Used only when an active account has no usable DATA service. Match names exactly and whitelist only internet plans.</div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.sonar.save">Save Changes</button>
         </div>
     </form>
 </div>

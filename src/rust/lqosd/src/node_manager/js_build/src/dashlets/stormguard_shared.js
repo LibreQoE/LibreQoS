@@ -1,6 +1,31 @@
 import {loadConfig} from "../config/config_helper";
+import {formatNumber} from "../i18n/format.js";
+import {t} from "../i18n/index.js";
 
 const CHANGE_RECENT_WINDOW_SECONDS = 300;
+
+// The two precisions the StormGuard sentences print: one decimal for a cooldown
+// in seconds, two for a delay in milliseconds. `formatNumber` keeps exactly
+// those digits and takes the decimal mark from the active locale, so a Spanish
+// sentence reads "12,5 s" while the English one reads "12.5 s".
+const ONE_DECIMAL = {minimumFractionDigits: 1, maximumFractionDigits: 1};
+const TWO_DECIMALS = {minimumFractionDigits: 2, maximumFractionDigits: 2};
+// A queue rate in the site tables: two fraction digits at most, no trailing
+// zeros, so "1000" stays "1000" instead of "1000.00".
+const STORMGUARD_MBPS = {maximumFractionDigits: 2};
+// `Intl` percent style takes the 0–1 ratio and places the mark itself: "2.50%"
+// in English, "2,50 %" in Spanish.
+const STORMGUARD_PERCENT = {style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2};
+
+// Attention weights keyed by the summary's stable `code`. The label is display
+// text and changes with the locale, so nothing may compare on it.
+const ATTENTION_SCORES = new Map([
+    ["congestion", 60],
+    ["reducing", 50],
+    ["recovering", 40],
+    ["at_floor", 20],
+    ["at_ceiling", 10],
+]);
 
 const listeners = new Set();
 const store = {
@@ -32,21 +57,22 @@ function titleCase(value) {
 export function formatStormguardMbps(value) {
     const n = num(value);
     if (n === null) return "—";
-    return n.toLocaleString(undefined, {maximumFractionDigits: 2});
+    return formatNumber(n, STORMGUARD_MBPS);
 }
 
 export function formatStormguardPercent(value) {
     const n = num(value);
     if (n === null) return "—";
-    return `${(n * 100).toFixed(2)}%`;
+    return formatNumber(n, STORMGUARD_PERCENT);
 }
 
 export function formatStormguardMs(value) {
     const n = num(value);
     if (n === null) return "—";
-    return `${n.toFixed(2)} ms`;
+    return `${formatNumber(n, TWO_DECIMALS)} ms`;
 }
 
+// translatable: false — "m s" and "h m" are the unit pairs the age formatter prints beside its digits, not labels
 export function formatStormguardAgeSeconds(value) {
     const n = num(value);
     if (n === null) return "—";
@@ -58,9 +84,10 @@ export function formatStormguardAgeSeconds(value) {
 export function directionSummary(direction) {
     if (!direction) {
         return {
-            label: "No Data",
+            code: "no_data",
+            label: t("dashlet.stormguard.state.no_data"),
             className: "bg-light text-secondary border",
-            reason: "No live metrics yet",
+            reason: t("dashlet.stormguard.reason.no_data"),
         };
     }
 
@@ -75,128 +102,126 @@ export function directionSummary(direction) {
 
     if (cooldown > 0.05) {
         return {
-            label: "Cooling Down",
+            code: "cooling",
+            label: t("dashlet.stormguard.state.cooling"),
             className: "bg-warning-subtle text-warning border border-warning-subtle",
-            reason: `${cooldown.toFixed(1)}s remaining`,
+            reason: t("tree.stormguard.cooldown_remaining", {seconds: formatNumber(cooldown, ONE_DECIMAL)}),
         };
     }
 
     if (action.includes("decrease")) {
         return {
-            label: "Reducing",
+            code: "reducing",
+            label: t("dashlet.stormguard.state.reducing"),
             className: "bg-danger-subtle text-danger border border-danger-subtle",
-            reason: "StormGuard most recently lowered this queue",
+            reason: t("dashlet.stormguard.reason.reduced"),
         };
     }
 
     if (action.includes("increase")) {
         return {
-            label: "Recovering",
+            code: "recovering",
+            label: t("dashlet.stormguard.state.recovering"),
             className: "bg-success-subtle text-success border border-success-subtle",
-            reason: "StormGuard most recently raised this queue",
+            reason: t("dashlet.stormguard.reason.recovered"),
         };
     }
 
     if (queue !== null && min !== null && queue <= min && direction.can_decrease === false) {
         return {
-            label: "At Floor",
+            code: "at_floor",
+            label: t("dashlet.stormguard.state.at_floor"),
             className: "bg-secondary-subtle text-secondary border border-secondary-subtle",
-            reason: "Queue is already at its configured minimum",
+            reason: t("dashlet.stormguard.reason.at_floor"),
         };
     }
 
     if (queue !== null && max !== null && queue >= max && direction.can_increase === false) {
         return {
-            label: "At Ceiling",
+            code: "at_ceiling",
+            label: t("dashlet.stormguard.state.at_ceiling"),
             className: "bg-primary-subtle text-primary border border-primary-subtle",
-            reason: "Queue is already at its configured maximum",
+            reason: t("dashlet.stormguard.reason.at_ceiling"),
         };
     }
 
     if (delay !== null && delay > 5) {
         return {
-            label: "Congestion Signal",
+            code: "congestion",
+            label: t("dashlet.stormguard.state.congestion"),
             className: "bg-danger-subtle text-danger border border-danger-subtle",
-            reason: `Standing delay is ${delay.toFixed(2)} ms above baseline`,
+            reason: t("dashlet.stormguard.reason.congestion", {ms: formatNumber(delay, TWO_DECIMALS)}),
         };
     }
 
     if (retrans !== null && retrans >= 0.01) {
         return {
-            label: "Loss Signal",
+            code: "loss",
+            label: t("dashlet.stormguard.state.loss"),
             className: "bg-warning-subtle text-warning border border-warning-subtle",
-            reason: `Retransmits are at ${formatStormguardPercent(retrans)}`,
+            reason: t("dashlet.stormguard.reason.loss", {percent: formatStormguardPercent(retrans)}),
         };
     }
 
     if (state === "warmup") {
         return {
-            label: "Warming Up",
+            code: "warmup",
+            label: t("dashlet.stormguard.state.warmup"),
             className: "bg-info-subtle text-info border border-info-subtle",
-            reason: "StormGuard is collecting baseline samples",
+            reason: t("dashlet.stormguard.reason.warmup"),
         };
     }
 
     return {
-        label: "Holding",
+        code: "holding",
+        label: t("dashlet.stormguard.state.holding"),
         className: "bg-light text-secondary border",
-        reason: "Monitoring conditions without changing the queue",
+        reason: t("dashlet.stormguard.reason.holding"),
     };
 }
 
 export function directionReason(direction) {
-    if (!direction) return "No live metrics yet.";
+    if (!direction) return t("dashlet.stormguard.detail.no_metrics");
     const cooldown = num(direction.cooldown_remaining_secs) ?? 0;
     if (cooldown > 0.05) {
-        return `Cooldown active for ${cooldown.toFixed(1)}s.`;
+        return t("dashlet.stormguard.detail.cooldown", {seconds: formatNumber(cooldown, ONE_DECIMAL)});
     }
 
     const delay = num(direction.delay_ms);
     if (delay !== null && delay > 0.5) {
-        return `Standing delay is ${delay.toFixed(2)} ms above the learned baseline.`;
+        return t("dashlet.stormguard.detail.delay", {ms: formatNumber(delay, TWO_DECIMALS)});
     }
 
     const retrans = num(direction.retrans_ma) ?? num(direction.retrans);
     if (retrans !== null && retrans >= 0.005) {
-        return `Retransmits are ${formatStormguardPercent(retrans)}.`;
+        return t("dashlet.stormguard.detail.retrans", {percent: formatStormguardPercent(retrans)});
     }
 
     const queue = num(direction.queue_mbps);
     const min = num(direction.min_mbps);
     const max = num(direction.max_mbps);
     if (queue !== null && min !== null && queue <= min && direction.can_decrease === false) {
-        return "The queue is already at the configured minimum.";
+        return t("dashlet.stormguard.detail.at_min");
     }
     if (queue !== null && max !== null && queue >= max && direction.can_increase === false) {
-        return "The queue is already at the configured maximum.";
+        return t("dashlet.stormguard.detail.at_max");
     }
 
     const throughput = num(direction.throughput_ma_mbps) ?? num(direction.throughput_mbps);
     if (throughput !== null && max !== null && throughput < max * 0.2) {
-        return "Load is low, so StormGuard is holding steady.";
+        return t("dashlet.stormguard.detail.low_load");
     }
 
-    return "StormGuard is monitoring conditions and waiting for a clearer signal.";
+    return t("dashlet.stormguard.detail.monitoring");
 }
 
 function computeAttentionScore(site) {
     let score = 0;
     if (site.changedRecently) score += 100;
     if (site.inCooldown) score += 80;
-    if (site.downloadSummary?.label === "Congestion Signal" || site.uploadSummary?.label === "Congestion Signal") {
-        score += 60;
-    }
-    if (site.downloadSummary?.label === "Reducing" || site.uploadSummary?.label === "Reducing") {
-        score += 50;
-    }
-    if (site.downloadSummary?.label === "Recovering" || site.uploadSummary?.label === "Recovering") {
-        score += 40;
-    }
-    if (site.downloadSummary?.label === "At Floor" || site.uploadSummary?.label === "At Floor") {
-        score += 20;
-    }
-    if (site.downloadSummary?.label === "At Ceiling" || site.uploadSummary?.label === "At Ceiling") {
-        score += 10;
+    const codes = new Set([site.downloadSummary?.code, site.uploadSummary?.code]);
+    for (const [code, weight] of ATTENTION_SCORES) {
+        if (codes.has(code)) score += weight;
     }
     return score;
 }
@@ -405,7 +430,7 @@ export function stormguardSelectedSite(snapshot) {
 export function stormguardConfigBadgeData(config) {
     if (!config) {
         return {
-            enabledLabel: "Unknown",
+            enabledLabel: t("topology.status.unknown"),
             enabledClass: "bg-light text-secondary border",
             strategy: "—",
             dryRunLabel: "—",
@@ -413,11 +438,11 @@ export function stormguardConfigBadgeData(config) {
     }
 
     return {
-        enabledLabel: config.enabled ? "Enabled" : "Disabled",
+        enabledLabel: config.enabled ? t("topology.status.enabled") : t("topology.status.disabled"),
         enabledClass: config.enabled
             ? "bg-success-subtle text-success border border-success-subtle"
             : "bg-light text-secondary border",
         strategy: titleCase(config.strategy || "unknown"),
-        dryRunLabel: config.dry_run ? "Dry Run" : "Live",
+        dryRunLabel: config.dry_run ? t("dashlet.stormguard.badge.dry_run") : t("dashlet.stormguard.badge.live"),
     };
 }

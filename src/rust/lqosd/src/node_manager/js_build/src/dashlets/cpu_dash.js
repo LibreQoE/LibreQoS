@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {CpuHistogram} from "../graphs/cpu_graph";
+import {t} from "../i18n/index.js";
 
 export class CpuDash extends BaseDashlet{
     constructor(slot) {
@@ -7,11 +8,11 @@ export class CpuDash extends BaseDashlet{
     }
 
     title() {
-        return "CPU Utilization";
+        return t("dashlet.name.cpu_utilization");
     }
 
     tooltip() {
-        return "<h5>CPU Utilization</h5><p>Percentage of CPU time spent on user processes, system processes, and idle time. This includes both LibreQoS and anything else running on the server.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.cpu.tooltip")}</p>`;
     }
 
     supportsZoom() {

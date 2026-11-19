@@ -1,0 +1,269 @@
+{
+  "supported": true,
+  "probes": [
+    { "probe": "identity", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "routerboard", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "neighbors", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "interfaces", "outcome": "present", "reason": null, "rows": 2 },
+    { "probe": "addresses", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "arp", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "bridge_ports", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "bridge_vlans", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "bridge_hosts", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "resource", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "health", "outcome": "present", "reason": null, "rows": 1 },
+    { "probe": "nat", "outcome": "present", "reason": null, "rows": 5 },
+    { "probe": "dhcp_leases", "outcome": "present", "reason": null, "rows": 4 }
+  ],
+  "lldp": [],
+  "arp": [],
+  "fdb": null,
+  "stations": [],
+  "interfaces": [],
+  "claims": [
+    {
+      "probe": "identity",
+      "row": 0,
+      "kind": "name",
+      "value": "cr1",
+      "source": "routeros-identity"
+    },
+    {
+      "probe": "routerboard",
+      "row": 0,
+      "kind": "serial",
+      "value": "HGC123",
+      "source": "routeros-serial"
+    },
+    {
+      "probe": "neighbors",
+      "row": 0,
+      "kind": "name",
+      "value": "FSW-West",
+      "source": "routeros-neighbors"
+    },
+    {
+      "probe": "neighbors",
+      "row": 0,
+      "kind": "address",
+      "value": "192.168.100.13",
+      "source": "routeros-neighbors"
+    },
+    {
+      "probe": "addresses",
+      "row": 0,
+      "kind": "address",
+      "value": "192.168.88.1/24",
+      "source": "routeros-addresses"
+    },
+    {
+      "probe": "neighbors",
+      "row": 0,
+      "kind": "interface",
+      "value": "ether2",
+      "source": "routeros-neighbors"
+    }
+  ],
+  "details": {
+    "interfaces": [
+      {
+        "id": "*1",
+        "name": "sfp-sfpplus1",
+        "description": null,
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "ether",
+        "mac": "00:0c:42:00:00:10",
+        "addresses": ["192.168.88.1/24"],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["routeros-interfaces", "routeros-addresses"]
+      },
+      {
+        "id": "*2",
+        "name": "ether2",
+        "description": null,
+        "alias": null,
+        "kind": "ethernet",
+        "raw_type": "ether",
+        "mac": "00:0c:42:00:00:11",
+        "addresses": [],
+        "admin_state": "up",
+        "oper_state": "up",
+        "vlan_id": null,
+        "parent_interface": null,
+        "provenance": ["routeros-interfaces"]
+      }
+    ],
+    "system": {
+      "version": "6.49.18",
+      "board_name": "CCR1009-8G-1S",
+      "platform": "routeros",
+      "uptime": "6w1d2h3m4s",
+      "provenance": ["routeros-system"]
+    },
+    "temperatures": [
+      {
+        "sensor_name": "temperature",
+        "celsius": 41.0,
+        "provenance": ["routeros-health"]
+      }
+    ],
+    "stations": [],
+    "arp": {
+      "provenance": ["routeros-arp"],
+      "rows": [
+        {
+          "address": "192.168.88.9",
+          "mac_address": "00:11:22:33:44:55",
+          "interface": "sfp-sfpplus1",
+          "dynamic": true,
+          "complete": true,
+          "disabled": false
+        }
+      ]
+    },
+    "bridge_ports": {
+      "provenance": ["routeros-bridge-ports"],
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "interface": "ether2",
+          "pvid": 92,
+          "frame_types": null,
+          "status": "in-bridge",
+          "inactive": false,
+          "disabled": false,
+          "dynamic": false
+        }
+      ]
+    },
+    "bridge_vlans": {
+      "provenance": ["routeros-bridge-vlans"],
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "vlan_ids": [92],
+          "tagged": ["ether2"],
+          "untagged": ["sfp-sfpplus1"],
+          "current_tagged": [],
+          "current_untagged": []
+        }
+      ]
+    },
+    "bridge_hosts": {
+      "provenance": ["routeros-bridge-hosts"],
+      "rows": [
+        {
+          "bridge": "bridge-local",
+          "on_interface": "ether2",
+          "mac_address": "4c:5e:0c:67:35:12",
+          "age": "3m",
+          "dynamic": true,
+          "local": null,
+          "external": null
+        }
+      ]
+    },
+    "nat": {
+      "provenance": ["routeros-firewall-nat"],
+      "rows": [
+        {
+          "chain": "srcnat",
+          "action": "masquerade",
+          "in_interface": "ether2",
+          "out_interface": "ether1",
+          "src_address": "192.168.100.0/24",
+          "dst_address": null,
+          "to_addresses": null,
+          "disabled": false,
+          "comment": "NOC NAT"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "in_interface": null,
+          "out_interface": null,
+          "src_address": "10.20.0.0/16",
+          "dst_address": null,
+          "to_addresses": "192.168.100.10",
+          "disabled": false,
+          "comment": "NAT for 192.168.100.0/24"
+        },
+        {
+          "chain": "dstnat",
+          "action": "dst-nat",
+          "in_interface": null,
+          "out_interface": null,
+          "src_address": null,
+          "dst_address": "203.0.113.10",
+          "to_addresses": "192.168.100.20",
+          "disabled": false,
+          "comment": "NAT for 192.168.100.20"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "in_interface": null,
+          "out_interface": null,
+          "src_address": "192.168.50.0/24",
+          "dst_address": null,
+          "to_addresses": "192.168.100.30",
+          "disabled": true,
+          "comment": "NAT for 192.168.50.0/24 (disabled)"
+        },
+        {
+          "chain": "srcnat",
+          "action": "src-nat",
+          "in_interface": null,
+          "out_interface": null,
+          "src_address": "192.168.60.0/24",
+          "dst_address": null,
+          "to_addresses": "192.168.100.40",
+          "disabled": null,
+          "comment": "NAT for 192.168.60.0/24 (flag omitted)"
+        }
+      ]
+    },
+    "dhcp_leases": {
+      "provenance": ["routeros-dhcp-lease"],
+      "rows": [
+        {
+          "address": "192.168.88.20",
+          "mac": "aa:bb:cc:dd:ee:20",
+          "hostname": "printer",
+          "status": "bound",
+          "dynamic": true,
+          "disabled": false
+        },
+        {
+          "address": "192.168.88.21",
+          "mac": "aa:bb:cc:dd:ee:21",
+          "hostname": "tv",
+          "status": "bound",
+          "dynamic": true,
+          "disabled": false
+        },
+        {
+          "address": "192.168.88.22",
+          "mac": "aa:bb:cc:dd:ee:22",
+          "hostname": "stale",
+          "status": "bound",
+          "dynamic": false,
+          "disabled": true
+        },
+        {
+          "address": null,
+          "mac": "aa:bb:cc:dd:ee:23",
+          "hostname": "reserved",
+          "status": "bound",
+          "dynamic": false,
+          "disabled": false
+        }
+      ]
+    }
+  },
+  "residuals": []
+}

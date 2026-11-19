@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {t} from "../i18n/index.js";
 import {
     normalizeDownUpOrder,
     scaleNumber,
@@ -11,7 +12,7 @@ export class PacketsPerSecondBar extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, 300)
-            .withScaledAbsYAxis("Packets", 40)
+            .withScaledAbsYAxis(t("graph.axis.packets"), 40)
             .withEmptySeries()
             .withLeftGridSize("18%")
             .build();

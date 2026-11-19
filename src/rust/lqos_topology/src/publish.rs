@@ -219,6 +219,80 @@ const SOURCE_LAG_TOLERANCE_SECS: u64 = 900;
 /// so it is treated as NOT fresh.
 const SOURCE_LAG_FUTURE_SLACK_SECS: u64 = 60;
 
+/// Whether two shaping-input payloads describe the same world once the
+/// dynamic-origin marker is ignored.
+///
+/// A `shaping_inputs.json` written by a release that predates the origin marker
+/// differs from this release's mint ONLY by that marker: same circuits, same
+/// rows, same rates. Naming the case lets the custody log report an upgrade
+/// instead of a tamper-shaped generic mismatch.
+///
+/// The marker is deliberately NOT dropped from the custody decision itself: an
+/// unmarked artifact cannot be served, because every row would read as
+/// provisioned and the supersede rule would retire every live dynamic circuit on
+/// the next shaped-devices reload. The topology runtime publishes on its first
+/// round (its gate starts with `publish_completed = false`), which rewrites the
+/// artifact with the marker; refusing the unmarked one only costs the dynamic
+/// overlay its shaping for that boot window, never its membership.
+pub(crate) fn same_world_ignoring_origin_marker(
+    on_disk: &TopologyShapingInputsFile,
+    mint: &TopologyShapingInputsFile,
+) -> bool {
+    fn without_markers(inputs: &TopologyShapingInputsFile) -> TopologyShapingInputsFile {
+        let mut copy = inputs.normalized_for_compare();
+        for circuit in &mut copy.circuits {
+            for device in &mut circuit.devices {
+                device.dynamic = false;
+            }
+        }
+        copy
+    }
+    without_markers(on_disk) == without_markers(mint)
+}
+
+/// The fold warnings a publish should LOG: the ones the previous artifact did not
+/// already carry.
+///
+/// The fold runs on every mint, so a standing condition (an unresolvable parent,
+/// a rejected id collision) reappears in every artifact's `warnings` list. Those
+/// lines describe the WORLD, not the publish: the acceptance is one WARN per
+/// world identity, not one per republish. Comparing against the previously
+/// published warning set makes "world identity" the artifact itself — no process
+/// state to keep, and a condition that clears and returns warns again.
+///
+/// Duplicates inside `current` are emitted once. PURE.
+pub(crate) fn new_publish_warnings(previous: &[String], current: &[String]) -> Vec<String> {
+    let mut seen: HashSet<&str> = previous.iter().map(String::as_str).collect();
+    current
+        .iter()
+        .filter(|warning| seen.insert(warning.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// The fold warnings ONE publish should LOG: the lines the previously PUBLISHED
+/// artifact does not already carry.
+///
+/// This is the shipping form of [`new_publish_warnings`]: it reads the previous
+/// world from the artifact at [`topology_shaping_inputs_path`] — the same path the
+/// publish writes, read BEFORE the write — so the comparison needs no process
+/// state. A missing or unreadable artifact counts as "no previous warnings": a
+/// broken read costs one duplicate line, never silence, because a silent
+/// deferral is the bug this block exists to prevent.
+///
+/// Side effects: reads the shaping-inputs artifact. Returns the lines to log.
+pub(crate) fn publish_warnings_to_log(
+    config: &Config,
+    inputs: &TopologyShapingInputsFile,
+) -> Vec<String> {
+    let on_disk = load_shaping_inputs_at_path(&topology_shaping_inputs_path(config)).ok();
+    let previous = on_disk
+        .as_ref()
+        .map(|file| file.warnings.as_slice())
+        .unwrap_or_default();
+    new_publish_warnings(previous, &inputs.warnings)
+}
+
 /// Verifies the published runtime shaping generation against a fresh read-only
 /// dry-run mint of the current world (K1b §4.8 content-addressed generation).
 ///
@@ -375,9 +449,15 @@ pub fn verify_published_shaping_generation(
                 "Topology readiness: custody leg file_mint_mismatch TOLERATED (fresh status; one-churn artifact lag; content digest matches) (mint={minted_generation} file={file_generation})"
             );
         } else {
-            tracing::warn!(
-                "Topology readiness: custody leg file_mint_mismatch (mint={minted_generation} file={file_generation} worlds_match={worlds_match} record_identity={record_identity} content_exact={content_exact} age_secs={status_age_secs})"
-            );
+            if same_world_ignoring_origin_marker(&on_disk, &expected) {
+                tracing::warn!(
+                    "Topology readiness: custody leg file_mint_mismatch is a PRE-MARKER artifact at {path}: the world matches the mint except for the dynamic-origin marker (written by a release that predates it). Refusing to serve an unmarked world — every folded row would read as provisioned and every live dynamic circuit would be pruned on the next reload. The topology runtime republishes on its first round and rewrites the artifact with the marker; the dynamic overlay is unshaped until then."
+                );
+            } else {
+                tracing::warn!(
+                    "Topology readiness: custody leg file_mint_mismatch (mint={minted_generation} file={file_generation} worlds_match={worlds_match} record_identity={record_identity} content_exact={content_exact} age_secs={status_age_secs})"
+                );
+            }
             return Ok(custody_fail(
                 generation,
                 ShapingCustodyLeg::FileMintMismatch,
@@ -618,7 +698,7 @@ fn operator_view_diff(in_memory: &Value, on_disk: &Value) -> (Vec<String>, Vec<S
 
 /// §8 (`docs/lqos_conf_single_source_card.md`): the emitter stamps the DERIVED
 /// slot capacity on the transaction the bridge consumes. `n_circuits` is the
-/// emitted world size (one leaf per circuit/range — the same count the bridge's
+/// emitted world size (one leaf per circuit — the same count the bridge's
 /// own fail-safe derivation uses); `carried` is the bridge's last reported
 /// applied value, falling back to the previously published desired transaction
 /// so the bound never shrinks across an emitter restart either.
@@ -705,6 +785,16 @@ pub fn publish_effective_topology_artifacts(    config: &Config,
         None => None,
     };
 
+    // u6 A1: a fold warning (a deferred parent, a rejected collision) belongs to
+    // the WORLD, not to one publish, so it is logged when it first appears in the
+    // artifact — never re-logged by every republish of the same world. The
+    // artifact is the memory: the previous publish's warning set is on disk.
+    if let Some((shaping_inputs, _)) = prepared_shaping_inputs.as_ref() {
+        for warning in publish_warnings_to_log(config, shaping_inputs) {
+            tracing::warn!("{warning}");
+        }
+    }
+
     let current_effective_state = TopologyEffectiveStateFile::load(config).ok();
     if !current_effective_state
         .as_ref()
@@ -723,23 +813,14 @@ pub fn publish_effective_topology_artifacts(    config: &Config,
     // Compile the DPDK dataplane transaction from the augmented network + shaping
     // inputs and publish it as a sibling artifact (the bridge consumes it).
     let dataplane_transaction_path = topology_dataplane_transaction_path(config);
-    // Dynamic-ranges H1: the configured pool ranges are injected at the
-    // transaction stage (post-catalog), gated on the promotion feature.
-    let dynamic_ranges: Vec<lqos_config::DynamicCircuitRangeRule> = config
-        .dynamic_circuits
-        .as_ref()
-        .filter(|cfg| cfg.enabled && cfg.enable_unknown_ip_promotion)
-        .map(|cfg| cfg.ranges.clone())
-        .unwrap_or_default();
     let dataplane_transaction_value = match (
         effective_network_value.as_ref(),
         prepared_shaping_inputs.as_ref(),
     ) {
         (Some(network), Some((shaping_inputs, _))) => {
-            let mut transaction = compile_dataplane_transaction_with_ranges_and_sqm(
+            let mut transaction = compile_dataplane_transaction_with_sqm(
                 network,
                 shaping_inputs,
-                &dynamic_ranges,
                 &config.queues.default_sqm,
             );
             // §8: the emitter OWNS the derived slot capacity (never an operator

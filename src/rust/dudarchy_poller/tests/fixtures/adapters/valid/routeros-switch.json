@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "id": "routeros-switch",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.14988.1"],
+    "sys_descr_contains": ["RouterOS"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "if_table",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "name", "oid": "1.3.6.1.2.1.31.1.1.1.1", "parser": "utf8" },
+            { "name": "raw_type", "oid": "1.3.6.1.2.1.2.2.1.3", "parser": "u32" },
+            { "name": "oper_state", "oid": "1.3.6.1.2.1.2.2.1.8", "parser": "u32" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    },
+    {
+      "id": "fdb",
+      "surface": "snmp",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "port", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.2", "parser": "u32" },
+            { "name": "status", "oid": "1.3.6.1.2.1.17.7.1.2.2.1.3", "parser": "u32" }
+          ],
+          "index": { "kind": "dot1q_vlan_mac" },
+          "bridge_port_resolution": "dot1d_base_port_ifindex"
+        }
+      }
+    }
+  ],
+  "maps": {
+    "details": {
+      "interfaces": "if_table"
+    },
+    "residuals": [
+      {
+        "name": "flat-vlan",
+        "source": "host/tests/fixtures/switch-fdb/README.md: every Q-BRIDGE row carries VLAN octet 0"
+      }
+    ]
+  },
+  "budget": {
+    "max_requests": 4096,
+    "max_rows": 4096,
+    "deadline_ms": 10000
+  }
+}

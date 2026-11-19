@@ -1,6 +1,13 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "_empty" is the DOM id suffix this dashlet appends
+
+function shaperRootName() {
+    return t("common.label.shaper");
+}
 
 class TopAsnSankeyGraphUp extends DashboardGraph {
     constructor(id) {
@@ -20,12 +27,12 @@ class TopAsnSankeyGraphUp extends DashboardGraph {
         this.chart.setOption(this.option);
     }
     update(items) {
-        const nodes = [{ name: 'Shaper' }];
+        const nodes = [{ name: shaperRootName() }];
         const links = [];
         items.forEach(row => {
             const color = colorByRetransmitPct(row.rxmit ?? 0);
             nodes.push({ name: row.name, itemStyle: { color } });
-            links.push({ source: 'Shaper', target: row.name, value: row.value });
+            links.push({ source: shaperRootName(), target: row.name, value: row.value });
         });
         this.option.series[0].data = nodes;
         this.option.series[0].links = links;
@@ -47,8 +54,8 @@ export class ShaperTopAsnUpload extends BaseDashlet {
         this._LINGER = 3;
     }
     canBeSlowedDown() { return true; }
-    title() { return "Shaper Top ASN (Upload)"; }
-    tooltip() { return "<h5>Top Upload ASNs</h5><p>Aggregated from live top flows by rate (bps)."; }
+    title() { return t("dashlet.name.shaper_top_asn_upload"); }
+    tooltip() { return `<h5>${t("dashlet.asn.top_upload.heading")}</h5><p>${t("dashlet.asn.top_upload.tooltip")}</p>`; }
     subscribeTo() { return ["AsnTopUpload", "TopFlowsRate"]; }
     buildContainer() { let b = super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
     setup() {
@@ -57,7 +64,7 @@ export class ShaperTopAsnUpload extends BaseDashlet {
         this.traceRender("setup-complete", { graphId: this.graphDivId() });
         if (this.last) this.graph.update(this.last);
     }
-    _showEmpty(show, msg = "No recent data") {
+    _showEmpty(show, msg = t("common.state.no_recent_data")) {
         const card = document.getElementById(this.id);
         if (!card) return;
         let empty = document.getElementById(this._emptyId);
@@ -124,7 +131,7 @@ export class ShaperTopAsnUpload extends BaseDashlet {
         if (msg.event !== "TopFlowsRate") return;
         const map = new Map();
         (msg.data || []).forEach(f => {
-            const key = f.remote_asn_name && f.remote_asn_name.length > 0 ? f.remote_asn_name : (f.remote_ip || "Unknown");
+            const key = f.remote_asn_name && f.remote_asn_name.length > 0 ? f.remote_asn_name : (f.remote_ip || t("circuit.queue_tree.unknown_node"));
             const val = Number(f.rate_estimate_bps?.up || 0);
             const rxmitU = (f.tcp_retransmits?.up || 0) / Math.max(1, f.packets_sent?.up || 0) * 100.0; // %
             const cur = map.get(key) || { name: key, value: 0, rxmit: 0, samples: 0 };

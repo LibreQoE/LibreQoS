@@ -5,39 +5,39 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Powercode Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Configure authentication and endpoint details for automated imports from Powercode.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.powercode.title">Powercode Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.powercode.subtitle">Configure authentication and endpoint details for automated imports from Powercode.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enablePowercode">
-                <label class="form-check-label" for="enablePowercode">Enable Powercode Integration</label>
-                <div class="form-text">Enable integration with Powercode billing system</div>
+                <label class="form-check-label" for="enablePowercode" data-i18n="config.powercode.enable">Enable Powercode Integration</label>
+                <div class="form-text" data-i18n="config.powercode.enable_help">Enable integration with Powercode billing system</div>
             </div>
 
             <div class="mb-3">
-                <label for="powercodeApiKey" class="form-label">API Key</label>
+                <label for="powercodeApiKey" class="form-label" data-i18n="config.powercode.api_key">API Key</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="powercodeApiKey" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearPowercodeApiKey">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearPowercodeApiKey" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="powercodeApiKeyStatus"></div>
-                <div class="form-text">Powercode API key for authentication</div>
+                <div class="form-text" data-i18n="config.powercode.api_key_help">Powercode API key for authentication</div>
             </div>
 
             <div class="mb-3">
-                <label for="powercodeApiUrl" class="form-label">API URL</label>
+                <label for="powercodeApiUrl" class="form-label" data-i18n="config.powercode.api_url">API URL</label>
                 <input type="text" class="form-control" id="powercodeApiUrl">
-                <div class="form-text">Base URL for Powercode API (e.g. https://your-powercode.com)</div>
+                <div class="form-text" data-i18n="config.powercode.api_url_help">Base URL for Powercode API (e.g. https://your-powercode.com)</div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.powercode.save">Save Changes</button>
         </div>
     </form>
 </div>

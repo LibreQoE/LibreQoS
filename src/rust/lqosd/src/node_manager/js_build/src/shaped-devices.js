@@ -8,11 +8,13 @@ import {
 } from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
+import {t, tAttr, tn} from "./i18n/index.js";
 
 let shapedDevices = [];
 let devicesPerPage = 24;
 let page = 0;
 let searchTerm = "";
+// translatable: false — "Static", "Dynamic" are the view-kind tokens stored and compared here, never shown
 let shapedDevicesKind = "Static";
 let metricElsByCircuitId = new Map();
 const latestByCircuitId = new Map();
@@ -24,15 +26,18 @@ const wsClient = get_ws_client();
 const DYNAMIC_VIEW_MODE_STORAGE_KEY = "lqosShapedDevicesDynamicViewMode";
 let dynamicViewMode = loadDynamicViewMode();
 
-const DYNAMIC_EMPTY_REASON =
-    "No dynamic circuits yet — no RADIUS accounting is enabled, no configured range resolves to a topology node, or no host has been promoted yet.";
+function dynamicEmptyReason() {
+    return t("shaped_devices.dynamic_empty");
+}
 
-const QOO_TOOLTIP_HTML =
-    "<h5>Quality of Outcome (QoO)</h5>" +
-    "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
-    "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
-    "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+function qooTooltipHtml() {
+    return "<h5>" + t("shaped_devices.qoo.title") + "</h5>" +
+        "<p>" + t("shaped_devices.qoo.intro") + "<br>" +
+        "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
+        t("shaped_devices.qoo.model") + "</p>";
+}
 
+// translatable: false — "Error" is the pubsub client's websocket event name, not UI text
 function sendWsRequest(responseEvent, request) {
     return new Promise((resolve, reject) => {
         let done = false;
@@ -133,12 +138,12 @@ function renderCounts() {
     const countEl = $("#count");
     const circuitEl = $("#countCircuit");
     if (shapedDevicesKind === "Dynamic") {
-        countEl.text(totalRows + " dynamic circuits");
+        countEl.text(tn("shaped_devices.dynamic_count", totalRows));
         circuitEl.text("");
         circuitEl.addClass("d-none");
     } else {
-        countEl.text(totalRows + " devices");
-        circuitEl.text(totalCircuits + " circuits");
+        countEl.text(tn("shaped_devices.device_count", totalRows));
+        circuitEl.text(tn("shaped_devices.circuit_count", totalCircuits));
         circuitEl.removeClass("d-none");
     }
 }
@@ -271,7 +276,9 @@ function applyCircuitUpdate(device) {
     const circuitId = device.circuit_id;
     latestByCircuitId.set(circuitId, device);
     const plan = planByCircuitId.get(circuitId) || {down: 0, up: 0};
-    const staleSuffix = device.stale ? ' <span class="badge text-bg-warning" title="Bridge stats stale: serving last-good data (analytics socket unreachable)">stale</span>' : "";
+    const staleSuffix = device.stale
+        ? ` <span class="badge text-bg-warning" title="${tAttr("shaped_devices.stale_title")}">${t("shaped_devices.stale")}</span>`
+        : "";
 
     updateMetricText(circuitId, "lastSeen", formatLastSeen(device.last_seen_nanos));
     updateMetricHtml(
@@ -364,7 +371,7 @@ function buildDeviceIdentity(device, options = {}) {
         const circuitLink = document.createElement("a");
         circuitLink.href = "circuit.html?id=" + encodeURI(device.circuit_id);
         circuitClasses.forEach((className) => circuitLink.classList.add(className));
-        circuitLink.innerText = device.circuit_name || "(Unknown circuit)";
+        circuitLink.innerText = device.circuit_name || t("shaped_devices.unknown_circuit");
         wrapper.appendChild(circuitLink);
 
         if (device.device_name) {
@@ -377,7 +384,7 @@ function buildDeviceIdentity(device, options = {}) {
     } else {
         const circuitName = document.createElement("div");
         circuitClasses.forEach((className) => circuitName.classList.add(className));
-        circuitName.innerText = device.circuit_name || "(Unknown circuit)";
+        circuitName.innerText = device.circuit_name || t("shaped_devices.unknown_circuit");
         wrapper.appendChild(circuitName);
 
         if (device.device_name) {
@@ -479,7 +486,7 @@ function buildDeviceCard(device) {
     const lastSeenRow = document.createElement("div");
     lastSeenRow.classList.add("small", "text-body-secondary", "mt-2");
     const lastSeenLabel = document.createElement("span");
-    lastSeenLabel.innerText = "Last seen: ";
+    lastSeenLabel.innerText = t("shaped_devices.last_seen_label");
     const lastSeenValue = document.createElement("span");
     lastSeenValue.innerText = "-";
     lastSeenRow.appendChild(lastSeenLabel);
@@ -510,7 +517,7 @@ function buildDeviceCard(device) {
     const tbody = document.createElement("tbody");
 
     const tpLabel = document.createElement("span");
-    tpLabel.innerText = "Throughput";
+    tpLabel.innerText = t("common.table.throughput");
     const tpDown = document.createElement("span");
     tpDown.innerHTML = "-";
     const tpUp = document.createElement("span");
@@ -534,7 +541,7 @@ function buildDeviceCard(device) {
     qooLabelWrap.setAttribute("data-bs-toggle", "tooltip");
     qooLabelWrap.setAttribute("data-bs-placement", "top");
     qooLabelWrap.setAttribute("data-bs-html", "true");
-    qooLabelWrap.setAttribute("title", QOO_TOOLTIP_HTML);
+    qooLabelWrap.setAttribute("title", qooTooltipHtml());
     const qooDown = document.createElement("span");
     qooDown.innerHTML = "-";
     const qooUp = document.createElement("span");
@@ -544,7 +551,7 @@ function buildDeviceCard(device) {
     registerMetricEl(device.circuit_id, "qooUp", qooUp);
 
     const rxLabel = document.createElement("span");
-    rxLabel.innerText = "Retransmits";
+    rxLabel.innerText = t("common.table.retransmits");
     const rxDown = document.createElement("span");
     rxDown.innerHTML = "-";
     const rxUp = document.createElement("span");
@@ -636,7 +643,7 @@ function ensureLayout() {
     searchInput.type = "text";
     searchInput.classList.add("form-control");
     searchInput.id = "sdSearch";
-    searchInput.placeholder = "Search circuits, devices, parents…";
+    searchInput.placeholder = t("shaped_devices.search_placeholder");
     searchInput.value = searchTerm;
     searchInput.oninput = () => {
         searchTerm = $("#sdSearch").val();
@@ -655,12 +662,12 @@ function ensureLayout() {
     perPageWrap.classList.add("d-flex", "align-items-center", "gap-1");
     const perPageLabel = document.createElement("label");
     perPageLabel.classList.add("small", "text-body-secondary");
-    perPageLabel.innerText = "Per page";
+    perPageLabel.innerText = t("common.toolbar.per_page");
     const perPageSelect = document.createElement("select");
     perPageSelect.id = "sdPerPage";
     perPageSelect.classList.add("form-select", "form-select-sm");
     perPageLabel.htmlFor = perPageSelect.id;
-    perPageSelect.setAttribute("aria-label", "Devices per page");
+    perPageSelect.setAttribute("aria-label", t("common.toolbar.devices_per_page"));
     [12, 24, 48, 96].forEach((n) => {
         const opt = document.createElement("option");
         opt.value = String(n);
@@ -685,17 +692,17 @@ function ensureLayout() {
     viewToggleWrap.classList.add("d-none", "d-flex", "align-items-center", "gap-1");
     const viewLabel = document.createElement("span");
     viewLabel.classList.add("small", "text-body-secondary");
-    viewLabel.innerText = "View";
+    viewLabel.innerText = t("common.toolbar.view");
     const viewToggle = document.createElement("div");
     viewToggle.classList.add("btn-group", "btn-group-sm", "lqos-shaped-devices-view-toggle");
     viewToggle.setAttribute("role", "group");
-    viewToggle.setAttribute("aria-label", "Dynamic circuits view");
+    viewToggle.setAttribute("aria-label", t("shaped_devices.dynamic_view_aria"));
 
     const viewCards = document.createElement("button");
     viewCards.id = "sdViewCards";
     viewCards.type = "button";
     viewCards.classList.add("btn", "btn-outline-secondary");
-    viewCards.innerHTML = "<i class='fa fa-th-large me-1'></i>Cards";
+    viewCards.innerHTML = "<i class='fa fa-th-large me-1'></i>" + t("common.toolbar.cards");
     viewCards.onclick = () => {
         setDynamicViewMode("cards");
     };
@@ -704,7 +711,7 @@ function ensureLayout() {
     viewList.id = "sdViewList";
     viewList.type = "button";
     viewList.classList.add("btn", "btn-outline-secondary");
-    viewList.innerHTML = "<i class='fa fa-list me-1'></i>List";
+    viewList.innerHTML = "<i class='fa fa-list me-1'></i>" + t("common.toolbar.list");
     viewList.onclick = () => {
         setDynamicViewMode("list");
     };
@@ -725,8 +732,8 @@ function ensureLayout() {
     prev.type = "button";
     prev.classList.add("btn", "btn-secondary");
     prev.innerHTML = "<i class='fa fa-arrow-left'></i>";
-    prev.setAttribute("aria-label", "Previous devices page");
-    prev.title = "Previous page";
+    prev.setAttribute("aria-label", t("common.toolbar.previous_devices_page"));
+    prev.title = t("common.toolbar.previous_page");
     prev.onclick = () => {
         page = Math.max(0, page - 1);
         requestShapedDevicesPage();
@@ -736,8 +743,8 @@ function ensureLayout() {
     next.type = "button";
     next.classList.add("btn", "btn-secondary");
     next.innerHTML = "<i class='fa fa-arrow-right'></i>";
-    next.setAttribute("aria-label", "Next devices page");
-    next.title = "Next page";
+    next.setAttribute("aria-label", t("common.toolbar.next_devices_page"));
+    next.title = t("common.toolbar.next_page");
     next.onclick = () => {
         const totalPages = Math.max(1, Math.ceil(totalRows / devicesPerPage));
         page = Math.min(totalPages - 1, page + 1);
@@ -783,14 +790,14 @@ function ensureLayout() {
     const listHead = document.createElement("thead");
     const listHeadRow = document.createElement("tr");
     [
-        "Circuit",
-        "Parent",
-        "Plan",
-        "Throughput",
+        t("common.table.circuit"),
+        t("common.table.parent"),
+        t("common.table.plan"),
+        t("common.table.throughput"),
         "RTT",
         "QoO",
-        "Retransmits",
-        "Last Seen",
+        t("common.table.retransmits"),
+        t("common.table.last_seen"),
         "IPs",
     ].forEach((label) => {
         const th = document.createElement("th");
@@ -930,19 +937,21 @@ function renderDevices() {
     updateViewToggle(layout);
     if (layout.prevButton) layout.prevButton.disabled = page <= 0;
     if (layout.nextButton) layout.nextButton.disabled = page >= totalPages - 1;
-    if (layout.pageCounter) layout.pageCounter.innerText = "Page " + (page + 1) + " / " + totalPages;
+    if (layout.pageCounter) {
+        layout.pageCounter.innerText = t("shaped_devices.page_of", {page: page + 1, total: totalPages});
+    }
     if (layout.summary) {
         if (totalRows === 0) {
-            layout.summary.innerText =
-                shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No matches";
+            layout.summary.innerText = shapedDevicesKind === "Dynamic"
+                ? dynamicEmptyReason()
+                : t("shaped_devices.no_matches");
         } else {
             const start = page * devicesPerPage + 1;
             const end = Math.min((page + 1) * devicesPerPage, totalRows);
-            let summary = "Showing " + start + "–" + end + " of " + totalRows;
-            if (shapedDevicesKind === "Dynamic") {
-                summary += " (highest throughput first)";
-            }
-            layout.summary.innerText = summary;
+            const range = {start, end, total: totalRows};
+            layout.summary.innerText = shapedDevicesKind === "Dynamic"
+                ? t("shaped_devices.showing_first", range)
+                : t("shaped_devices.showing", range);
         }
     }
 
@@ -960,8 +969,9 @@ function renderDevices() {
             const td = document.createElement("td");
             td.colSpan = 9;
             td.className = "text-muted";
-            td.innerText =
-                shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No shaped devices.";
+            td.innerText = shapedDevicesKind === "Dynamic"
+                ? dynamicEmptyReason()
+                : t("shaped_devices.no_devices");
             tr.appendChild(td);
             layout.listBody.appendChild(tr);
         } else {
@@ -972,8 +982,9 @@ function renderDevices() {
     } else if (shapedDevices.length === 0) {
         const col = document.createElement("div");
         col.classList.add("col-12", "text-muted");
-        col.innerText =
-            shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No shaped devices match.";
+        col.innerText = shapedDevicesKind === "Dynamic"
+            ? dynamicEmptyReason()
+            : t("shaped_devices.no_match");
         layout.grid.appendChild(col);
     } else {
         shapedDevices.forEach((device) => {
@@ -1013,10 +1024,10 @@ function renderStatsSource(source, stale) {
     if (!el) return;
     if (source === "bridge") {
         el.innerHTML = stale
-            ? ' <span class="badge text-bg-warning">bridge stats: stale (last-good)</span>'
-            : ' <span class="badge text-bg-secondary">stats: bridge</span>';
+            ? ` <span class="badge text-bg-warning">${t("shaped_devices.stats_bridge_stale")}</span>`
+            : ` <span class="badge text-bg-secondary">${t("shaped_devices.stats_bridge")}</span>`;
     } else if (source === "kernel") {
-        el.innerHTML = ' <span class="badge text-bg-secondary">stats: kernel</span>';
+        el.innerHTML = ` <span class="badge text-bg-secondary">${t("shaped_devices.stats_kernel")}</span>`;
     } else {
         el.innerHTML = "";
     }

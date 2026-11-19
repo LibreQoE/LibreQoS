@@ -6,10 +6,12 @@ import {
     cakeCommonXAxis,
     cakeHistoryWindow,
     cakeScatterSeries,
+    cakeLegendFormatter,
     cakeTooltip,
     formatCakePackets,
     attachLegendPairMirror,
 } from "./cake_history";
+import {t} from "../i18n/index.js";
 
 export class CakeQueueLength extends DashboardGraph {
     constructor(id) {
@@ -18,18 +20,20 @@ export class CakeQueueLength extends DashboardGraph {
         attachLegendPairMirror(this.chart, [{ down: "Queue Length", up: "Queue Length Up" }]);
 
         this.option = {
-            title: cakeChartTitle("Queue Length", "Packets"),
+            title: cakeChartTitle(t("graph.cake.queue_length"), t("graph.axis.packets")),
             grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
                 // do NOT set selectedMode:false — it disables the legend + the mirror
+                formatter: cakeLegendFormatter,
                 textStyle: {
                     color: '#aaa'
                 },
                 data: [
                     {
+            // translatable: false — "Queue Length" "Queue Length Up" — the queue-length series identifiers the legend formatter and the paired-upload mirror match on
                         name: "Queue Length",
                         icon: 'circle',
                         itemStyle: {

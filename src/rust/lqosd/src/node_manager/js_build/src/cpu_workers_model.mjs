@@ -1,6 +1,9 @@
 // Pure transforms for the CPU & Workers page. No DOM, no fetch: node --test
 // covers the honest-empty/absent semantics here, and the entrypoint only
-// renders the normalized shape.
+// renders the normalized shape. The server's reason codes stay codes; the words
+// this module shows for them come from the active catalog.
+
+import {t, tn} from "./i18n/index.js";
 
 const WORKER_COLORS = [
     "#4e79a7", "#f28e2b", "#59a14f", "#b07aa1", "#76b7b2",
@@ -42,7 +45,7 @@ function normalizeCpuUsage(section) {
         return {
             cpuId,
             key: cpuId === null ? `index-${index}` : `cpu-${cpuId}`,
-            label: cpuId === null ? "CPU ?" : `CPU ${cpuId}`,
+            label: cpuId === null ? t("cpu_workers.cpu_unknown") : `CPU ${cpuId}`,
             percent: Number.isFinite(row?.percent) ? row.percent : null,
         };
     });
@@ -317,18 +320,25 @@ export function sectionSignatures(payload) {
     };
 }
 
+/// The heat scale's colour, from a chroma triple and an alpha. Both are data the
+/// page draws with, never display text.
+function heatColor(channels, alpha) {
+    // translatable: false — "rgba( , )" is the CSS colour function's own syntax
+    return `rgba(${channels}, ${alpha.toFixed(3)})`;
+}
+
 /// Neutral/heat scale for the CPU cells: green (cool) -> amber -> red (hot).
 /// `null` for an unproven/absent percentage; never a fabricated zero.
 export function cpuHeatColor(percent) {
     if (!Number.isFinite(percent)) return null;
     const value = Math.max(0, Math.min(100, percent));
     if (value >= 80) {
-        return `rgba(220, 53, 69, ${(0.22 + (value / 100) * 0.5).toFixed(3)})`;
+        return heatColor("220, 53, 69", 0.22 + (value / 100) * 0.5);
     }
     if (value >= 55) {
-        return `rgba(255, 193, 7, ${(0.20 + (value / 100) * 0.5).toFixed(3)})`;
+        return heatColor("255, 193, 7", 0.20 + (value / 100) * 0.5);
     }
-    return `rgba(25, 135, 84, ${(0.16 + (value / 100) * 0.45).toFixed(3)})`;
+    return heatColor("25, 135, 84", 0.16 + (value / 100) * 0.45);
 }
 
 const ASSEMBLED_SECTIONS = [
@@ -358,53 +368,68 @@ export function formatCount(value) {
     return Number.isInteger(value) ? String(value) : "—";
 }
 
+/// True when the wire gave no usable display name. The tree sort reads this flag
+/// instead of comparing against a rendered word, which the catalog can translate.
+function hasNoName(node) {
+    return (typeof node?.name === "string" ? node.name.trim() : "") === "";
+}
+
 /// Site/AP display name. A missing or blank name is the literal fallback —
 /// the stable node id is NEVER rendered as a name.
 export function siteName(node) {
     const name = typeof node?.name === "string" ? node.name.trim() : "";
-    return name || "Unknown site name";
+    return name || t("cpu_workers.unknown_site");
 }
 
 /// Circuit display name. A missing/blank name is the literal fallback — the
 /// stable circuit id is NEVER rendered as a name.
 export function circuitName(circuit) {
     const name = typeof circuit?.name === "string" ? circuit.name.trim() : "";
-    return name || "Unknown circuit";
+    return name || t("cpu_workers.unknown_circuit");
+}
+
+/// Human text for the API's stable reason codes. Never show the raw code; a code
+/// younger than this table degrades to its humanized form, never to a catalog key.
+export function reasonText(reason) {
+    if (!reason) return t("cpu_workers.state.unavailable");
+    switch (reason) {
+    case "owner_map_unavailable":
+        return t("cpu_workers.reason.owner_map_unavailable");
+    case "no_history_source_v1":
+        return t("cpu_workers.reason.no_history_source_v1");
+    case "bridge_report_unavailable":
+        return t("cpu_workers.reason.bridge_report_unavailable");
+    case "cpu_usage_unavailable":
+        return t("cpu_workers.reason.cpu_usage_unavailable");
+    case "cpu_topology_unavailable":
+        return t("cpu_workers.reason.cpu_topology_unavailable");
+    case "moves_payload_incomplete":
+        return t("cpu_workers.reason.moves_payload_incomplete");
+    case "ownership_payload_incomplete":
+        return t("cpu_workers.reason.ownership_payload_incomplete");
+    default:
+        return String(reason).replaceAll("_", " ");
+    }
+}
+
+/// Compact headline for the shaping-topology summary card.
+export function topologyHeadline(topology) {
+    if (!topology?.available) return t("cpu_workers.state.unavailable");
+    if (topology.hasHybridSplit === true) return t("cpu_workers.topology.hybrid");
+    const count = topology.shaping?.length ?? topology.possible?.length;
+    if ((topology.source || "").startsWith("fallback")) {
+        return count !== null && count !== undefined
+            ? tn("cpu_workers.topology.all_cpus_fallback", count)
+            : t("cpu_workers.topology.all_cpus_fallback_unknown");
+    }
+    return count !== null && count !== undefined
+        ? tn("cpu_workers.topology.shaping_cpus", count)
+        : t("cpu_workers.topology.available");
 }
 
 /// Synthetic DOM ids for the rendered node list: `cpu-node-<index>` in the
 /// caller's node order. Stable for the same order, unique within a render, and
 /// independent of the stable site id (which never reaches the DOM/href).
-/// Human text for the API's stable reason codes. Never show the raw code.
-export function reasonText(reason) {
-    if (!reason) return "Unavailable";
-    const labels = {
-        owner_map_unavailable: "Ownership map is not available yet",
-        no_history_source_v1: "Move history is not available in v1",
-        bridge_report_unavailable: "Bridge worker report is not available yet",
-        cpu_usage_unavailable: "CPU usage is not available",
-        cpu_topology_unavailable: "CPU topology is not available",
-        moves_payload_incomplete: "Move history is incomplete",
-        ownership_payload_incomplete: "Ownership map is incomplete",
-    };
-    return labels[reason] || String(reason).replaceAll("_", " ");
-}
-
-/// Compact headline for the shaping-topology summary card.
-export function topologyHeadline(topology) {
-    if (!topology?.available) return "Unavailable";
-    if (topology.hasHybridSplit === true) return "Hybrid P/E cores";
-    const count = topology.shaping?.length ?? topology.possible?.length;
-    if ((topology.source || "").startsWith("fallback")) {
-        return count !== null && count !== undefined
-            ? `All ${count} CPUs (fallback)`
-            : "All CPUs (fallback)";
-    }
-    return count !== null && count !== undefined
-        ? `${count} shaping CPUs`
-        : "Available";
-}
-
 export function nodeDomIds(nodes) {
     const ids = new Map();
     (Array.isArray(nodes) ? nodes : []).forEach((node, index) => {
@@ -433,6 +458,7 @@ export function ownershipView(ownership) {
     const namedNodes = nodes.map((node) => ({
         ...node,
         name: siteName(node),
+        unknownName: hasNoName(node),
         domId: domIds.get(node.nodeId),
     }));
     const tree = buildOwnershipTree(namedNodes);
@@ -466,27 +492,30 @@ export function formatPercent(value) {
 export function formatQueueIds(value) {
     if (value === null || value === undefined) return "—";
     if (!Array.isArray(value)) return "—";
-    return value.length === 0 ? "none" : value.join(", ");
+    return value.length === 0 ? t("cpu_workers.value.none") : value.join(", ");
 }
 
 export function formatBool(value) {
-    if (value === true) return "yes";
-    if (value === false) return "no";
+    if (value === true) return t("cpu_workers.value.yes");
+    if (value === false) return t("cpu_workers.value.no");
     return "—";
 }
 
 /// Never turns an absent per-worker metric into 0. `support === "unsupported"`
 /// (or an absent value without a numeric reading) renders the explicit marker.
 export function formatMetric(value, support) {
-    if (support === "unsupported") return "unsupported";
+    if (support === "unsupported") return t("cpu_workers.value.unsupported");
     if (value === null || value === undefined) {
-        return support === "available" ? "unavailable" : "unsupported";
+        return support === "available"
+            ? t("cpu_workers.value.unavailable")
+            : t("cpu_workers.value.unsupported");
     }
-    return Number.isFinite(value) ? String(value) : "unavailable";
+    return Number.isFinite(value) ? String(value) : t("cpu_workers.value.unavailable");
 }
 
 export function workerColor(workerId) {
     if (!Number.isInteger(workerId) || workerId < 0) {
+        // translatable: false — "var(--bs-secondary)" is a Bootstrap CSS custom property
         return "var(--bs-secondary)";
     }
     return WORKER_COLORS[workerId % WORKER_COLORS.length];
@@ -499,7 +528,7 @@ export function shardedSiteLabel(node) {
     if (!node || !Array.isArray(node.workerIds) || node.workerIds.length <= 1) {
         return null;
     }
-    return `sharded across ${node.workerIds.length} workers`;
+    return tn("cpu_workers.topology.sharded_across", node.workerIds.length);
 }
 
 /// Per-site worker count for sites that span more than one worker.
@@ -526,7 +555,7 @@ export function countShardedSites(nodes) {
 /// reported as its reason, never as 0 ("not sharded" requires the owner map).
 export function shardedSummary(ownership) {
     if (!ownership || ownership.available !== true) {
-        return ownership?.reason || "unavailable";
+        return reasonText(ownership?.reason || "owner_map_unavailable");
     }
     return String(countShardedSites(ownership.nodes));
 }
@@ -534,15 +563,15 @@ export function shardedSummary(ownership) {
 export function stateLabel(state) {
     switch (state) {
     case "ok":
-        return "Healthy";
+        return t("cpu_workers.state.healthy");
     case "partial":
-        return "Partial";
+        return t("cpu_workers.state.partial");
     case "unavailable":
-        return "Unavailable";
+        return t("cpu_workers.state.unavailable");
     case "protocol_error":
-        return "Protocol error";
+        return t("cpu_workers.protocol_error");
     default:
-        return "Unknown";
+        return t("cpu_workers.state.unknown");
     }
 }
 
@@ -562,22 +591,29 @@ export function stateBadgeClass(state) {
 }
 
 export function topologySummary(topology) {
-    if (!topology?.available) return topology?.reason || "cpu_topology_unavailable";
+    if (!topology?.available) {
+        return reasonText(topology?.reason || "cpu_topology_unavailable");
+    }
+    // Each entry is a complete short label; the separator is the page's own.
     const parts = [];
-    if (topology.source) parts.push(`source ${topology.source}`);
-    if (topology.hasHybridSplit === true) parts.push("hybrid split");
-    if (topology.hasHybridSplit === false) parts.push("no hybrid split");
-    if (topology.excludeEfficiencyCores === true) parts.push("E-core exclusion on");
-    if (topology.possible !== null) parts.push(`possible ${topology.possible.length}`);
-    if (topology.shaping !== null) parts.push(`shaping ${topology.shaping.length}`);
-    if (topology.fromCache === true) parts.push("from cache");
-    return parts.length ? parts.join(" · ") : "available";
+    if (topology.source) parts.push(t("cpu_workers.topology.source", {source: topology.source}));
+    if (topology.hasHybridSplit === true) parts.push(t("cpu_workers.topology.hybrid_split"));
+    if (topology.hasHybridSplit === false) parts.push(t("cpu_workers.topology.no_hybrid_split"));
+    if (topology.excludeEfficiencyCores === true) parts.push(t("cpu_workers.topology.ecore_exclusion"));
+    if (topology.possible !== null) {
+        parts.push(t("cpu_workers.topology.possible", {count: topology.possible.length}));
+    }
+    if (topology.shaping !== null) {
+        parts.push(t("cpu_workers.topology.shaping", {count: topology.shaping.length}));
+    }
+    if (topology.fromCache === true) parts.push(t("cpu_workers.topology.from_cache"));
+    return parts.length ? parts.join(" · ") : t("cpu_workers.topology.available");
 }
 
 export function movesSummary(moves) {
-    if (!moves?.available) return moves?.reason || "no_history_source_v1";
-    if (!moves.items.length) return "none observed";
-    return `${moves.items.length} observed`;
+    if (!moves?.available) return reasonText(moves?.reason || "no_history_source_v1");
+    if (!moves.items.length) return t("cpu_workers.moves.none");
+    return t("cpu_workers.moves.observed", {count: moves.items.length});
 }
 
 function hasParentCycle(node, byId) {
@@ -608,8 +644,8 @@ export function buildOwnershipTree(nodes) {
     }
     const seen = new Set();
     const sort = (a, b) => {
-        const aUnknown = a.name === "Unknown site name" ? 1 : 0;
-        const bUnknown = b.name === "Unknown site name" ? 1 : 0;
+        const aUnknown = a.unknownName === true ? 1 : 0;
+        const bUnknown = b.unknownName === true ? 1 : 0;
         return aUnknown - bUnknown
             || String(a.name || "").localeCompare(String(b.name || ""))
             || a.nodeId.localeCompare(b.nodeId);

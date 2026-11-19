@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "id": "empty-residual-source",
+  "detect": {
+    "sys_descr_contains": [
+      "X"
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "snmp",
+      "transport": "snmp_v2c",
+      "credential_ref": "snmp"
+    }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          {
+            "name": "sys_name",
+            "oid": "1.3.6.1.2.1.1.5.0",
+            "parser": "utf8"
+          }
+        ]
+      }
+    }
+  ],
+  "maps": {
+    "residuals": [
+      {
+        "name": "a",
+        "source": ""
+      }
+    ]
+  }
+}

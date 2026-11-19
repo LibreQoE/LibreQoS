@@ -48,6 +48,7 @@ members = [
     "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
     "lqos_preflight", # The v2->v3 pre-install qualification core (pure, shared by the standalone checker + the deb preinst).
     "lqos_api", # Node API library (GPL-2.0-only), mounted by lqosd at /api/v3.
+    "dudarchy_poller", # Vendored dudarchy poller library (GPL-2.0-only; see its README).
 ]
 
 # The API smoke-test CLI is a standalone package with its own lockfile.

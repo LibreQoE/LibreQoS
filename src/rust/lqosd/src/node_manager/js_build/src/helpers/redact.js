@@ -1,3 +1,5 @@
+// translatable: false — "--redact" and "--redact-font-family" are the CSS custom properties the switch writes, not labels
+// translatable: false — "blur(8px)" and '"Klingon", sans-serif' are the CSS values behind redaction, not copy
 export function initRedact() {
     let modeSwitch = document.getElementById("redactSwitch");
     modeSwitch.checked = isRedacted();

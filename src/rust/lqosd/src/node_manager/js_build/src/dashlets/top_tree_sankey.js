@@ -5,6 +5,9 @@ import {isColorBlindMode} from "../helpers/colorblind";
 import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {effectiveMax} from "../helpers/network_rates.mjs";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Illegible" is a font-family name the redaction mode sets, not a label
 
 /**
  * Viridis color scale interpolation (0-1 input).
@@ -81,11 +84,11 @@ export class TopTreeSankey extends BaseDashlet {
     }
 
     title() {
-        return "Top Level Sankey";
+        return t("dashlet.name.network_tree_sankey");
     }
 
     tooltip() {
-        return "<h5>Network Tree</h5><p>Summary of the top-level network tree, rendered as a Sankey. Ribbon width shows relative bandwidth, ribbon color percentage of capacity, and node color overall RTT.</p>";
+        return `<h5>${t("tree.title")}</h5><p>${t("dashlet.tree_sankey.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -119,7 +122,7 @@ export class TopTreeSankey extends BaseDashlet {
         // Build 2-level sankey if L2 is present, else fallback to 1-level
         const nodes = [];
         const links = [];
-        nodes.push({ name: "Root", label: "Root" });
+        nodes.push({ name: t("graph.sankey.root"), label: t("graph.sankey.root") });
 
         const firstLevel = (this._lastTreeSummary || []).slice(1);
 
@@ -198,7 +201,7 @@ export class TopTreeSankey extends BaseDashlet {
 
                 if (parentSum > 0) {
                     links.push({
-                        source: "Root",
+                        source: t("graph.sankey.root"),
                         target: pName,
                         value: parentSum,
                         lineStyle: { color: capacityColor },
@@ -232,7 +235,7 @@ export class TopTreeSankey extends BaseDashlet {
             if (downBitsPerSec > 0) {
                 nodes.push({ name: r[1].name, label, itemStyle: { color } });
                 links.push({
-                    source: "Root",
+                    source: t("graph.sankey.root"),
                     target: r[1].name,
                     value: toNumber(r[1].current_throughput[0], 0) + toNumber(r[1].current_throughput[1], 0),
                     lineStyle: { color: capacityColor },

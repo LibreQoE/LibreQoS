@@ -200,6 +200,15 @@ pub struct StateReport {
     /// report's transaction order + the named urgent).
     #[serde(default)]
     pub slot_order: Vec<u8>,
+    /// `lqos-74t.191` MUST 2 (v4 review): CBOR of the numeric SLOTS
+    /// (Vec<u64>), PARALLEL to `slot_order`. `slot_order` is dense over the
+    /// live circuits, so a completed remove leaves holes that its position
+    /// cannot express; the broker must index owners by these actual numbers.
+    /// Additive + `#[serde(default)]`: a pre-MUST-2 bridge sends empty bytes
+    /// and the broker rejects the owner table whole (groups nothing) instead
+    /// of guessing dense positions.
+    #[serde(default)]
+    pub slot_numbers: Vec<u8>,
     /// WP3 (`docs/wp2_wp3_fence_convergence_and_adopt_card.md` §2): the
     /// semantic CONTENT KEY of the applied transaction
     /// (`lqos_dataplane_types::content_key`). Carried TYPED so the broker's
@@ -1752,7 +1761,7 @@ mod supervision_tests {
             request
                 .reply
                 .try_send(crate::HealthReport {
-                    status: "starting".to_string(),
+                    status: crate::HealthStatus::Starting,
                     version: "test".to_string(),
                     uptime_ms: 5,
                     completion_ring_epoch: 0,
@@ -1776,7 +1785,7 @@ mod supervision_tests {
                     channel: crate::ChannelHealth::default(),
                     barrier: crate::BarrierHealth::default(),
                     classification_empty: false,
-                    topology_tier: String::new(),
+                    topology_tier: crate::TopologyTier::default(),
                     degraded_subsystems: Vec::new(),
                     boots: 0,
                     last_boot_unix: 0,
@@ -1785,7 +1794,7 @@ mod supervision_tests {
                 .unwrap();
         });
         let report = connect_health(&socket).unwrap();
-        assert_eq!(report.status, "starting");
+        assert_eq!(report.status, crate::HealthStatus::Starting);
         assert_eq!(report.workers.len(), 1);
         assert_eq!(report.workers[0].rollup_age_ms, None);
         let snapshot = connect_snapshot(&socket, 10).unwrap();
@@ -1843,6 +1852,7 @@ mod supervision_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: serde_cbor::to_vec(&vec![0u16; order.len()]).expect("owners serialize"),
+            slot_numbers: serde_cbor::to_vec(&vec![1u64, 2u64]).expect("slots serialize"),
             workers: None,
         };
         let expected = report.clone();
@@ -2351,6 +2361,7 @@ mod completion_contract_tests {
             desired_world_content_key: String::new(),
             applied_circuit_capacity: None,
             owners: Vec::new(),
+            slot_numbers: Vec::new(),
             workers,
         }
     }

@@ -1,6 +1,7 @@
 import {TopNSankey} from "../graphs/top_n_sankey";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class Worst10DownloadersVisual extends DashletBaseInsight {
     constructor(slot) {
@@ -13,11 +14,11 @@ export class Worst10DownloadersVisual extends DashletBaseInsight {
     }
 
     title() {
-        return "Worst 10 Round-Trip Time";
+        return t("dashlet.name.worst_10_round_trip_time_visual");
     }
 
     tooltip() {
-        return "<h5>Worst 10 Round-Trip Time</h5><p>Worst 10 Downloaders by round-trip time, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.worst10.rtt.tooltip")}</p>`;
     }
 
     subscribeTo() {

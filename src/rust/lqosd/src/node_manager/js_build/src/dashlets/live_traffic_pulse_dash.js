@@ -2,6 +2,11 @@ import {DashletBaseInsight} from "./insight_dashlet_base";
 import {LiveTrafficPulseCanvas, pulsePalette} from "../graphs/live_traffic_pulse_canvas";
 import {get_ws_client} from "../pubsub/ws";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {ONE_DECIMAL, formatNumber} from "../i18n/format.js";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Throughput" and "Error" are websocket event names this dashlet subscribes to and filters on, not labels
+// translatable: false — " $1bps" is the regex replacement that appends the unit suffix, not copy
 
 // `.66.7`: the real Live Traffic Pulse, replacing the Last-30-Seconds Traffic
 // widget (`throughputRing30`). Driven by the EXISTING 1 Hz `Throughput` event;
@@ -27,14 +32,10 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
 
     canBeSlowedDown() { return true; }
 
-    title() { return "Live Traffic Pulse"; }
+    title() { return t("dashlet.name.live_traffic_pulse"); }
 
     tooltip() {
-        return "<h5>Live Traffic Pulse</h5><p>A mirrored 30-second Mapped/Unmapped demand "
-            + "stream (download up, upload down). Mapped = a shaped circuit was resolved; "
-            + "Unmapped = the best-effort class. The download and upload halves are "
-            + "scaled independently around zero, so each direction uses the full half-height. "
-            + "Peak / 30s avg come from the live window; Δ vs 24h uses licensed Insight history when available.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.pulse.tooltip")}</p>`;
     }
 
     subscribeTo() { return ["Throughput"]; }
@@ -52,22 +53,22 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
                     <span class="pulse-arrow" data-pulse="down-arrow">↓</span>
                     <div class="pulse-metric-copy">
                         <div class="pulse-metric-value" data-pulse="down">—</div>
-                        <div class="pulse-metric-label">Downstream <span class="pulse-metric-sub">(current)</span></div>
+                        <div class="pulse-metric-label">${t("dashlet.pulse.downstream")} <span class="pulse-metric-sub">${t("dashlet.pulse.current")}</span></div>
                     </div>
                 </div>
                 <div class="pulse-metric pulse-metric-up">
                     <span class="pulse-arrow" data-pulse="up-arrow">↑</span>
                     <div class="pulse-metric-copy">
                         <div class="pulse-metric-value" data-pulse="up">—</div>
-                        <div class="pulse-metric-label">Upstream <span class="pulse-metric-sub">(current)</span></div>
+                        <div class="pulse-metric-label">${t("dashlet.pulse.upstream")} <span class="pulse-metric-sub">${t("dashlet.pulse.current")}</span></div>
                     </div>
                 </div>
                 <div class="pulse-metric pulse-metric-unmapped" data-pulse="unmapped-wrap">
                     <span class="pulse-arrow" data-pulse="unmapped-arrow">∿</span>
                     <div class="pulse-metric-copy">
                         <div class="pulse-metric-value" data-pulse="unmapped">—</div>
-                        <div class="pulse-metric-label">Unmapped <span class="pulse-metric-sub" data-pulse="unmapped-pct"></span></div>
-                        <div class="pulse-note" data-pulse="no-class" style="display:none">Total · class split unavailable</div>
+                        <div class="pulse-metric-label">${t("graph.pie.unmapped")} <span class="pulse-metric-sub" data-pulse="unmapped-pct"></span></div>
+                        <div class="pulse-note" data-pulse="no-class" style="display:none">${t("dashlet.pulse.no_class")}</div>
                     </div>
                 </div>
                 <div class="pulse-baseline" data-pulse="baseline"></div>
@@ -85,14 +86,14 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
         if (handle) {
             const status = document.createElement("span");
             status.className = "pulse-status";
-            status.innerHTML = '<span class="pulse-status-dot"></span> Last 30 seconds';
+            status.innerHTML = `<span class="pulse-status-dot"></span> ${t("dashlet.pulse.window", {seconds: 30})}`;
             handle.insertBefore(status, handle.children.length ? handle.children[0] : null);
             const legend = document.createElement("span");
             legend.className = "dashbox-title-controls pulse-legend";
             legend.innerHTML = `
-                <span class="pulse-legend-item"><span class="pulse-legend-swatch mapped"></span>Mapped ↓</span>
-                <span class="pulse-legend-item"><span class="pulse-legend-swatch mapped-up"></span>Mapped ↑</span>
-                <span class="pulse-legend-item"><span class="pulse-legend-swatch unmapped"></span>Unmapped</span>`;
+                <span class="pulse-legend-item"><span class="pulse-legend-swatch mapped"></span>${t("graph.pie.mapped")} ↓</span>
+                <span class="pulse-legend-item"><span class="pulse-legend-swatch mapped-up"></span>${t("graph.pie.mapped")} ↑</span>
+                <span class="pulse-legend-item"><span class="pulse-legend-swatch unmapped"></span>${t("graph.pie.unmapped")}</span>`;
             handle.appendChild(legend);
             this._el["legend-mapped"] = legend.querySelector(".mapped");
             this._el["legend-mapped-up"] = legend.querySelector(".mapped-up");
@@ -236,7 +237,7 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
                 ? last.unmappedPct
                 : (total > 0 ? (unmappedTotal / total) * 100 : 0);
             this._el["unmapped-pct"].textContent = total > 0
-                ? `(${pct.toFixed(1)}% of total)`
+                ? t("dashlet.pulse.pct_of_total", {percent: formatNumber(pct, ONE_DECIMAL)})
                 : "";
             // Fade the unmapped metric block with a shallow floor:
             // 0% -> 0.15, 2.5% -> 0.25, 5% -> 0.50, 10%+ -> 1.0.
@@ -278,8 +279,8 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
         const avg = sum / this._samples.length;
         const delta = this.#deltaHtml(avg);
         this._el.baseline.innerHTML = `
-            <div class="pulse-baseline-row"><span>Peak</span><b>${this.#fmt(peak)}</b></div>
-            <div class="pulse-baseline-row"><span>30s avg</span><b>${this.#fmt(avg)}</b></div>
+            <div class="pulse-baseline-row"><span>${t("dashlet.pulse.peak")}</span><b>${this.#fmt(peak)}</b></div>
+            <div class="pulse-baseline-row"><span>${t("dashlet.pulse.avg_window", {seconds: 30})}</span><b>${this.#fmt(avg)}</b></div>
             ${delta ? `<div class="pulse-baseline-delta">${delta}</div>` : ""}`;
     }
 
@@ -289,7 +290,7 @@ export class LiveTrafficPulseDash extends DashletBaseInsight {
         }
         const pct = ((nowAvg - this._deltaBaselineBps) / this._deltaBaselineBps) * 100;
         const up = pct >= 0;
-        return `Δ vs 24h <b class="pulse-delta ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%</b>`;
+        return `${t("dashlet.pulse.delta_24h")} <b class="pulse-delta ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%</b>`;
     }
 
     // `.66.2` (iv): the 24h baseline reuses the EXISTING `LtsThroughput` path.

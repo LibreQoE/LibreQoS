@@ -633,14 +633,21 @@ def _ensure_infrastructure_node(
     node_id = _visp_ap_node_id(eq_id)
     if net.findNodeIndexById(node_id) == -1:
         display_name = str(row.get("description") or row.get("name") or f"VISP {eq_id}").strip() or f"VISP {eq_id}"
-        net.addRawNode(
-            NetworkNode(
-                id=node_id,
-                displayName=display_name,
-                parentId=parent_node_id,
-                type=NodeType.ap,
-                networkJsonId=f"visp:eq:{eq_id}",
-            )
+        node = NetworkNode(
+            id=node_id,
+            displayName=display_name,
+            parentId=parent_node_id,
+            type=NodeType.ap,
+            networkJsonId=f"visp:eq:{eq_id}",
+        )
+        net.addRawNode(node)
+        model_value = row.get("type") or row.get("default_type")
+        family_value = row.get("default_type") or row.get("type")
+        net.attachDeviceRef(
+            node,
+            vendor_hint="visp",
+            model=str(model_value) if model_value is not None else None,
+            family_hint=str(family_value) if family_value is not None else None,
         )
     ap_cache[eq_id] = node_id
     return node_id

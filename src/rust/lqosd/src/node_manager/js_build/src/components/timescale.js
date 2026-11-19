@@ -1,5 +1,8 @@
 import {clearDiv} from "../helpers/builders";
 import {createAndShowModal} from "../lq_js_common/helpers/alert_modal";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the controls compare against and the button ids spell, not a label
 
 class TimeControls {
     constructor(parentId) {
@@ -11,7 +14,7 @@ class TimeControls {
         periods.forEach((period) => {
             let button = document.createElement("button");
             button.id = "tp_" + period;
-            button.innerText = period;
+            button.innerText = period === "Live" ? t("common.time.live") : period;
             if (period === "Live") {
                 const dot = document.createElement("span");
                 dot.className = "time-live-dot";
@@ -27,8 +30,8 @@ class TimeControls {
             button.onclick = () => {
                 if (period !== "Live" && !window.hasLts) {
                     createAndShowModal(
-                        "Extended History Requires an Entitled License",
-                        'Displaying extended time periods requires an entitled license with history access. Open "License & Services" in the menu to review availability for this node.',
+                        t("common.time.extended_history_title"),
+                        t("common.time.extended_history_body"),
                     );
                     return;
                 }

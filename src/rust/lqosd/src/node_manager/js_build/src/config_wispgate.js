@@ -1,23 +1,24 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {t} from "./i18n/index.js";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableWispgate").checked) {
         const apiKey = document.getElementById("wispgate_api_token").value.trim();
         if (!apiKey) {
-            alert("API Key is required when WispGate integration is enabled");
+            alert(t("config.wispgate.validation.key_required"));
             return false;
         }
 
         const apiUrl = document.getElementById("wispgate_api_url").value.trim();
         if (!apiUrl) {
-            alert("API URL is required when WispGate integration is enabled");
+            alert(t("config.wispgate.validation.url_required"));
             return false;
         }
         try {
             new URL(apiUrl);
         } catch {
-            alert("API URL must be a valid URL");
+            alert(t("config.wispgate.validation.url_invalid"));
             return false;
         }
     }
@@ -57,7 +58,7 @@ loadConfig(() => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.wispgate.saved"));
                 });
             }
         });

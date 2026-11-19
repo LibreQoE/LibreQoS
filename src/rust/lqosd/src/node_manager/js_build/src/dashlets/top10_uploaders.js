@@ -1,6 +1,9 @@
 import {clearDashDiv, TopNTableFromMsgData} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
 
 export class Top10Uploaders extends DashletBaseInsight {
     constructor(slot) {
@@ -9,11 +12,11 @@ export class Top10Uploaders extends DashletBaseInsight {
     }
 
     title() {
-        return "Top 10 Uploaders";
+        return t("dashlet.name.top_10_uploaders");
     }
 
     tooltip() {
-        return "<h5>Top 10 Uploaders</h5><p>Top 10 Uploaders by bits per second, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.top10.uploaders.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -47,11 +50,11 @@ export class Top10Uploaders extends DashletBaseInsight {
             this.timeCache.tick();
 
             let items = this.timeCache.get();
-            let t = TopNTableFromMsgData(items);
+            let table = TopNTableFromMsgData(items);
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            target.appendChild(table);
         }
     }
 }

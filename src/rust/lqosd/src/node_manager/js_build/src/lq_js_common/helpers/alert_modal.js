@@ -1,3 +1,7 @@
+import {t} from "../../i18n/index.js";
+
+// translatable: false — "modal fade" is a Bootstrap class list, not text
+
 export function createAndShowModal(title, message) {
     // Create the modal wrapper
     const modal = document.createElement('div');
@@ -30,7 +34,7 @@ export function createAndShowModal(title, message) {
     closeButton.type = 'button';
     closeButton.className = 'btn-close';
     closeButton.setAttribute('data-bs-dismiss', 'modal');
-    closeButton.setAttribute('aria-label', 'Close');
+    closeButton.setAttribute('aria-label', t("common.action.close"));
 
     modalHeader.appendChild(modalTitle);
     modalHeader.appendChild(closeButton);
@@ -48,7 +52,7 @@ export function createAndShowModal(title, message) {
     footerCloseButton.type = 'button';
     footerCloseButton.className = 'btn btn-secondary';
     footerCloseButton.setAttribute('data-bs-dismiss', 'modal');
-    footerCloseButton.textContent = 'Close';
+    footerCloseButton.textContent = t("common.action.close");
 
     modalFooter.appendChild(footerCloseButton);
 

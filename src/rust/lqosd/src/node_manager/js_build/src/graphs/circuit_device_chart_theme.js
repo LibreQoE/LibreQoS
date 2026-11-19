@@ -2,6 +2,8 @@ function isLightTheme() {
     return document.documentElement.getAttribute("data-bs-theme") === "light";
 }
 
+// translatable: false — "rgba(228, 236, 250, 0.9)" "rgba(216, 226, 244, 0.66)" "rgba(216, 226, 244, 0.58)" "rgba(216, 226, 244, 0.24)" "rgba(216, 226, 244, 0.18)" "rgba(216, 226, 244, 0.05)" "rgba(228, 236, 250, 0.74)" "rgba(12, 19, 30, 0.94)" "rgba(143, 176, 255, 0.22)" "rgba(236, 242, 252, 0.96)" "rgba(23, 38, 58, 0.96)" — the chart theme colours for title, axes, legend and tooltip, not labels
+// translatable: false — "rgba(34, 48, 69, 0.92)" "rgba(54, 67, 86, 0.72)" "rgba(54, 67, 86, 0.62)" "rgba(77, 94, 118, 0.26)" "rgba(77, 94, 118, 0.18)" "rgba(77, 94, 118, 0.08)" "rgba(34, 48, 69, 0.72)" "rgba(249, 251, 255, 0.98)" "rgba(79, 121, 217, 0.18)" "rgba(34, 48, 69, 0.94)" "rgba(232, 239, 248, 0.98)" — the light-theme chart colours for the same surfaces, not labels
 export function getCircuitDeviceChartTheme() {
     if (!isLightTheme()) {
         return {

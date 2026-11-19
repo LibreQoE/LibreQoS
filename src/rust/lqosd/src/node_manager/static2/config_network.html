@@ -4,22 +4,22 @@
     <section class="lqos-config-panel">
         <div class="lqos-config-panel-header">
             <div>
-                <h5 class="lqos-config-panel-title">Network Layout</h5>
-                <div class="lqos-config-panel-subtitle">Review the shaping hierarchy, rename or promote nodes, and adjust per-node rates before saving <code>network.json</code>.</div>
+                <h5 class="lqos-config-panel-title" data-i18n="config.network.title">Network Layout</h5>
+                <div class="lqos-config-panel-subtitle" id="networkLayoutSubtitle"></div>
             </div>
         </div>
 
         <div id="networkEditorLock" class="lqos-config-note lqos-config-note-warning d-none mb-3" role="alert"></div>
 
         <div class="lqos-config-actions mb-3">
-            <button id="btnSaveNetwork" class="btn btn-outline-primary">
+            <button id="btnSaveNetwork" class="btn btn-outline-primary" data-i18n="config.network.save">
                 <i class="fa fa-save"></i> Save Changes
             </button>
         </div>
 
         <div class="lqos-config-section">
-            <h6 class="lqos-config-section-title">Topology Editor</h6>
-            <div class="lqos-config-section-subtitle">Node cards show hierarchy, configured rates, and the actions available for each branch.</div>
+            <h6 class="lqos-config-section-title" data-i18n="config.network.editor.title">Topology Editor</h6>
+            <div class="lqos-config-section-subtitle" data-i18n="config.network.editor.subtitle">Node cards show hierarchy, configured rates, and the actions available for each branch.</div>
             <div id="netjson" class="lqos-config-network-editor"></div>
         </div>
     </section>

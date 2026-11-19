@@ -1,6 +1,7 @@
 import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class IpProtocols extends DashletBaseInsight {
     constructor(slot) {
@@ -8,7 +9,7 @@ export class IpProtocols extends DashletBaseInsight {
     }
 
     title() {
-        return "IP Protocols";
+        return t("dashlet.name.ip_protocols");
     }
 
     canBeSlowedDown() {
@@ -16,7 +17,7 @@ export class IpProtocols extends DashletBaseInsight {
     }
 
     tooltip() {
-        return "<h5>IP Protocols</h5><p>Bytes transferred over TCP/UDP/ICMP and port numbers, matched to common services when possible. This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.ip_protocols.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -38,15 +39,15 @@ export class IpProtocols extends DashletBaseInsight {
         if (msg.event === "IpProtocols") {
             let target = document.getElementById(this.id);
 
-            let t = document.createElement("table");
-            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
+            let table = document.createElement("table");
+            table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
 
             let th = document.createElement("thead");
             th.classList.add("small");
-            th.appendChild(theading("Protocol"));
-            th.appendChild(theading("DL ⬇️"));
-            th.appendChild(theading("UL ⬆️"));
-            t.appendChild(th);
+            th.appendChild(theading(t("circuit.traffic.protocol")));
+            th.appendChild(theading(t("common.table.dl_abbr")));
+            th.appendChild(theading(t("common.table.ul_abbr")));
+            table.appendChild(th);
 
             let tbody = document.createElement("tbody");
 
@@ -58,15 +59,15 @@ export class IpProtocols extends DashletBaseInsight {
                 row.appendChild(simpleRow(scaleNumber(r[1].down)));
                 row.appendChild(simpleRow(scaleNumber(r[1].up)));
 
-                t.appendChild(row);
+                table.appendChild(row);
             });
 
 
-            t.appendChild(tbody);
+            table.appendChild(tbody);
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            target.appendChild(table);
         }
     }
 }

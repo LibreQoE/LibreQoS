@@ -20,7 +20,7 @@ test("(1) the Reload LibreQoS sidebar item exists + is admin-gated", async () =>
     assert.match(source, /import \{isAdminRole\} from "\.\/circuit_admin_actions\.mjs";/);
     assert.match(source, /function initReloadLibreQoS\(\)/);
     assert.match(source, /if \(!isAdminRole\(window\.USER_ROLE\)\)/);
-    assert.match(source, /triggerReloadLibreQoS\("Re-syncing integration and applying/);
+    assert.match(source, /triggerReloadLibreQoS\(t\("common\.reload\.resyncing"\)\)/);
     assert.match(source, /^\s*initReloadLibreQoS\(\);/m);
 });
 
@@ -35,7 +35,13 @@ test("(2) the client-rendered status buttons carry no p-0 (padding parity)", asy
 
 test("(3) the sidebar nav-link vertical padding is tightened", async () => {
     const css = await readStatic("node_manager.css");
-    assert.match(css, /\.sidebar \.nav-link \{[^}]*padding: 0\.4rem 0\.65rem;/s);
+    // The inset is declared once for the nav link and the language item, so a
+    // typography change moves both (i18n-06 REV-D2); this also fails if the two
+    // ever drift apart again.
+    assert.match(
+        css,
+        /\.sidebar \.nav-link,\s*\.sidebar \.nav-language \{[^}]*padding: 0\.4rem 0\.65rem;/s,
+    );
 });
 
 test("(4) circuit.html puts Edit Rates in the Packet Capture row", async () => {

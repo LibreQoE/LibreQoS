@@ -40,72 +40,68 @@
     <section class="lqos-config-panel">
         <div class="lqos-config-panel-header">
             <div>
-                <h5 class="lqos-config-panel-title"><i class="fa fa-wave-square me-2"></i>Topology Probes</h5>
-                <div class="lqos-config-panel-subtitle">
-                    Enabled attachment-pair probe inventory and runtime health from <code>topology_attachment_health_state.json</code>.
-                </div>
+                <h5 class="lqos-config-panel-title" data-i18n="topology_probes.title"><i class="fa fa-wave-square me-2"></i>Topology Probes</h5>
+                <div class="lqos-config-panel-subtitle" id="topologyProbesSubtitle"></div>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="badge bg-secondary" id="topologyProbesStatus">Loading…</span>
-                <span class="text-muted small" id="topologyProbesUpdated">Waiting for data</span>
+                <span class="badge bg-secondary" id="topologyProbesStatus" data-i18n="common.state.loading">Loading...</span>
+                <span class="text-muted small" id="topologyProbesUpdated" data-i18n="common.state.waiting">Waiting for data</span>
             </div>
         </div>
 
         <div id="topologyProbesStats" class="topology-probes-stats">
             <div class="topology-probes-stat">
-                <div class="topology-probes-stat-label">Enabled</div>
+                <div class="topology-probes-stat-label" data-i18n="topology_probes.enabled">Enabled</div>
                 <div class="topology-probes-stat-value">—</div>
-                <div class="topology-probes-stat-note">Probe pairs in service</div>
+                <div class="topology-probes-stat-note" data-i18n="topology_probes.stat.enabled_note">Probe pairs in service</div>
             </div>
             <div class="topology-probes-stat">
-                <div class="topology-probes-stat-label">Healthy</div>
+                <div class="topology-probes-stat-label" data-i18n="topology.status.healthy">Healthy</div>
                 <div class="topology-probes-stat-value">—</div>
-                <div class="topology-probes-stat-note">Passing both endpoints</div>
+                <div class="topology-probes-stat-note" data-i18n="topology_probes.stat.healthy_note">Passing both endpoints</div>
             </div>
             <div class="topology-probes-stat">
-                <div class="topology-probes-stat-label">Suppressed</div>
+                <div class="topology-probes-stat-label" data-i18n="topology.status.suppressed">Suppressed</div>
                 <div class="topology-probes-stat-value">—</div>
-                <div class="topology-probes-stat-note">Currently held down</div>
+                <div class="topology-probes-stat-note" data-i18n="topology_probes.stat.suppressed_note">Currently held down</div>
             </div>
             <div class="topology-probes-stat">
-                <div class="topology-probes-stat-label">Unavailable</div>
+                <div class="topology-probes-stat-label" data-i18n="topology_probes.stat.unavailable">Unavailable</div>
                 <div class="topology-probes-stat-value">—</div>
-                <div class="topology-probes-stat-note">Missing usable probe inputs</div>
+                <div class="topology-probes-stat-note" data-i18n="topology_probes.stat.unavailable_note">Missing usable probe inputs</div>
             </div>
         </div>
 
         <div class="lqos-config-section">
             <div class="row g-2 align-items-end mb-3">
                 <div class="col-12 col-lg-5">
-                    <label class="form-label small text-body-secondary" for="topologyProbesSearch">Search</label>
-                    <input class="form-control" id="topologyProbesSearch" type="search" placeholder="Node, attachment, pair ID, or probe IP">
+                    <label class="form-label small text-body-secondary" for="topologyProbesSearch" data-i18n="common.search.action">Search</label>
+                    <input class="form-control" id="topologyProbesSearch" type="search" placeholder="Node, attachment, pair ID, or probe IP" data-i18n-placeholder="topology_probes.search.placeholder">
                 </div>
                 <div class="col-6 col-lg-3">
-                    <label class="form-label small text-body-secondary" for="topologyProbesStatusFilter">Status</label>
+                    <label class="form-label small text-body-secondary" for="topologyProbesStatusFilter" data-i18n="topology_probes.status">Status</label>
                     <select class="form-select" id="topologyProbesStatusFilter">
-                        <option value="all">All statuses</option>
-                        <option value="suppressed">Suppressed</option>
-                        <option value="probe_unavailable">Probe Unavailable</option>
-                        <option value="disabled">Disabled</option>
-                        <option value="healthy">Healthy</option>
+                        <option value="all" data-i18n="topology_probes.filter.all_statuses">All statuses</option>
+                        <option value="suppressed" data-i18n="topology.status.suppressed">Suppressed</option>
+                        <option value="probe_unavailable" data-i18n="topology.status.probe_unavailable">Probe Unavailable</option>
+                        <option value="disabled" data-i18n="topology.status.disabled">Disabled</option>
+                        <option value="healthy" data-i18n="topology.status.healthy">Healthy</option>
                     </select>
                 </div>
                 <div class="col-6 col-lg-2">
-                    <label class="form-label small text-body-secondary" for="topologyProbesEnabledFilter">Enabled</label>
+                    <label class="form-label small text-body-secondary" for="topologyProbesEnabledFilter" data-i18n="topology_probes.enabled">Enabled</label>
                     <select class="form-select" id="topologyProbesEnabledFilter">
-                        <option value="enabled" selected>Enabled</option>
-                        <option value="all">All</option>
-                        <option value="disabled">Disabled</option>
+                        <option value="enabled" selected data-i18n="topology_probes.enabled">Enabled</option>
+                        <option value="all" data-i18n="topology_probes.filter.all">All</option>
+                        <option value="disabled" data-i18n="topology.status.disabled">Disabled</option>
                     </select>
                 </div>
                 <div class="col-12 col-lg-2 d-flex align-items-end justify-content-lg-end">
-                    <div class="small text-body-secondary text-lg-end" id="topologyProbesSummary">Waiting for data</div>
+                    <div class="small text-body-secondary text-lg-end" id="topologyProbesSummary" data-i18n="common.state.waiting">Waiting for data</div>
                 </div>
             </div>
 
-            <div class="lqos-config-note lqos-config-note-warning mb-3">
-                Disabled or otherwise non-enabled probe rows are hidden by default. Use the <strong>Enabled</strong> filter to switch to <strong>All</strong> or <strong>Disabled</strong> when troubleshooting.
-            </div>
+            <div class="lqos-config-note lqos-config-note-warning mb-3" id="topologyProbesFilterNote"></div>
 
             <div class="card">
                 <div class="card-body">
@@ -113,19 +109,19 @@
                         <table class="lqos-table lqos-table-compact align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th>Child</th>
-                                    <th>Parent</th>
-                                    <th>Attachment</th>
-                                    <th>Probe IPs</th>
-                                    <th>Status</th>
-                                    <th>Health</th>
-                                    <th>Endpoints</th>
-                                    <th>Actions</th>
+                                    <th data-i18n="topology_probes.table.child">Child</th>
+                                    <th data-i18n="common.table.parent">Parent</th>
+                                    <th data-i18n="topology_probes.table.attachment">Attachment</th>
+                                    <th data-i18n="topology_probes.table.probe_ips">Probe IPs</th>
+                                    <th data-i18n="topology_probes.status">Status</th>
+                                    <th data-i18n="topology_probes.table.health">Health</th>
+                                    <th data-i18n="topology_probes.table.endpoints">Endpoints</th>
+                                    <th data-i18n="topology_probes.table.actions">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="topologyProbesTable">
                                 <tr>
-                                    <td colspan="8" class="text-muted">Loading topology probe state…</td>
+                                    <td colspan="8" class="text-muted" data-i18n="topology_probes.loading">Loading topology probe state…</td>
                                 </tr>
                             </tbody>
                         </table>

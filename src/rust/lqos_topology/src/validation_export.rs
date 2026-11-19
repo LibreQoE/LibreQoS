@@ -195,23 +195,36 @@ fn validate_effective_node_identity_consistency(
     }
 }
 
-/// Validates that the candidate effective tree is structurally safe to publish.
+/// Validates the effective node identity/attachment consistency and the
+/// effective site-parent graph's acyclicity.
 ///
-/// This checks that the effective topology remains ID-consistent, the effective
-/// site-parent graph is acyclic, and every canonical site node remains present
-/// exactly once in the exported tree.
-fn validate_effective_topology_network_from_canonical(
-    _config: &Config,
+/// These checks do not depend on the exported network tree, so the flat-mode
+/// path (which publishes a site-less `Generated_PN` world) still runs them.
+fn validate_effective_network_identity_and_cycles(
     canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-    effective_network: &Value,
 ) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     let site_node_ids = canonical_site_node_ids(canonical);
     validate_effective_node_identity_consistency(ui_state, effective, &mut errors);
     validate_effective_site_parent_cycles(&site_node_ids, ui_state, effective, &mut errors);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
 
+/// The canonical site-presence closure (the "dropped site" guard): every
+/// canonical site node must remain present exactly once in the exported tree.
+///
+/// Inapplicable to the flat-mode world, which is `Generated_PN` buckets and
+/// site-less by design (lqos-74t.162).
+fn validate_effective_site_loss_from_canonical(
+    canonical: &TopologyCanonicalStateFile,
+    effective_network: &Value,
+) -> Result<(), Vec<String>> {
     let mut counts = HashMap::new();
     let Some(root) = effective_network.as_object() else {
         return Err(vec![
@@ -222,6 +235,8 @@ fn validate_effective_topology_network_from_canonical(
         count_node_ids(child, &mut counts);
     }
 
+    let site_node_ids = canonical_site_node_ids(canonical);
+    let mut errors = Vec::new();
     for canonical_node in canonical
         .nodes
         .iter()
@@ -249,6 +264,22 @@ fn validate_effective_topology_network_from_canonical(
     } else {
         Err(errors)
     }
+}
+
+/// Validates that the candidate effective tree is structurally safe to publish.
+///
+/// This checks that the effective topology remains ID-consistent, the effective
+/// site-parent graph is acyclic, and every canonical site node remains present
+/// exactly once in the exported tree.
+fn validate_effective_topology_network_from_canonical(
+    _config: &Config,
+    canonical: &TopologyCanonicalStateFile,
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+    effective_network: &Value,
+) -> Result<(), Vec<String>> {
+    validate_effective_network_identity_and_cycles(canonical, ui_state, effective)?;
+    validate_effective_site_loss_from_canonical(canonical, effective_network)
 }
 
 /// Validates that an effective topology export remains structurally safe to publish.
@@ -292,6 +323,11 @@ fn apply_effective_topology_to_network_json_from_canonical(
         apply_effective_topology_reparenting_only(canonical_network, ui_state, effective)?;
     if let Some(root) = out.as_object_mut() {
         recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
+        // lqos-74t190: restore the operator node floors lost on the
+        // native-ingress path (the insight export carries no
+        // *BandwidthMbpsMin), so the later commit recompile's
+        // max(existing, sum) honours the operator minimum.
+        seed_effective_commits_from_canonical(root, canonical.compatibility_network_json());
         // K1b §4.1 item 1: fold the MERGED `AdjustSiteSpeed` overrides
         // (operator + stormguard, operator-first) onto the effective node
         // ceils AFTER the canonical/attachment recomputation so a StormGuard

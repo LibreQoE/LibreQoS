@@ -7,6 +7,7 @@
 // without a DOM.
 
 /** The only default SQM the v3 DPDK pipeline supports. */
+// translatable: false — "cake diffserv4" is the tc qdisc specification the pipeline accepts, compared literally and never used as a label
 export const SUPPORTED_DEFAULT_SQM = "cake diffserv4";
 
 /** The compile mode whose queue-sizing knobs are still operator-tunable. */

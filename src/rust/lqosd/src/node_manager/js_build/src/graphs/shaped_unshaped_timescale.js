@@ -2,6 +2,7 @@ import {DashboardGraph} from "./dashboard_graph";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
 
 const wsClient = get_ws_client();
 
@@ -21,12 +22,12 @@ export class ShapedUnshapedTimescale extends DashboardGraph {
         // Graph Options
         this.option = new GraphOptionsBuilder()
             .withTimeAxis()
-            .withScaledAbsYAxis("% Mapped", 40)
+            .withScaledAbsYAxis(t("graph.axis.percent_mapped"), 40)
             .withEmptySeries()
             .withEmptyLegend()
             .build();
         this.option.series.push({
-            name: "% Mapped",
+            name: t("graph.axis.percent_mapped"),
             type: "line",
             data: []
         });

@@ -5,6 +5,12 @@ Bienvenido a la documentación de LibreQoS
 
 .. toctree::
    :maxdepth: 1
+   :caption: LibreQoS v3 (beta)
+
+   v3/node-manager-i18n-es
+
+.. toctree::
+   :maxdepth: 1
    :caption: Primeros Pasos
 
    Quickstart (Empieza Aquí) <v2.0/quickstart-es>

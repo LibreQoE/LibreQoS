@@ -19,6 +19,10 @@ tx_usecs = 8
 disable_rxvlan = true
 disable_txvlan = true
 disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
+# Per-worker expected-throughput capacity (Mbps, EFFECTIVE — no headroom).
+# Default 1125; high-performance preset 2000. This is the soft cold-placement
+# packing objective, not a commit/ceiling cap.
+worker_capacity_mbps = 1125
 
 # EITHER:
 [bridge]

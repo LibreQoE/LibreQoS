@@ -1,3 +1,5 @@
+// translatable: false — "rgb(136, 147, 165)" is the fallback halo colour, not copy
+// translatable: false — "Feature" and "Polygon" are GeoJSON type names in the collection, not labels
 // `.67.12`-`.67.14` — a FLAT 2D planar hexbin for the Site Map.
 //
 // `.67.13` filled EVERY lattice cell with the nearest site's RTT across a 40 km

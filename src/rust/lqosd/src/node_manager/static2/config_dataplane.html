@@ -5,35 +5,33 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Dataplane Bandwidth</h5>
-                    <div class="lqos-config-panel-subtitle">Your box's total root shaper bandwidth for the DPDK pipeline.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.dataplane.title">Dataplane Bandwidth</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.dataplane.subtitle">Your box's total root shaper bandwidth for the DPDK pipeline.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
-                <h6 class="lqos-config-section-title">Root Shaper Capacity</h6>
-                <div class="lqos-config-section-subtitle">The aggregate ceiling the DPDK shaping tree is built from. This is the single source the control plane and the bridge both read.</div>
+                <h6 class="lqos-config-section-title" data-i18n="config.dataplane.capacity.title">Root Shaper Capacity</h6>
+                <div class="lqos-config-section-subtitle" data-i18n="config.dataplane.capacity.subtitle">The aggregate ceiling the DPDK shaping tree is built from. This is the single source the control plane and the bridge both read.</div>
 
                 <div class="row g-3 mt-1">
                     <div class="col-12 col-xl-6">
-                        <label for="dataplaneDownload" class="form-label">Download Bandwidth (Mbps)</label>
+                        <label for="dataplaneDownload" class="form-label" data-i18n="config.dataplane.download">Download Bandwidth (Mbps)</label>
                         <input type="number" class="form-control" id="dataplaneDownload" min="0.01" step="any">
-                        <div class="form-text">Total downstream capacity.</div>
+                        <div class="form-text" data-i18n="config.dataplane.download_help">Total downstream capacity.</div>
                     </div>
                     <div class="col-12 col-xl-6">
-                        <label for="dataplaneUpload" class="form-label">Upload Bandwidth (Mbps)</label>
+                        <label for="dataplaneUpload" class="form-label" data-i18n="config.dataplane.upload">Upload Bandwidth (Mbps)</label>
                         <input type="number" class="form-control" id="dataplaneUpload" min="0.01" step="any">
-                        <div class="form-text">Total upstream capacity.</div>
+                        <div class="form-text" data-i18n="config.dataplane.upload_help">Total upstream capacity.</div>
                     </div>
                 </div>
 
-                <div class="lqos-config-note mt-3" role="note">
-                    These values are written to the <code>[dataplane]</code> section of <code>lqos.conf</code> and, during the transition, mirrored into the legacy <code>[queues]</code> keys so older readers stay consistent.
-                </div>
+                <div class="lqos-config-note mt-3" role="note" id="dataplaneSectionNote"></div>
             </div>
 
             <div class="lqos-config-actions">
-                <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+                <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.dataplane.save">Save Changes</button>
             </div>
         </section>
     </form>

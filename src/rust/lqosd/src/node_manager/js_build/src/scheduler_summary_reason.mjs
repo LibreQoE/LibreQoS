@@ -6,11 +6,12 @@
 // accidental-complexity rule). The import axis and the boot-world axis are
 // independent, so the combined reasons render BOTH lines with the boot world
 // FIRST (the more actionable), never one silently.
+//
+// The served reason is a code: the switch below is the code-to-message seam, so
+// a new server reason degrades to the generic degraded line instead of leaking
+// the code onto the screen.
 
-export const BOOTSTRAP_TRUNK_DETAIL =
-    "The bridge booted without a configured or last-known-good world; libreqos-bridge serves the bootstrap trunk until restart.";
-export const PASS_THROUGH_DETAIL =
-    "The bridge booted without a verified world and is passing traffic through unshaped until restart.";
+import {t} from "./i18n/index.js";
 
 /**
  * Map the served `summary_reason` to a degraded title/subtitle.
@@ -21,40 +22,48 @@ export const PASS_THROUGH_DETAIL =
  * @returns {{title: string, subtitle: string}}
  */
 export function schedulerDegradedReason(summaryReason, integrationLabel, importSubtitle) {
-    const label = String(integrationLabel || "").trim() || "Integration";
-    const importLine = String(importSubtitle || "").trim() || `${label} import failing`;
+    const label = String(integrationLabel || "").trim();
+    const name = label || t("scheduler.integration.fallback");
+    const importLine = String(importSubtitle || "").trim()
+        || t("scheduler.integration.import_failing", {name});
     switch (String(summaryReason ?? "").trim()) {
-        case "import_failing":
-            return {
-                title: `Shaping active on last-known-good topology · ${label} import failing`,
-                subtitle: importLine,
-            };
-        case "boot_world_bootstrap_trunk":
-            return {
-                title: "Shaping active on a bootstrap trunk · no verified world at boot",
-                subtitle: BOOTSTRAP_TRUNK_DETAIL,
-            };
-        case "boot_world_pass_through":
-            return {
-                title: "Shaping active (pass-through) · no shaping world verified",
-                subtitle: PASS_THROUGH_DETAIL,
-            };
-        case "import_failing_and_boot_world_bootstrap_trunk":
-            return {
-                title: "Shaping active on a bootstrap trunk · no verified world at boot",
-                subtitle: `${BOOTSTRAP_TRUNK_DETAIL} · ${importLine}`,
-            };
-        case "import_failing_and_boot_world_pass_through":
-            return {
-                title: "Shaping active (pass-through) · no shaping world verified",
-                subtitle: `${PASS_THROUGH_DETAIL} · ${importLine}`,
-            };
-        default:
-            // No reason served (legacy/unknown): NEVER claim the import axis —
-            // that misattribution is the defect this mapping fixes.
-            return {
-                title: "Shaping active · degraded",
-                subtitle: "System Health is degraded; open System Health for details.",
-            };
+    case "import_failing":
+        return {
+            title: t("scheduler.degraded.title.import_failing", {integration: name}),
+            subtitle: importLine,
+        };
+    case "boot_world_bootstrap_trunk":
+        return {
+            title: t("scheduler.degraded.title.bootstrap_trunk"),
+            subtitle: t("scheduler.degraded.detail.bootstrap_trunk"),
+        };
+    case "boot_world_pass_through":
+        return {
+            title: t("scheduler.degraded.title.pass_through"),
+            subtitle: t("scheduler.degraded.detail.pass_through"),
+        };
+    case "import_failing_and_boot_world_bootstrap_trunk":
+        return {
+            title: t("scheduler.degraded.title.bootstrap_trunk"),
+            subtitle: t("scheduler.degraded.detail.combined", {
+                detail: t("scheduler.degraded.detail.bootstrap_trunk"),
+                import: importLine,
+            }),
+        };
+    case "import_failing_and_boot_world_pass_through":
+        return {
+            title: t("scheduler.degraded.title.pass_through"),
+            subtitle: t("scheduler.degraded.detail.combined", {
+                detail: t("scheduler.degraded.detail.pass_through"),
+                import: importLine,
+            }),
+        };
+    default:
+        // No reason served (legacy/unknown): NEVER claim the import axis —
+        // that misattribution is the defect this mapping fixes.
+        return {
+            title: t("scheduler.degraded.title.unknown"),
+            subtitle: t("scheduler.degraded.detail.unknown"),
+        };
     }
 }

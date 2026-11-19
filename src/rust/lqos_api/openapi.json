@@ -7924,11 +7924,11 @@
           "deferred_maintenance": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/DeferredMaintenanceSection",
                 "description": "The broker's held maintenance-window record; `null` when nothing is held."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -11011,11 +11011,11 @@
           "shaped_percentage": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/DownUpTransit",
                 "description": "Percentage of traffic that is shaped. Always `null` on v3: with no\nunshaped measurement the split is not derivable, so the endpoint never\nreports a fabricated 100%."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -11026,11 +11026,11 @@
           "unshaped_bits_per_second": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/DownUpTransit",
                 "description": "Traffic that is not shaped. v3 does not measure an unshaped class, so\nthis is always `null` — never a fabricated 0."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -11067,30 +11067,30 @@
           "system": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/SystemSnapshot"
               },
               {
-                "$ref": "#/components/schemas/SystemSnapshot"
+                "type": "null"
               }
             ]
           },
           "throughput": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ThroughputSnapshot"
               },
               {
-                "$ref": "#/components/schemas/ThroughputSnapshot"
+                "type": "null"
               }
             ]
           },
           "users": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/UserSnapshot"
               },
               {
-                "$ref": "#/components/schemas/UserSnapshot"
+                "type": "null"
               }
             ]
           }
@@ -11989,11 +11989,11 @@
           "dataplane": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/DataplaneVersion",
                 "description": "The dataplane package, or null when it is not installed."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -12008,11 +12008,11 @@
           "libreqos": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibreqosVersion",
                 "description": "The control-plane package, or null when it is not installed."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -12023,11 +12023,11 @@
           "lqosd": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LqosdVersion",
                 "description": "The running daemon's protocol, or null when it cannot be read."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -12112,11 +12112,11 @@
           "counters": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/WorkerCounters",
                 "description": "Cumulative counters; v1 `null` (explicit unsupported)."
+              },
+              {
+                "type": "null"
               }
             ]
           },

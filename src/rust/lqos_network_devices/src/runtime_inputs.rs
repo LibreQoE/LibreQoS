@@ -146,6 +146,34 @@ pub(crate) fn shaped_devices_from_runtime_inputs(
     shaped
 }
 
+/// Design card §3 rule 2 (u5 A1 restated): the device ROWS the topology fold
+/// marked `dynamic: true` — the rows it SYNTHESIZED, both the overlay rows of
+/// `dynamic_circuits.json` and the `[[dynamic_circuits.ranges]]` fallbacks, keyed
+/// `(normalized circuit id, device id)`.
+///
+/// Origin, not lifecycle: a store row is transient (TTL/supersede/promotion) and a
+/// range fallback persists while its rule is configured, but neither was
+/// provisioned by an operator, and that is the single question this marker
+/// answers. A consumer that needs the lifecycle asks the store or the config.
+///
+/// The marker is per device row, so the origin must be too: a circuit id can
+/// hold both a fold row and a row an operator override appended under the same
+/// id, and only the fold row is overlay. Keying by circuit id alone misclassifies
+/// whichever row the operator did not replace.
+pub(crate) fn dynamic_origin_rows(
+    shaping_inputs: &TopologyShapingInputsFile,
+) -> lqos_utils::DynamicOriginRows {
+    let mut origins = lqos_utils::DynamicOriginRows::new();
+    for circuit in &shaping_inputs.circuits {
+        for device in &circuit.devices {
+            if device.dynamic {
+                origins.insert_row(&circuit.circuit_id, &device.device_id);
+            }
+        }
+    }
+    origins
+}
+
 /// T5 rung 1 / F10 (the zero-CSV identity gate): builds the catalog
 /// snapshot from the E2 operator view ALONE — circuit nodes carry
 /// their devices INLINE (ruling 2), so circuit identity renders with

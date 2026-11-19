@@ -29,6 +29,9 @@ import {
     subdivideTriangleToMaxEdge,
     unwrapRing,
 } from "./flow_globe_countries.mjs";
+import { t, tn } from "./i18n/index.js";
+import { ONE_DECIMAL, formatNumber } from "./i18n/format.js";
+import { relativeTimeText } from "./i18n/relative_time.mjs";
 
 const wsClient = get_ws_client();
 
@@ -56,6 +59,7 @@ const FLOW_GLOBE_MAX_ENDPOINTS = 5000;
 const CLUSTER_PREVIEW_LIMIT = 3;
 const COUNTRIES_GEOJSON_PATH = "vendor/countries.geojson";
 const FLOW_MAP_PROFILE = false;
+// translatable: false — "FlowMap: missing DOM element ' '" "FlowMap: missing vendored globe libraries" "FlowMap: failed to load country borders" "FlowMap: window.THREE unavailable; the Filled heatmap is disabled" "FlowMap: GPU-tween injection missed the color_vertex chunk" — console diagnostics for a globe that cannot draw, never rendered as copy
 const DEFAULT_POINT_OF_VIEW = {
     lat: 18,
     lng: -32,
@@ -119,6 +123,7 @@ function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     };
 }
 
+// translatable: false — "color-mix(in srgb, var(--lqos-surface-solid) 88%, transparent)" "1px solid var(--lqos-border)" "var(--lqos-radius-lg)" "var(--lqos-shadow-md)" "16px 20px" "blur(12px)" — inline CSS for the overlay panel, not copy
 function makeOverlay(container, id) {
     container.style.position = "relative";
 
@@ -176,6 +181,7 @@ function backdropRgb() {
     return parseColorValue(getThemePalette().oceanColor);
 }
 
+// translatable: false — "rgba(111, 157, 230, 0.18)" "rgba(24, 42, 79, 0.16)" "rgba(164, 196, 255, 0.74)" "linear-gradient(90deg, #56b6ff 0%, #7cffb2 40%, #fddd60 70%, #ff6e76 100%)" "linear-gradient(90deg, #21456f 0%, #2b7fff 40%, #56d4ff 72%, #7cffb2 100%)" "rgba(11, 18, 32, 0.96)" "rgba(148, 163, 184, 0.28)" "rgba(148, 163, 184, 0.9)" — the dark globe's paint colours and legend ramps, not labels
 function getThemePalette() {
     if (isDarkMode()) {
         return {
@@ -200,6 +206,7 @@ function getThemePalette() {
         };
     }
 
+    // translatable: false — "rgba(93, 128, 177, 0.16)" "rgba(118, 145, 184, 0.12)" "rgba(51, 86, 137, 0.58)" "linear-gradient(90deg, #61a0a8 0%, #6fbf73 38%, #f2c14e 70%, #d96c75 100%)" "linear-gradient(90deg, #b6cadf 0%, #61a0a8 40%, #4c8bf5 72%, #2563eb 100%)" "rgba(255, 255, 255, 0.97)" "rgba(15, 23, 42, 0.12)" "rgba(71, 85, 105, 0.85)" — the light globe's paint colours and legend ramps, not labels
     return {
         atmosphereColor: "#90aed8",
         atmosphereAltitude: 0.035,
@@ -277,26 +284,19 @@ function angularDistanceDegrees(a, b) {
 
 function formatAge(timestamp) {
     if (!timestamp) {
-        return "Waiting for data";
+        return t("common.state.waiting");
     }
-    const deltaMs = Math.max(0, Date.now() - timestamp);
-    if (deltaMs < 1000) {
-        return "Just now";
-    }
-    if (deltaMs < 60_000) {
-        return `${Math.round(deltaMs / 1000)}s ago`;
-    }
-    return `${Math.round(deltaMs / 60_000)}m ago`;
+    return t("common.state.updated", {time: relativeTimeText(timestamp / 1000)});
 }
 
 function updateHud(summary) {
     const sampleCount = document.getElementById("flowMapSampleCount");
     const lastUpdated = document.getElementById("flowMapLastUpdated");
     if (sampleCount) {
-        sampleCount.textContent = `${summary.pointCount} endpoints`;
+        sampleCount.textContent = tn("flow_map.hud.endpoints", summary.pointCount);
     }
     if (lastUpdated) {
-        lastUpdated.textContent = summary.lastUpdatedLabel || "Waiting for data";
+        lastUpdated.textContent = summary.lastUpdatedLabel || t("common.state.waiting");
     }
 }
 
@@ -309,41 +309,49 @@ function updateLegend(summary, domain) {
 
     if (gradient) {
         const stops = rampStops(isColorBlindMode()).map((rgb) => rgbCss(rgb));
+        // translatable: false — "linear-gradient(90deg, )" a CSS ramp assembled from the colour stops, not text
         gradient.style.background = `linear-gradient(90deg, ${stops.join(", ")})`;
     }
     if (title) {
-        title.textContent = "Internet latency (nearest endpoint)";
+        title.textContent = t("flow_map.legend.title");
     }
     if (min) {
-        min.textContent = domain ? `${Math.round(domain.p5)} ms` : "Fast";
+        min.textContent = domain ? `${Math.round(domain.p5)} ms` : t("flow_map.legend.fast");
     }
     if (max) {
-        max.textContent = domain ? `${Math.round(domain.p95)} ms` : "Slow";
+        max.textContent = domain ? `${Math.round(domain.p95)} ms` : t("flow_map.legend.slow");
     }
     if (status) {
         const total = summary.totalBytes > 0 ? scaleNumber(summary.totalBytes) : "0";
-        status.textContent = `${summary.pointCount} endpoints, ${total}B recent volume`;
+        status.textContent = tn("flow_map.legend.status", summary.pointCount, {
+            count: summary.pointCount,
+            endpoints: summary.pointCount,
+            volume: String(total),
+        });
     }
 }
 
 function renderCellBody(cell) {
     const rtt = cell.rttInternetMs > 0
         ? `${cell.rttInternetMs.toFixed(cell.rttInternetMs >= 100 ? 0 : 1)} ms`
-        : "Unknown";
+        : t("flow_map.value.unknown");
     const kind = cell.measured
-        ? "Measured"
-        : (cell.covered ? "Interpolated (modeled)" : "No coverage");
+        ? t("flow_map.cell.measured")
+        : (cell.covered ? t("flow_map.tooltip.interpolated") : t("flow_map.cell.no_coverage"));
     return [
-        ["Internet RTT", rtt],
-        ["Cell", kind],
+        [t("flow_map.cell.internet_rtt"), rtt],
+        [t("flow_map.cell.kind"), kind],
         // `contributing` is the TRUE count (members is capped for memory).
-        ["Locations", `${cell.contributing || 0}`],
-        ["Source distance", cell.measured || !Number.isFinite(cell.sourceDistKm)
+        [t("flow_map.cell.locations"), `${cell.contributing || 0}`],
+        [t("flow_map.cell.source_distance"), cell.measured || !Number.isFinite(cell.sourceDistKm)
             ? "—"
             : `${Math.round(cell.sourceDistKm)} km`],
-        ["Throughput", `${scaleNumber(cell.bytes || 0)}B`],
-        ["Latitude", cell.lat.toFixed(2)],
-        ["Longitude", cell.lng.toFixed(2)],
+        // `cell.bytes` is a volume, not a rate, so the row names the measurement
+        // and its unit; the value is the scaled number `scaleNumber` returns
+        // ("2.5M"), printed the way the legend prints it.
+        [t("flow_map.cell.volume"), scaleNumber(cell.bytes || 0)],
+        [t("flow_map.cell.latitude"), cell.lat.toFixed(2)],
+        [t("flow_map.cell.longitude"), cell.lng.toFixed(2)],
     ];
 }
 
@@ -375,7 +383,7 @@ class FlowMapGlobe {
             pointCount: 0,
             totalBytes: 0,
             maxBytes: 0,
-            lastUpdatedLabel: "Waiting for data",
+            lastUpdatedLabel: t("common.state.waiting"),
         };
         this.autoRotate = true;
         this.autoRefresh = true;
@@ -495,6 +503,7 @@ class FlowMapGlobe {
         })(this.dom)
             .width(this.dom.clientWidth || 960)
             .height(this.dom.clientHeight || 640)
+            // translatable: false — "rgba(0,0,0,0)" a transparent clear colour for the globe canvas
             .backgroundColor("rgba(0,0,0,0)")
             .showAtmosphere(true)
             // `.50.7` Stage 2: the country layer is now a custom merged cap Mesh +
@@ -817,20 +826,22 @@ class FlowMapGlobe {
         const theme = getThemePalette();
         if (!cell?.covered) {
             return `<div style="font:12px/1.35 system-ui,sans-serif;color:${theme.tooltipText}">`
-                + `<strong>No endpoint coverage</strong><br>Baseline lattice cell</div>`;
+                + `<strong>${escapeHtml(t("flow_map.tooltip.no_coverage"))}</strong><br>${escapeHtml(t("flow_map.tooltip.baseline_cell"))}</div>`;
         }
         const rtt = cell.rttInternetMs > 0
             ? `${cell.rttInternetMs.toFixed(cell.rttInternetMs >= 100 ? 0 : 1)} ms`
-            : "Unknown";
+            : t("flow_map.value.unknown");
         const contributing = Math.max(cell.contributing || 0, cell.measured ? 1 : 0);
         const tag = cell.measured
-            ? `Measured (${contributing} endpoint${contributing === 1 ? "" : "s"} shown)`
-            : "Interpolated (modeled)";
-        const distance = cell.measured ? "" : `<br>${Math.round(cell.sourceDistKm || 0)} km to the source`;
+            ? tn("flow_map.tooltip.measured", contributing)
+            : t("flow_map.tooltip.interpolated");
+        const distance = cell.measured
+            ? ""
+            : `<br>${escapeHtml(t("flow_map.tooltip.source_distance", {km: Math.round(cell.sourceDistKm || 0)}))}`;
         return `<div style="font:12px/1.35 system-ui,sans-serif;color:${theme.tooltipText}">`
-            + `<strong>${rtt}</strong> Internet RTT`
-            + `<br>${tag}${distance}`
-            + `<br>${scaleNumber(cell.bytes || 0)}B throughput</div>`;
+            + `<strong>${escapeHtml(t("flow_map.tooltip.internet_rtt", {rtt}))}</strong>`
+            + `<br>${escapeHtml(tag)}${distance}`
+            + `<br>${escapeHtml(t("flow_map.tooltip.throughput", {volume: String(scaleNumber(cell.bytes || 0))}))}</div>`;
     }
 
     observeThemeChanges() {
@@ -925,7 +936,7 @@ class FlowMapGlobe {
             maxBytes: this.hexMaxWeight,
             lastUpdatedLabel: this.renderedSummary.lastUpdatedLabel,
         };
-        profileEnd(renderTimer, `(endpoints=${endpoints.length}, cells=${layer?.cells.length || 0}, covered=${layer?.covered || 0})`);
+        profileEnd(renderTimer, `(endpoints=${endpoints.length}, cells=${layer?.cells.length || 0}, covered=${layer?.covered || 0})`); // translatable: false — "(endpoints= , cells= , covered= )" a `[FlowMap profile]` console label
         if (this.pinnedCellPos) {
             this.pinnedCell = this.nearestCellTo(this.pinnedCellPos);
         }
@@ -1025,6 +1036,7 @@ class FlowMapGlobe {
         });
         meshMaterial.onBeforeCompile = (shader) => {
             shader.uniforms.uTweenAlpha = tweenUniform;
+// translatable: false — "attribute vec4 aBaseColor;nuniform float uTweenAlpha;n" "#include n#ifdef USE_COLOR_ALPHAn vColor = mix(aBaseColor, color, uTweenAlpha);n#endif" — GLSL source injected into the shader, not text
             shader.vertexShader = `attribute vec4 aBaseColor;\nuniform float uTweenAlpha;\n${shader.vertexShader}`;
             // Pin 3: guard the vec4 `vColor` behind USE_COLOR_ALPHA.
             const before = shader.vertexShader;
@@ -1522,9 +1534,12 @@ class FlowMapGlobe {
             const cell = this.pinnedCell;
             panel.classList.add("active");
             title.textContent = cell.measured
-                ? "Measured cell"
-                : (cell.covered ? "Interpolated cell" : "No-coverage cell");
-            subtitle.textContent = `${cell.lat.toFixed(1)}, ${cell.lng.toFixed(1)} — locations in this cell`;
+                ? t("flow_map.details.title_measured")
+                : (cell.covered ? t("flow_map.details.title_interpolated") : t("flow_map.details.title_no_coverage"));
+            subtitle.textContent = t("flow_map.details.subtitle", {
+                lat: formatNumber(cell.lat, ONE_DECIMAL),
+                lng: formatNumber(cell.lng, ONE_DECIMAL),
+            });
             body.innerHTML = renderCellBody(cell).map(([label, value]) => `
                 <div class="flow-map-details-row">
                     <span>${escapeHtml(label)}</span>
@@ -1540,16 +1555,18 @@ class FlowMapGlobe {
                     const rtt = member.rttInternetMs > 0
                         ? `${member.rttInternetMs.toFixed(member.rttInternetMs >= 100 ? 0 : 1)} ms`
                         : "—";
-                    return `<div>${escapeHtml(member.country || "Unknown")} · `
+                    return `<div>${escapeHtml(member.country || t("flow_map.value.unknown"))} · `
                         + `${member.lat.toFixed(1)}, ${member.lng.toFixed(1)} · `
                         + `${escapeHtml(rtt)} · ${escapeHtml(scaleNumber(member.bytes))}B</div>`;
                 }).join("") + (total > shown.length
-                    ? `<div>top ${shown.length} of ${total}</div>`
+                    ? `<div>${escapeHtml(t("flow_map.details.members_top", {shown: shown.length, total}))}</div>`
                     : "");
                 members.style.display = "block";
             } else if (cell.covered) {
-                const km = Number.isFinite(cell.sourceDistKm) ? `${Math.round(cell.sourceDistKm)} km away` : "elsewhere";
-                members.innerHTML = `<div>Modeled from the nearest source (${escapeHtml(km)}); no location sits in this cell.</div>`;
+                const km = Number.isFinite(cell.sourceDistKm)
+                    ? t("flow_map.details.source_km_away", {km: Math.round(cell.sourceDistKm)})
+                    : t("flow_map.details.source_elsewhere");
+                members.innerHTML = `<div>${escapeHtml(t("flow_map.details.modeled_from_source", {distance: km}))}</div>`;
                 members.style.display = "block";
             } else {
                 members.style.display = "none";
@@ -1590,8 +1607,8 @@ function syncRefreshButton(loading = false) {
     }
     refreshBtn.disabled = loading;
     refreshBtn.innerHTML = loading
-        ? '<i class="fa fa-spinner fa-spin me-1"></i>Refreshing...'
-        : '<i class="fa fa-rotate me-1"></i>Refresh';
+        ? `<i class="fa fa-spinner fa-spin me-1"></i>${escapeHtml(t("flow_map.refresh.refreshing"))}`
+        : `<i class="fa fa-rotate me-1"></i>${escapeHtml(t("common.action.refresh"))}`;
 }
 
 function syncAutoRefreshToggle() {
@@ -1677,6 +1694,7 @@ function startFpsMeterIfRequested() {
             perfControlsChanges = 0;
             perfReclusters = 0;
             const age = lastUpdateAt > 0 ? (Date.now() - lastUpdateAt) / 1000 : NaN;
+// translatable: false — "fps=" "ms=" "tri= calls=" "chg/s= recl/s=" "age=" "rot= f=" — the `flowMapFps` debug overlay's counters, off unless the URL asks for them
             el.textContent = `fps=${Math.round(fps)}`
                 + ` ms=${Number.isFinite(ms) ? ms.toFixed(1) : "-"}`
                 + ` tri=${tri} calls=${calls}`
@@ -1728,7 +1746,7 @@ function refreshNow(manual = false) {
         lastUpdateAt = Date.now();
 
         if (data.length < MIN_POINTS || totalBytes < MIN_TOTAL_BYTES) {
-            overlay.show("Insufficient data", "Not enough recent flow traffic to render the map yet.");
+            overlay.show(t("flow_map.overlay.insufficient_title"), t("flow_map.overlay.insufficient_body"));
             map.renderData([]);
             map.updateSummary(0, totalBytes, lastUpdateAt);
         } else {
@@ -1746,7 +1764,7 @@ function refreshNow(manual = false) {
         if (manual) {
             syncRefreshButton(false);
         }
-        overlay.show("Waiting for data", "No FlowMap websocket response received yet.");
+        overlay.show(t("common.state.waiting"), t("flow_map.overlay.no_response"));
         map.renderData([]);
         map.updateSummary(0, 0, 0);
         refreshHud(manual);
@@ -1879,7 +1897,7 @@ window.addEventListener("beforeunload", () => {
 });
 
 initControls();
-overlay.show("Waiting for data", "Requesting recent flow endpoints...");
+overlay.show(t("common.state.waiting"), t("flow_map.overlay.requesting"));
 refreshHud(true);
 refreshNow(true);
 startFpsMeterIfRequested();

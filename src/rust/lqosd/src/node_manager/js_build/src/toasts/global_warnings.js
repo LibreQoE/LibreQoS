@@ -1,5 +1,8 @@
 import {createBootstrapToast} from "../lq_js_common/helpers/toasts";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Info" "Warning" "Error" are the severity tokens the server sends; the switch compares them and the header renders the catalog label
 
 const wsClient = get_ws_client();
 
@@ -10,6 +13,15 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function severityLabel(level) {
+    switch (level) {
+        case "Info": return t("common.severity.info");
+        case "Warning": return t("common.severity.warning");
+        case "Error": return t("common.severity.error");
+        default: return level;
+    }
+}
 
 export function globalWarningToasts() {
     const handler = (msg) => {
@@ -43,7 +55,7 @@ export function globalWarningToasts() {
             div.innerHTML = badge + " " + message;
             //parent.appendChild(div);
             let headerSpan = document.createElement("span");
-            headerSpan.innerHTML = badge + " " + warning[0];
+            headerSpan.innerHTML = badge + " " + severityLabel(warning[0]);
             let bodyDiv = document.createElement("div");
             bodyDiv.innerHTML = message;
             createBootstrapToast("global-warning-" + i, headerSpan, bodyDiv);

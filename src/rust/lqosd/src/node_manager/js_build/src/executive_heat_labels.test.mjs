@@ -1,16 +1,30 @@
 // `.64.4` (R1.3): unit tests for the SHIPPED Executive heatmap label builders.
 //
-// The builders live in the import-free `executive_heat_labels.mjs`, so this test
-// needs no browser/WebSocket stubs (unlike `executive_utils.js`). It is wired
-// into `js_build/test-node-manager.sh`.
+// The builders live in the pure `executive_heat_labels.mjs`, so this test needs
+// no browser/WebSocket stubs (unlike `executive_utils.js`). It does install the
+// English catalog, because the builders now render their words through `t()`;
+// the Spanish rendering and the parameterised rows are pinned by
+// `i18n/executive_translations_contract.test.mjs`. It is wired into
+// `js_build/test-node-manager.sh`.
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {dirname, resolve} from "node:path";
 import test from "node:test";
+import {fileURLToPath} from "node:url";
 
 import {
     heatRowAriaLabel,
     heatRowsCaption,
     typeMonoMarkup,
 } from "./executive_heat_labels.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CATALOG_DIR = resolve(HERE, "../../static2/i18n");
+const EN = JSON.parse(readFileSync(resolve(CATALOG_DIR, "en.json"), "utf8"));
+
+globalThis.window = {LQOS_I18N_EN: EN};
+globalThis.localStorage = {getItem: () => null, setItem: () => {}};
+globalThis.document = {documentElement: {lang: "en"}, cookie: ""};
 
 test("typeMonoMarkup: title carries the type and the monogram is not aria-hidden", () => {
     const mono = typeMonoMarkup("Circuit");

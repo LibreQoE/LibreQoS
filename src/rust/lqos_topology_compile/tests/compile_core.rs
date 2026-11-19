@@ -131,6 +131,57 @@ fn writes_all_outputs_with_a_typed_receipt_and_removes_the_stale_anchor() {
 }
 
 #[test]
+fn stale_legacy_anchor_is_optional_and_does_not_change_the_artifacts() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Absent legacy-root duplicate: a fresh install must not fail.
+    let absent = temp_config("anchor-absent");
+    let absent_receipt = compile_and_write_imported(
+        &absent,
+        fixture(),
+        "ap_only",
+        TopologyWriteOrigin::Uisp,
+        None,
+    )
+    .expect("a missing legacy anchor must not fail the write");
+    assert!(!absent_receipt.stale_anchor_removed);
+    assert!(
+        !absent
+            .legacy_runtime_file_path(CIRCUIT_ANCHORS_FILENAME)
+            .exists()
+    );
+
+    // Present legacy-root duplicate: removed, and the write still succeeds.
+    let present = temp_config("anchor-present");
+    let anchors = present.legacy_runtime_file_path(CIRCUIT_ANCHORS_FILENAME);
+    std::fs::create_dir_all(anchors.parent().expect("anchor parent")).expect("anchor parent");
+    std::fs::write(&anchors, b"stale").expect("stale anchor");
+    let present_receipt = compile_and_write_imported(
+        &present,
+        fixture(),
+        "ap_only",
+        TopologyWriteOrigin::Uisp,
+        None,
+    )
+    .expect("a present legacy anchor must be removed without failing");
+    assert!(present_receipt.stale_anchor_removed);
+    assert!(!anchors.exists(), "the core removes the legacy anchor");
+
+    // The cleanup must not perturb the four artifacts.
+    let absent_paths = output_paths(&absent);
+    let present_paths = output_paths(&present);
+    for ((file, absent_path), (_, present_path)) in absent_paths.iter().zip(present_paths.iter()) {
+        assert_eq!(
+            read(absent_path),
+            read(present_path),
+            "{file} must not change when the legacy anchor is present"
+        );
+    }
+}
+
+#[test]
 fn mid_sequence_failure_leaves_earlier_file_new_and_later_files_last_good() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let config = temp_config("mid-sequence");

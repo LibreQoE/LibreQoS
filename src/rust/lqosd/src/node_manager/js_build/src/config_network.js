@@ -9,6 +9,9 @@ import {
     topologyEditorsLockMessage,
     topologyEditorsLocked,
 } from "./config/config_helper";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tAttr, tHtml} from "./i18n/index.js";
+import {escapeAttr} from "./i18n/escape.mjs";
 
 let network_json = null;
 let shaped_devices = null;
@@ -18,6 +21,7 @@ let topology_editor_locked = false;
 let topology_editor_lock_message = "";
 
 function editorButtonAttrs() {
+    // translatable: false — "disabled aria-disabled='true'" is an HTML attribute fragment, not a label
     return topology_editor_locked ? " disabled aria-disabled='true'" : "";
 }
 
@@ -44,26 +48,26 @@ function renderNetworkNode(level, depth) {
         html += `<h5 class="card-title mb-0">${key}</h5>`;
         html += `<div class="d-flex flex-wrap gap-2">`;
         if (depth > 0) {
-            html += `<button class="btn btn-sm btn-outline-primary" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}"${actionAttrs}>
-                        <i class="fas fa-arrow-up"></i> Promote
+            html += `<button class="btn btn-sm btn-outline-primary" onclick="promoteNode('${key}')" title="${tAttr("config.network.node.promote")} ${escapeAttr(key)}" aria-label="${tAttr("config.network.node.promote")} ${escapeAttr(key)}"${actionAttrs}>
+                        <i class="fas fa-arrow-up"></i> ${t("config.network.node.promote")}
                      </button>`;
         }
-        html += `<button class="btn btn-sm btn-outline-primary" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}"${actionAttrs}>
-                    <i class="fas fa-pencil-alt"></i> Rename
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="renameNode('${key}')" title="${tAttr("config.network.node.rename")} ${escapeAttr(key)}" aria-label="${tAttr("config.network.node.rename")} ${escapeAttr(key)}"${actionAttrs}>
+                    <i class="fas fa-pencil-alt"></i> ${t("config.network.node.rename")}
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="Delete ${key}" aria-label="Delete ${key}"${actionAttrs}>
-                    <i class="fas fa-trash-alt"></i> Delete
+        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="${tAttr("common.action.delete")} ${escapeAttr(key)}" aria-label="${tAttr("common.action.delete")} ${escapeAttr(key)}"${actionAttrs}>
+                    <i class="fas fa-trash-alt"></i> ${t("common.action.delete")}
                  </button>`;
         html += `</div></div>`;
 
         // Node details
         html += `<div class="mb-3 d-flex flex-wrap align-items-center gap-2">`;
-        html += `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Download: ${value.downloadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}"${actionAttrs}>
+        html += `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">${t("config.network.node.download")} ${value.downloadBandwidthMbps} Mbps</span>`;
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'd')" title="${tAttr("config.network.node.edit_download", {node: key})}" aria-label="${tAttr("config.network.node.edit_download", {node: key})}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
-        html += `<span class="badge bg-success-subtle text-success border border-success-subtle">Upload: ${value.uploadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}"${actionAttrs}>
+        html += `<span class="badge bg-success-subtle text-success border border-success-subtle">${t("config.network.node.upload")} ${value.uploadBandwidthMbps} Mbps</span>`;
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'u')" title="${tAttr("config.network.node.edit_upload", {node: key})}" aria-label="${tAttr("config.network.node.edit_upload", {node: key})}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `</div>`;
@@ -80,7 +84,7 @@ function renderNetworkNode(level, depth) {
 
 function renderNetwork() {
     if (!network_json || Object.keys(network_json).length === 0) {
-        $("#netjson").html(`<div class="lqos-config-note">No network nodes found. Add one to get started.</div>`);
+        $("#netjson").html(`<div class="lqos-config-note">${t("config.network.empty")}</div>`);
         return;
     }
     $("#netjson").html(renderNetworkNode(network_json, 0));
@@ -88,6 +92,7 @@ function renderNetwork() {
 
 function promoteNode(nodeId) {
     if (topology_editor_locked) return;
+    // translatable: false — "Promoting " is a console diagnostic, never rendered
     console.log("Promoting ", nodeId);
     let previousParent = null;
 
@@ -112,14 +117,16 @@ function promoteNode(nodeId) {
 
 function nodeSpeedChange(nodeId, direction) {
     if (topology_editor_locked) return;
-    let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
+    let newVal = prompt(direction === "d"
+        ? t("config.network.prompt.download")
+        : t("config.network.prompt.upload"));
     newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
-        alert("Please enter a valid number");
+        alert(t("config.network.validation.number"));
         return;
     }
     if (newVal < MIN_NODE_MBPS) {
-        alert(`Value must be at least ${MIN_NODE_MBPS} Mbps`);
+        alert(t("config.network.validation.minimum", {value: MIN_NODE_MBPS}));
         return;
     }
 
@@ -145,7 +152,7 @@ function nodeSpeedChange(nodeId, direction) {
 
 function deleteNode(nodeId) {
     if (topology_editor_locked) return;
-    if (!confirm(`Are you sure you want to delete ${nodeId} and all its children?`)) {
+    if (!confirm(t("config.network.confirm_delete", {node: nodeId}))) {
         return;
     }
 
@@ -198,7 +205,7 @@ function deleteNode(nodeId) {
                 shaped_devices_dirty = true;
             }
         }
-        alert("Because there was no obvious parent, you may have to fix some parenting in your Shaped Devices list.");
+        alert(t("config.network.no_parent_warning"));
     } else {
         // Move everything up the tree
         for (let i=0; i<shaped_devices.length; i++) {
@@ -217,9 +224,9 @@ function deleteNode(nodeId) {
 
 function renameNode(nodeId) {
     if (topology_editor_locked) return;
-    let newName = prompt("New node name?");
+    let newName = prompt(t("config.network.prompt.rename"));
     if (!newName || newName.trim() === "") {
-        alert("Please enter a valid name");
+        alert(t("config.network.validation.name"));
         return;
     }
 
@@ -239,7 +246,7 @@ function renameNode(nodeId) {
     }
 
     if (checkExists(network_json)) {
-        alert("A node with that name already exists");
+        alert(t("config.network.validation.name_exists"));
         return;
     }
 
@@ -275,6 +282,9 @@ function renameNode(nodeId) {
 function start() {
     // Render the configuration menu
     renderConfigMenu('network');
+    // The page subtitle wraps `network.json` in `<code>`, which the DOM applier
+    // cannot keep: the element is empty in the page and rendered here.
+    renderMarkupText({networkLayoutSubtitle: tHtml("config.network.subtitle")});
     
     // Add links
     window.promoteNode = promoteNode;
@@ -291,7 +301,7 @@ function start() {
         }
         // Validate network structure
         if (!network_json || Object.keys(network_json).length === 0) {
-            alert("Network configuration is empty");
+            alert(t("config.network.validation.empty"));
             return;
         }
 
@@ -300,7 +310,7 @@ function start() {
                 shaped_devices_dirty = false;
                 alert(message);
             } else {
-                alert("Failed to save network configuration: " + message);
+                alert(t("config.network.error.save", {message}));
             }
         };
 
@@ -319,7 +329,9 @@ function start() {
             topology_editor_lock_message = topologyEditorsLockMessage(config);
             const activeIntegrations = activeTopologySourceIntegrations(config);
             if (!topology_editor_lock_message && activeIntegrations.length > 0) {
-                topology_editor_lock_message = `Editing is disabled because these integrations are the source of truth: ${activeIntegrations.join(", ")}.`;
+                topology_editor_lock_message = t("config.network.locked_integrations", {
+                    integrations: activeIntegrations.join(", "),
+                });
             }
             applyEditorLockState();
 
@@ -329,7 +341,7 @@ function start() {
                     renderNetwork();
                     applyEditorLockState();
                 }, () => {
-                    alert("Failed to load network configuration");
+                    alert(t("config.network.error.load_network"));
                 });
             };
 
@@ -343,11 +355,11 @@ function start() {
                 shaped_devices = data;
                 finishLoad();
             }, () => {
-                alert("Failed to load shaped devices");
+                alert(t("config.network.error.load_devices"));
             });
         },
         () => {
-            alert("Failed to load configuration");
+            alert(t("config.network.error.load_config"));
         },
     );
 }

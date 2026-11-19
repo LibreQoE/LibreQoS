@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {N_ITEMS} from "./rtt_histo";
+import {t} from "../i18n/index.js";
 
 export class RttHistogram3D extends DashboardGraph {
     constructor(id) {
@@ -29,11 +30,11 @@ export class RttHistogram3D extends DashboardGraph {
             yAxis3D: {
                 type: 'category',
                 data: timeAxis,
-                name: "Time"
+                name: t("graph.axis.time")
             },
             zAxis3D: {
                 type: 'value',
-                name: "Samples"
+                name: t("graph.axis.samples")
             },
             grid3D: {
                 viewControl: {

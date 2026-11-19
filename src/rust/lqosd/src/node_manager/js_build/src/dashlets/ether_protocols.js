@@ -1,6 +1,7 @@
 import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
 import {scaleNumber, scaleNanos} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t} from "../i18n/index.js";
 
 export class EtherProtocols extends DashletBaseInsight {
     constructor(slot) {
@@ -8,7 +9,7 @@ export class EtherProtocols extends DashletBaseInsight {
     }
 
     title() {
-        return "Ethernet Protocols";
+        return t("dashlet.name.ether_protocols");
     }
 
     canBeSlowedDown() {
@@ -16,7 +17,7 @@ export class EtherProtocols extends DashletBaseInsight {
     }
 
     tooltip() {
-        return "<h5>Ethernet Protocols</h5><p>Bytes and packets transferred over IPv4 and IPv6, and the round-trip time for each.  This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.ether_protocols.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -38,19 +39,19 @@ export class EtherProtocols extends DashletBaseInsight {
         if (msg.event === "EtherProtocols") {
             let target = document.getElementById(this.id);
 
-            let t = document.createElement("table");
-            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
+            let table = document.createElement("table");
+            table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
 
             let th = document.createElement("thead");
             th.classList.add("small");
-            th.appendChild(theading("Protocol"));
-            th.appendChild(theading("DL ⬇️"));
-            th.appendChild(theading("UL ⬆️"));
-            th.appendChild(theading("Packets ⬇️"));
-            th.appendChild(theading("Packets ⬆️"));
-            th.appendChild(theading("⬇ RTT"));
-            th.appendChild(theading("️️⬆ RTT"));
-            t.appendChild(th);
+            th.appendChild(theading(t("circuit.traffic.protocol")));
+            th.appendChild(theading(t("common.table.dl_abbr")));
+            th.appendChild(theading(t("common.table.ul_abbr")));
+            th.appendChild(theading(t("common.table.packets_dl_abbr")));
+            th.appendChild(theading(t("common.table.packets_ul_abbr")));
+            th.appendChild(theading(t("common.table.rtt_dl_arrow")));
+            th.appendChild(theading(t("common.table.rtt_ul_arrow")));
+            table.appendChild(th);
 
             let tbody = document.createElement("tbody");
             let row = document.createElement("tr");
@@ -62,7 +63,7 @@ export class EtherProtocols extends DashletBaseInsight {
             row.appendChild(simpleRow(scaleNumber(msg.data.v4_packets.up)));
             row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt.down)));
             row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt.up)));
-            t.appendChild(row);
+            table.appendChild(row);
 
             row = document.createElement("tr");
             row.appendChild(simpleRow("IPv6"));
@@ -72,13 +73,13 @@ export class EtherProtocols extends DashletBaseInsight {
             row.appendChild(simpleRow(scaleNumber(msg.data.v6_packets.up)));
             row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt.down)));
             row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt.up)));
-            t.appendChild(row);
+            table.appendChild(row);
 
-            t.appendChild(tbody);
+            table.appendChild(tbody);
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            target.appendChild(table);
         }
     }
 }

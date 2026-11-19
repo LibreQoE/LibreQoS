@@ -29,6 +29,7 @@ function buildInsightUrl(rawBaseUrl, endpoint) {
 
 function buildSignupApiUrl(rawBaseUrl, endpoint) {
     const path = String(endpoint || '').replace(/^\/+/, '');
+    // translatable: false — "signup-api/" is the URL path segment the Insight gateway serves
     return buildInsightUrl(rawBaseUrl, `signup-api/${path}`);
 }
 
@@ -39,6 +40,7 @@ function sendWsRequest(responseEvent, request) {
             if (done) return;
             done = true;
             wsClient.off(responseEvent, onResponse);
+            // translatable: false — "Error" is the websocket event name this promise settles on
             wsClient.off("Error", onError);
             resolve(msg);
         };

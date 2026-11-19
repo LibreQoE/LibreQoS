@@ -5,149 +5,150 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">UISP Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Connect to UISP and control suspended accounts, capacity, and site overrides. Topology mode now lives under Integration - Common.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.uisp.title">UISP Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.uisp.subtitle">Connect to UISP and control suspended accounts, capacity, and site overrides. Topology mode now lives under Integration - Common.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Connection</h6>
-                        <div class="lqos-config-section-subtitle">Define API access, default site scope, and transport/security behavior.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.uisp.connection.title">Connection</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.uisp.connection.subtitle">Define API access, default site scope, and transport/security behavior.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="enableUisp">
-                            <label class="form-check-label" for="enableUisp">Enable UISP Integration</label>
-                            <div class="form-text">Enable integration with UISP.</div>
+                            <label class="form-check-label" for="enableUisp" data-i18n="config.uisp.enable">Enable UISP Integration</label>
+                            <div class="form-text" data-i18n="config.uisp.enable_help">Enable integration with UISP.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispToken" class="form-label">API Token</label>
+                            <label for="uispToken" class="form-label" data-i18n="config.uisp.api_token">API Token</label>
                             <div class="input-group">
                                 <input type="password" class="form-control" id="uispToken" autocomplete="new-password">
-                                <button type="button" class="btn btn-outline-secondary" id="clearUispToken">Clear</button>
+                                <button type="button" class="btn btn-outline-secondary" id="clearUispToken" data-i18n="common.action.clear">Clear</button>
                             </div>
                             <div class="form-text" id="uispTokenStatus"></div>
-                            <div class="form-text">UISP API token for authentication.</div>
+                            <div class="form-text" data-i18n="config.uisp.api_token_help">UISP API token for authentication.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispUrl" class="form-label">UISP URL</label>
+                            <label for="uispUrl" class="form-label" data-i18n="config.uisp.url">UISP URL</label>
                             <input type="text" class="form-control" id="uispUrl">
-                            <div class="form-text">Base URL for the UISP API, for example <code>https://your-uisp.com</code>.</div>
+                            <div class="form-text" id="uispUrlHelp"></div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispSite" class="form-label" id="uispSiteLabel">Root UISP Site</label>
+                            <label for="uispSite" class="form-label" id="uispSiteLabel" data-i18n="config.uisp.site">Root UISP Site</label>
                             <input type="text" class="form-control" id="uispSite">
-                            <div class="form-text" id="uispSiteHelp">Required only for full topology mode. Leave blank in other modes to let LibreQoS choose the import root.</div>
+                            <!-- The bundle replaces this hint with the mode-specific one once the config loads. -->
+                            <div class="form-text" id="uispSiteHelp" data-i18n="config.uisp.site_help_initial">Required only for full topology mode. Leave blank in other modes to let LibreQoS choose the import root.</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="uispIpv6WithMikrotik">
-                            <label class="form-check-label" for="uispIpv6WithMikrotik">IPv6 with Mikrotik</label>
-                            <div class="form-text">Enable IPv6 enrichment with Mikrotik devices.</div>
+                            <label class="form-check-label" for="uispIpv6WithMikrotik" data-i18n="config.uisp.ipv6_mikrotik">IPv6 with Mikrotik</label>
+                            <div class="form-text" data-i18n="config.uisp.ipv6_mikrotik_help">Enable IPv6 enrichment with Mikrotik devices.</div>
                         </div>
 
                         <div class="mb-0 form-check">
                             <input type="checkbox" class="form-check-input" id="uispInsecureSsl">
-                            <label class="form-check-label" for="uispInsecureSsl">Insecure SSL</label>
-                            <div class="form-text">Disable SSL certificate validation. Use only for testing or known self-signed environments.</div>
+                            <label class="form-check-label" for="uispInsecureSsl" data-i18n="config.uisp.insecure_ssl">Insecure SSL</label>
+                            <div class="form-text" data-i18n="config.uisp.insecure_ssl_help">Disable SSL certificate validation. Use only for testing or known self-signed environments.</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Topology and Capacity</h6>
-                        <div class="lqos-config-section-subtitle">Review the shared topology compile mode and choose how LibreQoS should interpret suspended accounts and device capacity.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.uisp.capacity.title">Topology and Capacity</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.uisp.capacity.subtitle">Review the shared topology compile mode and choose how LibreQoS should interpret suspended accounts and device capacity.</div>
 
                         <div class="mb-3">
-                            <label for="uispStrategy" class="form-label">Topology Compile Mode</label>
+                            <label for="uispStrategy" class="form-label" data-i18n="config.uisp.compile_mode">Topology Compile Mode</label>
                             <select class="form-select" id="uispStrategy" disabled>
-                                <option value="flat">Flat - Only shapes subscribers by service plan speed</option>
-                                <option value="ap_only">AP Only - Shapes by service plan and Access Point</option>
-                                <option value="ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
-                                <option value="full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
+                                <option value="flat" data-i18n="config.uisp.mode.flat">Flat - Only shapes subscribers by service plan speed</option>
+                                <option value="ap_only" data-i18n="config.uisp.mode.ap_only">AP Only - Shapes by service plan and Access Point</option>
+                                <option value="ap_site" data-i18n="config.uisp.mode.ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
+                                <option value="full" data-i18n="config.uisp.mode.full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
                             </select>
-                            <div class="form-text">Change this under <code>Integration - Common</code>. UISP still keeps the legacy field for compatibility during upgrade.</div>
+                            <div class="form-text" id="uispCompileModeHelp"></div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispSuspendedStrategy" class="form-label">Suspended Strategy</label>
+                            <label for="uispSuspendedStrategy" class="form-label" data-i18n="config.uisp.suspended_strategy">Suspended Strategy</label>
                             <select class="form-select" id="uispSuspendedStrategy">
-                                <option value="none">None - Do not handle suspensions</option>
-                                <option value="ignore">Ignore - Do not add suspended customers to network map</option>
-                                <option value="slow">Slow - Limit suspended customers to 1mbps</option>
+                                <option value="none" data-i18n="config.uisp.suspended.none">None - Do not handle suspensions</option>
+                                <option value="ignore" data-i18n="config.uisp.suspended.ignore">Ignore - Do not add suspended customers to network map</option>
+                                <option value="slow" data-i18n="config.uisp.suspended.slow">Slow - Limit suspended customers to 1mbps</option>
                             </select>
-                            <div class="form-text">Select how to handle suspended customer accounts.</div>
+                            <div class="form-text" data-i18n="config.uisp.suspended_help">Select how to handle suspended customer accounts.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
+                            <label for="uispAirmaxCapacity" class="form-label" data-i18n="config.uisp.airmax_capacity">Airmax Capacity</label>
                             <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1" value="1.0">
-                            <div class="form-text">Capacity factor for Airmax devices.</div>
+                            <div class="form-text" data-i18n="config.uisp.airmax_capacity_help">Capacity factor for Airmax devices.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispAirmaxFlexibleFrameDownloadRatio" class="form-label">AirMax Flexible Frame Download Ratio</label>
+                            <label for="uispAirmaxFlexibleFrameDownloadRatio" class="form-label" data-i18n="config.uisp.flexible_ratio">AirMax Flexible Frame Download Ratio</label>
                             <input type="number" class="form-control" id="uispAirmaxFlexibleFrameDownloadRatio" step="0.01" min="0.01" max="0.99" value="0.8">
-                            <div class="form-text">Fallback download share for AirMax APs when UISP reports aggregate flexible-frame capacity but does not expose a live downlink ratio. <code>0.8</code> means 80/20 download/upload.</div>
+                            <div class="form-text" id="uispFlexibleRatioHelp"></div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
+                            <label for="uispLtuCapacity" class="form-label" data-i18n="config.uisp.ltu_capacity">LTU Capacity</label>
                             <input type="number" class="form-control" id="uispLtuCapacity" step="0.1" value="1.0">
-                            <div class="form-text">Capacity factor for LTU devices.</div>
+                            <div class="form-text" data-i18n="config.uisp.ltu_capacity_help">Capacity factor for LTU devices.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispBandwidthOverhead" class="form-label">Bandwidth Overhead Factor</label>
+                            <label for="uispBandwidthOverhead" class="form-label" data-i18n="config.uisp.overhead_factor">Bandwidth Overhead Factor</label>
                             <input type="number" class="form-control" id="uispBandwidthOverhead" step="0.1" value="1.0">
-                            <div class="form-text">Multiplier for bandwidth overhead calculations.</div>
+                            <div class="form-text" data-i18n="config.uisp.overhead_factor_help">Multiplier for bandwidth overhead calculations.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispCommitMultiplier" class="form-label">Commit Bandwidth Multiplier</label>
+                            <label for="uispCommitMultiplier" class="form-label" data-i18n="config.uisp.commit_multiplier">Commit Bandwidth Multiplier</label>
                             <input type="number" class="form-control" id="uispCommitMultiplier" step="0.1" value="1.0">
-                            <div class="form-text">Multiplier for commit bandwidth calculations.</div>
+                            <div class="form-text" data-i18n="config.uisp.commit_multiplier_help">Multiplier for commit bandwidth calculations.</div>
                         </div>
 
                         <div class="mb-3">
-                            <div class="form-text">Parent-path decisions for UISP full and full2 now come from Topology Manager candidate parents and saved topology overrides. The old PTMP-parent toggle is retired.</div>
+                            <div class="form-text" data-i18n="config.uisp.parent_path_note">Parent-path decisions for UISP full and full2 now come from Topology Manager candidate parents and saved topology overrides. The old PTMP-parent toggle is retired.</div>
                         </div>
 
                         <div class="mb-0 form-check">
                             <input type="checkbox" class="form-check-input" id="uispIgnoreCalculatedCapacity">
-                            <label class="form-check-label" for="uispIgnoreCalculatedCapacity">Ignore Calculated Capacity</label>
-                            <div class="form-text">Ignore capacity calculations from UISP.</div>
+                            <label class="form-check-label" for="uispIgnoreCalculatedCapacity" data-i18n="config.uisp.ignore_capacity">Ignore Calculated Capacity</label>
+                            <div class="form-text" data-i18n="config.uisp.ignore_capacity_help">Ignore capacity calculations from UISP.</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Site and CPE Overrides</h6>
-                        <div class="lqos-config-section-subtitle">Fine-tune how specific sites and CPEs are excluded, squashed, or reassigned during synchronization.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.uisp.overrides.title">Site and CPE Overrides</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.uisp.overrides.subtitle">Fine-tune how specific sites and CPEs are excluded, squashed, or reassigned during synchronization.</div>
 
                         <div class="row g-3">
                             <div class="col-12 col-lg-6">
-                                <label for="uispExcludeSites" class="form-label">Exclude Sites</label>
+                                <label for="uispExcludeSites" class="form-label" data-i18n="config.uisp.exclude_sites">Exclude Sites</label>
                                 <input type="text" class="form-control" id="uispExcludeSites">
-                                <div class="form-text">Comma-separated list of site IDs to exclude from synchronization.</div>
+                                <div class="form-text" data-i18n="config.uisp.exclude_sites_help">Comma-separated list of site IDs to exclude from synchronization.</div>
                             </div>
 
                             <div class="col-12 col-lg-6">
-                                <label for="uispExceptionCpes" class="form-label">Exception CPEs</label>
+                                <label for="uispExceptionCpes" class="form-label" data-i18n="config.uisp.exception_cpes">Exception CPEs</label>
                                 <input type="text" class="form-control" id="uispExceptionCpes">
-                                <div class="form-text">Comma-separated list of CPE exceptions in <code>cpe:parent</code> format.</div>
+                                <div class="form-text" id="uispExceptionCpesHelp"></div>
                             </div>
 
                             <div class="col-12 col-lg-6">
-                                <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
+                                <label for="uispDoNotSquashSites" class="form-label" data-i18n="config.uisp.unsquashed_sites">Do Not Squash Sites</label>
                                 <input type="text" class="form-control" id="uispDoNotSquashSites">
-                                <div class="form-text">Runtime/export squashing is always enabled for UISP after Topology Manager. Use this comma-separated list of site names to keep specific paths unsquashed.</div>
+                                <div class="form-text" data-i18n="config.uisp.unsquashed_sites_help">Runtime/export squashing is always enabled for UISP after Topology Manager. Use this comma-separated list of site names to keep specific paths unsquashed.</div>
                             </div>
                         </div>
                     </div>
@@ -156,7 +157,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.uisp.save">Save Changes</button>
         </div>
     </form>
 </div>

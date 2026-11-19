@@ -1,3 +1,6 @@
+// translatable: false — 'script[src=" "]' and 'link[href=" "]' are the DOM selectors the loader probes for its own tags
+// translatable: false — "Unable to load MapLibre" is the rejection detail; the dashlet renders its own translated message
+
 export const MAPLIBRE_SCRIPT_SRC = "vendor/maplibre-gl.js";
 export const MAPLIBRE_STYLESHEET_HREF = "vendor/maplibre-gl.css";
 

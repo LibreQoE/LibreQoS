@@ -1,6 +1,12 @@
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Throughput" is the websocket event name the subscription asks for, not a label
+// translatable: false — "_body" "_dl_bps" "_up_bps" "_cdl_bps" "_cul_bps" are element-id suffixes this dashlet appends
+// translatable: false — "_yest_dl_bps" "_yest_dl_bps_span" "_yest_ul_bps" "_yest_ul_bps_span" are element-id suffixes
+// translatable: false — "_last_dl_bps" "_last_dl_bps_span" "_last_ul_bps" "_last_ul_bps_span" are element-id suffixes
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -13,11 +19,11 @@ const listenOnce = (eventName, handler) => {
 
 export class ThroughputBpsDash extends DashletBaseInsight{
     title() {
-        return "Throughput Bits/Second";
+        return t("dashlet.name.throughput_bits_per_second");
     }
 
     tooltip() {
-        return "<h5>Throughput Bits/Second</h5><p>Shows the current throughput in bits per second. Traffic is divided between upload (from the ISP) and download (to the ISP) traffic.</p>";
+        return t("dashlet.throughput.bps.tooltip");
     }
 
     subscribeTo() {
@@ -62,7 +68,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
         const recentDlHeader = document.createElement("div");
         recentDlHeader.classList.add("stat-header");
-        recentDlHeader.textContent = "Download:";
+        recentDlHeader.textContent = t("config.network.node.download");
 
         const recentDlValue = document.createElement("div");
         recentDlValue.classList.add("stat-value-big");
@@ -71,7 +77,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
         const recentUp = document.createElement("div");
         recentUp.classList.add("stat-header");
-        recentUp.textContent = "Upload:";
+        recentUp.textContent = t("config.network.node.upload");
 
         const recentUpValue = document.createElement("div");
         recentUpValue.classList.add("stat-value-big");
@@ -88,7 +94,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
         const currentHeader = document.createElement("div");
         currentHeader.classList.add("stat-header");
-        currentHeader.textContent = "Current:";
+        currentHeader.textContent = t("dashlet.throughput.bps.current");
 
         const currentDlValue = document.createElement("div");
         currentDlValue.classList.add("fw-bold", "text-secondary");
@@ -134,7 +140,10 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             const yestValue = document.createElement("span");
             yestValue.classList.add("fw-bold", "text-secondary");
-            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires<br />Entitlement";
+            yestValue.innerHTML =
+                `<i class="fa fa-fw fa-centerline fa-line-chart nav-icon small"></i> ${t("dashlet.throughput.bps.history")}<br />` +
+                `${t("dashlet.throughput.bps.requires")}<br />` +
+                `${t("dashlet.throughput.bps.entitlement")}`;
 
             yestWrapper.appendChild(yestHeader);
             yestWrapper.appendChild(yestValue);
@@ -147,7 +156,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             const yestHeader = document.createElement("div");
             yestHeader.classList.add("stat-header");
-            yestHeader.textContent = "Yesterday:";
+            yestHeader.textContent = t("dashlet.throughput.bps.yesterday");
 
             const yestValueDl = document.createElement("div");
             yestValueDl.classList.add("fw-bold", "text-secondary");
@@ -186,7 +195,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             const lastWeekHeader = document.createElement("div");
             lastWeekHeader.classList.add("stat-header");
-            lastWeekHeader.textContent = "Last Week:";
+            lastWeekHeader.textContent = t("dashlet.throughput.bps.last_week");
 
             const lastWeekValueDl = document.createElement("div");
             lastWeekValueDl.classList.add("fw-bold", "text-secondary");

@@ -1,7 +1,13 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
-import {badgeForEntityKind, heatRowsCaption, linkToExecutiveMetricRow, typeMonoMarkup} from "../executive_utils";
+import {
+    badgeForEntityKind,
+    heatRowAriaLabel,
+    heatRowsCaption,
+    linkToExecutiveMetricRow,
+    typeMonoMarkup,
+} from "../executive_utils";
 import {
     colorByCapacity,
     formatLatest,
@@ -12,13 +18,19 @@ import {
     utilizationHeatRow,
     MAX_HEATMAP_ROWS,
     replaceHeatmapHtml,
+    tooltipAttrsFromLines,
 } from "./executive_heatmap_shared";
+import {t, tAttr} from "../i18n/index.js";
 
-const QOO_TOOLTIP_HTML = [
-    `Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).`,
-    `https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/`,
-    `LibreQoS implements a latency- and loss-based model to estimate Quality of Outcome.`,
-].join("<br>");
+// The QoO definition ships as one tooltip: the standard's own sentence (its
+// URL stays literal), then what LibreQoS computes.
+function qooTooltipHtml() {
+    return [
+        t("shaped_devices.qoo.intro"),
+        `https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/`,
+        t("executive.panel.qoo_line"),
+    ].join("<br>");
+}
 
 function escapeAttr(value) {
     return String(value)
@@ -37,8 +49,8 @@ function escapeHtml(value) {
 }
 
 function qooInfoIconHtml() {
-    const title = escapeAttr(QOO_TOOLTIP_HTML);
-    return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoO information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
+    const title = escapeAttr(qooTooltipHtml());
+    return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="${tAttr("executive.panel.qoo_aria")}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
 }
 
 function qoqHeatmapRow(blocks, colorFn) {
@@ -56,17 +68,20 @@ function qoqHeatmapRow(blocks, colorFn) {
             (dlTotal === null || dlTotal === undefined) &&
             (ulTotal === null || ulTotal === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(`<div class=&quot;fw-semibold&quot;>15-minute block ${i + 1}</div><div>No data</div><div>This block has no QoO/QoQ totals yet.</div>`)}" aria-label="${escapeAttr(`15-minute block ${i + 1}. No data. This block has no QoO/QoQ totals yet.`)}"></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines([
+                t("executive.heat.block", {index: i + 1}),
+                t("common.state.no_data"),
+                t("executive.heat.qoq_no_totals"),
+            ])}></div>`;
             continue;
         }
 
-        const title = `
-            <div class="fw-semibold">15-minute block ${i + 1}</div>
-            <div>Upload score: ${fmt(ulTotal)}</div>
-            <div>Download score: ${fmt(dlTotal)}</div>
-            <div>Top is upload, bottom is download. Higher scores are better.</div>
-        `;
-        const aria = `15-minute block ${i + 1}. Upload score ${fmt(ulTotal)}. Download score ${fmt(dlTotal)}. Top is upload, bottom is download. Higher scores are better.`;
+        const tooltipLines = [
+            t("executive.heat.block", {index: i + 1}),
+            `${t("executive.heat.label.upload_score")}: ${fmt(ulTotal)}`,
+            `${t("executive.heat.label.download_score")}: ${fmt(dlTotal)}`,
+            t("executive.heat.qoq_meaning"),
+        ];
 
         const part = (v) => {
             if (v === null || v === undefined) {
@@ -82,7 +97,7 @@ function qoqHeatmapRow(blocks, colorFn) {
 
         // Top = upload, bottom = download.
         cells += `
-            <div class="exec-heat-cell split" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(title)}" aria-label="${escapeAttr(aria)}">
+            <div class="exec-heat-cell split" ${tooltipAttrsFromLines(tooltipLines)}>
                 <div class="exec-split-grid">
                     ${part(ulTotal)}
                     ${part(dlTotal)}
@@ -99,7 +114,7 @@ function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
-        <span class="exec-latest-pair" title="Upload / Download">
+        <span class="exec-latest-pair" title="${escapeAttr(`${t("common.table.upload")} / ${t("common.table.download")}`)}">
             <span>${formatLatest(latestTop, "", 0)}</span>
             <span class="exec-latest-sep">/</span>
             <span>${formatLatest(latestBottom, "", 0)}</span>
@@ -109,11 +124,11 @@ function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     const visibleLabel = labelHtml ?? escapeHtml(labelText);
     const latestLabel = `${formatLatest(latestTop, "", 0)} / ${formatLatest(latestBottom, "", 0)}`;
     return `
-        <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(`${labelText} ${badge || ""} latest ${latestLabel}`)}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(heatRowAriaLabel(labelText, badge, latestLabel))}">
             <div class="exec-heat-label text-truncate" title="${labelTitle}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate">${visibleLabel}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(`${labelText} heatmap history`)}">${qoqHeatmapRow(blocks, colorFn)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(t("executive.heat.aria.history", {label: labelText}))}">${qoqHeatmapRow(blocks, colorFn)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
@@ -190,6 +205,7 @@ function mergedUtilizationRows(summary, scope) {
 }
 
 class ExecutiveHeatmapBase extends BaseDashlet {
+    // translatable: false — "Global" "_global" "_metric" — the global rows' badge token and the element-id suffixes the dashlets append; the badge word is rendered as a label only where a kind names one
     constructor(slot) {
         super(slot);
         this.size = 6;
@@ -227,15 +243,15 @@ class ExecutiveHeatmapBase extends BaseDashlet {
     emptyCard() {
         return `
             <div class="card shadow-sm border-0 h-100">
-                <div class="card-body py-3 text-muted small">No heatmap data yet.</div>
+                <div class="card-body py-3 text-muted small">${t("executive.panel.no_data")}</div>
             </div>
         `;
     }
 }
 
 export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
-    title() { return "Global Heatmap"; }
-    tooltip() { return "15 minutes of global metrics, newest on the right."; }
+    title() { return t("dashlet.name.global_heatmap"); }
+    tooltip() { return t("executive.panel.global_tooltip"); }
 
     // `.64.3.1` (A2): the Network-Snapshot strip (throughput counters + Nc/Nd/Ns +
     // the Insight badge) is REMOVED from the Global Heatmap; its down/up counters
@@ -249,7 +265,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
         if (handle) {
             const caption = document.createElement("span");
             caption.className = "exec-heat-caption ms-auto";
-            caption.textContent = "15 minutes, newest on the right";
+            caption.textContent = t("executive.panel.global_caption");
             handle.appendChild(caption);
         }
         this._contentId = `${this.id}_global`;
@@ -277,10 +293,10 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             return;
         }
         const rows = [
-            { kind: "qoo", label: "Overall QoO", labelHtml: `Overall QoO${qooInfoIconHtml()}`, badge: "Global", blocks: globalQoq },
-            { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
-            { kind: "retransmit", label: "TCP Retransmits", badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
-            { kind: "utilization", label: "Utilization", badge: "Global", blocks: global, color: colorByCapacity, format: (v) => formatLatest(v, "%") },
+            { kind: "qoo", label: t("executive.panel.overall_qoo"), labelHtml: `${t("executive.panel.overall_qoo")}${qooInfoIconHtml()}`, badge: "Global", blocks: globalQoq },
+            { kind: "rtt", label: t("executive.panel.rtt_label"), badge: "Global", blocks: global },
+            { kind: "retransmit", label: t("common.table.tcp_retransmits"), badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
+            { kind: "utilization", label: t("circuit.queuing.utilization"), badge: "Global", blocks: global, color: colorByCapacity, format: (v) => formatLatest(v, "%") },
         ];
         const body = rows
             .map((row) => {
@@ -389,9 +405,9 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                 const link = document.createElement("a");
                 link.href = this.config.link;
                 link.className = "text-decoration-none";
-                link.title = "Open the full detail page";
-                link.setAttribute("aria-label", `${this.title()} detail page`);
-                link.innerHTML = `View all <i class="fas fa-chevron-right ms-1"></i>`;
+                link.title = t("executive.panel.detail_page_link");
+                link.setAttribute("aria-label", t("executive.panel.detail_page_aria", {title: this.title()}));
+                link.innerHTML = `${t("executive.panel.view_all")} <i class="fas fa-chevron-right ms-1"></i>`;
                 link.classList.add("exec-view-all");
                 controls.appendChild(link);
             }
@@ -508,73 +524,61 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
 export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Median RTT",
-            tooltip: "Median round-trip time (p50 only, upload over download) for the top sites and APs over the last 15 minutes.",
+            tooltip: t("executive.dashlet.rtt_tooltip"),
             icon: "fa-stopwatch",
             metricKey: "rtt",
             colorFn: (v) => colorByRttMs(v),
             formatFn: (v) => formatLatest(v, "ms"),
             link: "executive_heatmap_rtt.html",
-            countWeight: 100,
-            minSamples: 3,
-            hideAsns: true,
-            caption: "sites & APs",
+            caption: t("executive.caption.sites_aps"),
         });
     }
-    title() { return "Median RTT"; }
+    title() { return t("asn_analysis.metric.median_rtt"); }
 }
 
 export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "TCP Retransmits",
-            tooltip: "TCP retransmit percentage for the top sites and APs over the last 15 minutes; the row shows the worse direction.",
+            tooltip: t("executive.dashlet.retransmit_tooltip"),
             icon: "fa-undo-alt",
             metricKey: "retransmit",
             colorFn: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))),
             formatFn: (v) => formatLatest(v, "%", 1),
             link: "executive_heatmap_retransmit.html",
-            countWeight: 100,
-            minSamples: 3,
-            hideAsns: true,
-            caption: "sites & APs",
+            caption: t("executive.caption.sites_aps"),
         });
     }
-    title() { return "TCP Retransmits"; }
+    title() { return t("common.table.tcp_retransmits"); }
 }
 
 export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Circuit Utilization",
-            tooltip: "Shaped utilization (upload / download) for the top circuits over the last 15 minutes.",
+            tooltip: t("executive.dashlet.circuit_util_tooltip"),
             icon: "fa-chart-line",
             metricKey: "utilization",
             scope: "circuit",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_download.html",
-            hideAsns: true,
-            caption: "circuits",
+            caption: t("executive.heat.kind.circuits"),
         });
     }
-    title() { return "Circuit Utilization"; }
+    title() { return t("executive.dashlet.title.circuit_utilization"); }
 }
 
 export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Site / AP Utilization",
-            tooltip: "Shaped utilization (upload / download) for the top sites and access points over the last 15 minutes.",
+            tooltip: t("executive.dashlet.site_util_tooltip"),
             icon: "fa-tower-broadcast",
             metricKey: "utilization",
             scope: "site",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_download.html",
-            hideAsns: true,
-            caption: "sites & APs",
+            caption: t("executive.caption.sites_aps"),
         });
     }
-    title() { return "Site / AP Utilization"; }
+    title() { return t("executive.dashlet.title.site_ap_utilization"); }
 }

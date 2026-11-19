@@ -1,34 +1,36 @@
 import {saveConfig, loadConfig, renderConfigMenu, sendWsRequest} from "./config/config_helper";
 import {normalizeDpdkStatus, normalizeWorkerCount} from "./config/dpdk_status.mjs";
 import {
-    applyPlacementBudgetMbps,
-    parsePlacementBudgetInput,
-    readPlacementBudgetMbps,
+    applyWorkerCapacityMbps,
+    parseWorkerCapacityInput,
+    readWorkerCapacityMbps,
 } from "./config/tuning_hygiene.mjs";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 function validateConfig() {
     // Validate numeric fields
     const netdevBudgetUsecs = parseInt(document.getElementById("netdevBudgetUsecs").value);
     if (isNaN(netdevBudgetUsecs) || netdevBudgetUsecs < 0) {
-        alert("Netdev Budget (μs) must be a positive number");
+        alert(t("config.tuning.validation.netdev_budget_usecs"));
         return false;
     }
 
     const netdevBudgetPackets = parseInt(document.getElementById("netdevBudgetPackets").value);
     if (isNaN(netdevBudgetPackets) || netdevBudgetPackets < 0) {
-        alert("Netdev Budget (Packets) must be a positive number");
+        alert(t("config.tuning.validation.netdev_budget_packets"));
         return false;
     }
 
     const rxUsecs = parseInt(document.getElementById("rxUsecs").value);
     if (isNaN(rxUsecs) || rxUsecs < 0) {
-        alert("RX Polling Frequency (μs) must be a positive number");
+        alert(t("config.tuning.validation.rx_polling"));
         return false;
     }
 
     const txUsecs = parseInt(document.getElementById("txUsecs").value);
     if (isNaN(txUsecs) || txUsecs < 0) {
-        alert("TX Polling Frequency (μs) must be a positive number");
+        alert(t("config.tuning.validation.tx_polling"));
         return false;
     }
 
@@ -38,11 +40,11 @@ function validateConfig() {
         return false;
     }
 
-    const placementBudget = parsePlacementBudgetInput(
-        document.getElementById("dpdkPlacementBudget").value,
+    const workerCapacity = parseWorkerCapacityInput(
+        document.getElementById("dpdkWorkerCapacity").value,
     );
-    if (!placementBudget.ok) {
-        alert(placementBudget.error);
+    if (!workerCapacity.ok) {
+        alert(workerCapacity.error);
         return false;
     }
 
@@ -66,14 +68,15 @@ function updateConfig() {
             .filter(s => s.length > 0)
     };
 
-    // A0: the optional [tuning] placement budget. Carry the whole tuning
+    // A0: the optional [tuning] worker capacity. Carry the whole tuning
     // object (this function just replaced it above, preserving every existing
-    // field) and set/delete ONLY placement_budget_mbps: blank = delete =
-    // compiled 2.0G pre-headroom default.
-    const placementBudget = parsePlacementBudgetInput(
-        document.getElementById("dpdkPlacementBudget").value,
+    // field) and set/delete ONLY worker_capacity_mbps: blank = delete =
+    // compiled 1,125 Mbps effective default. The deprecated
+    // placement_budget_mbps alias is removed on save.
+    const workerCapacity = parseWorkerCapacityInput(
+        document.getElementById("dpdkWorkerCapacity").value,
     );
-    applyPlacementBudgetMbps(window.config, placementBudget.value);
+    applyWorkerCapacityMbps(window.config, workerCapacity.value);
 
     // The DPDK worker count lives in the [queues] section (the installer
     // translates it to LIBREQOS_DPDK_WORKERS). Only touch this key so a save
@@ -85,6 +88,10 @@ function updateConfig() {
 }
 
 function kindBadgeClass(label) {
+    // translatable: false — "Running", "Effective" and "Configured" are the
+    // provenance labels `config/dpdk_status.mjs` emits (they mirror
+    // `DpdkStatusKind` on the Rust side); translating a rendered label here
+    // would break the comparison without translating the module that owns it.
     switch (label) {
         case "Running":
             return "text-bg-success";
@@ -106,7 +113,7 @@ function renderDpdkStatus(rows) {
     if (!rows.length) {
         const empty = document.createElement("div");
         empty.className = "text-secondary";
-        empty.textContent = "DPDK status is unavailable.";
+        empty.textContent = t("config.tuning.dpdk.unavailable");
         target.appendChild(empty);
         return;
     }
@@ -128,7 +135,7 @@ function renderDpdkStatus(rows) {
         head.append(label, badge);
 
         const value = document.createElement("div");
-        value.textContent = row.value ?? "Unavailable";
+        value.textContent = row.value ?? t("config.tuning.dpdk.value_unavailable");
 
         const source = document.createElement("div");
         source.className = "text-secondary";
@@ -161,6 +168,19 @@ function loadDpdkStatus() {
 
 // Render the configuration menu
 renderConfigMenu('tuning');
+// These paragraphs wrap a literal file name or command in `<code>`/`<strong>`,
+// which the DOM applier cannot keep: they are empty in the page and rendered here.
+renderMarkupText({
+    dpdkWorkersLabel: tHtml("config.tuning.dpdk.workers_label"),
+    dpdkWorkersHelp: tHtml("config.tuning.dpdk.workers_help"),
+    dpdkWorkersNote: tHtml("config.tuning.dpdk.workers_note"),
+    dpdkWorkerCapacityLabel: tHtml("config.tuning.dpdk.worker_capacity_label"),
+    dpdkWorkerCapacityHelp: tHtml("config.tuning.dpdk.worker_capacity_help"),
+    netdevSubtitle: tHtml("config.tuning.netdev.subtitle"),
+    setCpuGovernorPerformanceHelp: tHtml("config.tuning.governor_help"),
+    stopIrqBalanceHelp: tHtml("config.tuning.irqbalance_help"),
+    offloadHelp: tHtml("config.tuning.disable_offload_help"),
+});
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -188,17 +208,16 @@ loadConfig(() => {
         // DPDK worker count (stored in [queues]).
         document.getElementById("dpdkWorkers").value = window.config.queues?.workers ?? "";
 
-        // Optional [tuning] placement budget (Mbps pre-headroom); blank =
-        // compiled default 2000 (effective 1500 at 25% headroom).
-        document.getElementById("dpdkPlacementBudget").value =
-            readPlacementBudgetMbps(window.config) ?? "";
+        // Optional [tuning] worker capacity (Mbps, effective); default 1125.
+        document.getElementById("dpdkWorkerCapacity").value =
+            readWorkerCapacityMbps(window.config) ?? 1125;
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
-                    alert("Configuration saved successfully!");
+                    alert(t("config.tuning.saved"));
                     loadDpdkStatus();
                 });
             }
@@ -206,6 +225,7 @@ loadConfig(() => {
 
         loadDpdkStatus();
     } else {
+        // translatable: false — "Configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Configuration not found in window.config");
     }
 });

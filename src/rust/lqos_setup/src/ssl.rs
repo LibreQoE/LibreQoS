@@ -21,7 +21,9 @@ const INTERNAL_CA_CERT_PATH: &str =
     "/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt";
 const INSTALL_CADDY_SCRIPT: &str = "install_caddy.sh";
 const DISABLE_CADDY_SCRIPT: &str = "disable_caddy.sh";
-const RUNTIME_DIRECT_LISTEN: &str = ":::9123";
+// Driver ruling 2026-11-12: the BIND is the network control. The direct WebUI
+// listener defaults to loopback, never a wildcard.
+const RUNTIME_DIRECT_LISTEN: &str = "127.0.0.1:9123";
 const RUNTIME_SECURE_LISTEN: &str = "127.0.0.1:9123";
 const WEB_UPSTREAM: &str = "127.0.0.1:9123";
 const DELAYED_SWITCH_SHELL: &str = "/bin/sh";

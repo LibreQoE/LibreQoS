@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 export class LtsCakeGraph extends DashboardGraph {
     constructor(id, period) {
@@ -32,13 +33,13 @@ export class LtsCakeGraph extends DashboardGraph {
                 selectMode: false,
                 data: [
                     {
-                        name: "Marks",
+                        name: t("graph.cake.marks"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[0]
                         }
                     }, {
-                        name: "Drops",
+                        name: t("graph.cake.drops"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[1]
@@ -50,6 +51,7 @@ export class LtsCakeGraph extends DashboardGraph {
                 },
             },
             series: [
+            // translatable: false — "DownloadM Error" "DownloadM Error2" "UploadM Error" "UploadM Error2" "DownloadD Error" "DownloadD Error2" "UploadD Error" "UploadD Error2" — invisible stacked scaffolding series that draw the min/max band; they carry no legend entry and no tooltip
                 {
                     name: 'DownloadM Error',
                     type: 'line',
@@ -97,7 +99,7 @@ export class LtsCakeGraph extends DashboardGraph {
                     },
                 },
                 {
-                    name: 'Marks',
+                    name: t("graph.cake.marks"),
                     type: 'line',
                     data: [],
                     symbol: 'none',
@@ -163,7 +165,7 @@ export class LtsCakeGraph extends DashboardGraph {
                     },
                 },
                 {
-                    name: 'Drops',
+                    name: t("graph.cake.drops"),
                     type: 'line',
                     data: [],
                     symbol: 'none',

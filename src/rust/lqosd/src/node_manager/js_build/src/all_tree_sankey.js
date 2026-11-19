@@ -6,7 +6,7 @@ import {toNumber} from "./lq_js_common/helpers/scaling";
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
  */
-function lerpViridis(t) {
+function lerpViridis(position) {
     // Viridis colormap sampled at 6 points, interpolated linearly
     const stops = [
         [68, 1, 84],    // #440154
@@ -15,9 +15,9 @@ function lerpViridis(t) {
         [94, 201, 98],  // #5EC962
         [253, 231, 37]  // #FDE725
     ];
-    if (t <= 0) return "#440154";
-    if (t >= 1) return "#FDE725";
-    let idx = t * (stops.length - 1);
+    if (position <= 0) return "#440154";
+    if (position >= 1) return "#FDE725";
+    let idx = position * (stops.length - 1);
     let i = Math.floor(idx);
     let frac = idx - i;
     let c0 = stops[i], c1 = stops[i + 1];
@@ -29,6 +29,7 @@ function lerpViridis(t) {
 import {isRedacted} from "./helpers/redact";
 import {GenericRingBuffer} from "./helpers/ringbuffer";
 import {trimStringWithElipsis} from "./helpers/strings_help";
+import {t} from "./i18n/index.js";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
@@ -43,7 +44,7 @@ function setRootNodeLabel(name) {
     if (!target) {
         return;
     }
-    target.textContent = name || "Root";
+    target.textContent = name || t("graph.sankey.root");
     target.classList.add("redactable");
 }
 
@@ -80,6 +81,7 @@ function makeOverlay(container, id) {
     overlay.style.zIndex = "10";
     overlay.style.padding = "16px";
 
+    // translatable: false — "var(--lqos-surface)" "1px solid var(--lqos-border)" "var(--lqos-radius-lg)" "var(--lqos-shadow-sm)" "14px 18px" "blur(10px)" — the overlay panel's CSS values, not labels
     const panel = document.createElement("div");
     panel.style.background = "var(--lqos-surface)";
     panel.style.border = "1px solid var(--lqos-border)";
@@ -105,9 +107,9 @@ function makeOverlay(container, id) {
     container.appendChild(overlay);
 
     return {
-        show: (t, s) => {
-            title.textContent = t;
-            subtitle.textContent = s || "";
+        show: (text, subtext) => {
+            title.textContent = text;
+            subtitle.textContent = subtext || "";
             overlay.style.display = "flex";
         },
         hide: () => {
@@ -138,9 +140,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
     render(graph) {
         const head = this.getHead();
         if (!Array.isArray(head) || head.length === 0) {
-            setRootNodeLabel("Root");
+            setRootNodeLabel(t("graph.sankey.root"));
             if (sankeyOverlay) {
-                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+                sankeyOverlay.show(t("sankey.overlay.limited_title"), t("sankey.overlay.nothing"));
             }
             graph.update([], []);
             return;
@@ -152,9 +154,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
 
         const rootEntry = head[rootId];
         if (!rootEntry || !rootEntry[1]) {
-            setRootNodeLabel("Root");
+            setRootNodeLabel(t("graph.sankey.root"));
             if (sankeyOverlay) {
-                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+                sankeyOverlay.show(t("sankey.overlay.limited_title"), t("sankey.overlay.nothing"));
             }
             graph.update([], []);
             return;
@@ -195,10 +197,12 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 fontSize: 10,
                 color: "#999",
                 formatter: (params) => {
+                    // translatable: false — "(Generated Site)" is the server's synthetic-node name suffix, stripped here and never shown
                     return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
                 }
             };
             if (redact) {
+                // translatable: false — "Illegible" is a font family the redaction mode applies, not text on screen
                 label.fontFamily = "Illegible";
             }
 
@@ -265,7 +269,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
 
         if (links.length === 0) {
             if (sankeyOverlay) {
-                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+                sankeyOverlay.show(t("sankey.overlay.limited_title"), t("sankey.overlay.nothing"));
             }
             graph.update([], []);
             return;
@@ -312,7 +316,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 return;
             }
             if (sankeyOverlay) {
-                sankeyOverlay.show("Waiting for data", "No NetworkTreeLite websocket response received yet.");
+                sankeyOverlay.show(t("common.state.waiting"), t("sankey.overlay.no_response"));
             }
             graph.update([], []);
         });
@@ -416,20 +420,20 @@ let maxDepth = getMaxDepth();
 let graph = new AllTreeSankey("sankey");
 bindMaxDepth();
 sankeyOverlay = makeOverlay(graph.dom, "allTreeSankeyOverlay");
-sankeyOverlay.show("Waiting for data", "Requesting network tree...");
+sankeyOverlay.show(t("common.state.waiting"), t("sankey.overlay.requesting"));
 let loopTimer = null;
 
 $("#btnPause").click(() => {
     paused = !paused;
     if (paused) {
-        $("#btnPause").html("<i class='fa fa-play'></i> Resume");
+        $("#btnPause").html(`<i class='fa fa-play'></i> ${t("dashboard.resume")}`);
         graph.model.cancelPending();
         if (loopTimer) {
             clearTimeout(loopTimer);
             loopTimer = null;
         }
     } else {
-        $("#btnPause").html("<i class='fa fa-pause'></i>Pause");
+        $("#btnPause").html(`<i class='fa fa-pause'></i>${t("dashboard.pause")}`);
         start();
     }
 });

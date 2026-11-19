@@ -1,5 +1,6 @@
 import {clearDiv, simpleRow, theading} from "./helpers/builders";
 import {formatMbps} from "./helpers/scaling";
+import {t, tn} from "./i18n/index.js";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
@@ -20,6 +21,7 @@ function sendWsRequest(responseEvent, request) {
             if (done) return;
             done = true;
             wsClient.off(responseEvent, responseHandler);
+            // translatable: false — "Error" is the websocket event this promise listens on, not a label
             wsClient.off("Error", errorHandler);
             resolve(msg);
         };
@@ -37,7 +39,9 @@ function sendWsRequest(responseEvent, request) {
 }
 
 function formatPlanPair(down, up) {
-    return `${formatMbps(down)} / ${formatMbps(up)} Mbps`;
+    // `formatMbps` already carries the unit, so joining two of them must not
+    // append a third.
+    return `${formatMbps(down)} / ${formatMbps(up)}`;
 }
 
 function tierBadgeClass(tierLabel) {
@@ -53,8 +57,10 @@ function buildTierBadge(row) {
     return badge;
 }
 
+// translatable: false — "Node" is the target-kind token the server sends; this
+// file compares it and renders the catalogued label instead.
 function targetKindLabel(row) {
-    return row?.target_kind === "Node" ? "Node" : "Circuit";
+    return row?.target_kind === "Node" ? t("tree.table.node") : t("common.table.circuit");
 }
 
 function targetHref(row) {
@@ -106,7 +112,7 @@ function renderTable(rows) {
     if (!Array.isArray(rows) || rows.length === 0) {
         const empty = document.createElement("div");
         empty.className = "text-muted small";
-        empty.textContent = "No Ethernet-limited circuits or nodes matched this filter.";
+        empty.textContent = t("ethernet_caps.empty_filter");
         target.appendChild(empty);
         return;
     }
@@ -117,14 +123,14 @@ function renderTable(rows) {
     table.classList.add("lqos-table", "lqos-table-tight");
 
     const thead = document.createElement("thead");
-    thead.appendChild(theading("Target"));
-    thead.appendChild(theading("Type"));
-    thead.appendChild(theading("Parent"));
-    thead.appendChild(theading("Ethernet"));
-    thead.appendChild(theading("Requested"));
-    thead.appendChild(theading("Applied"));
-    thead.appendChild(theading("Limiting Device"));
-    thead.appendChild(theading("Interface"));
+    thead.appendChild(theading(t("ethernet_caps.column.target")));
+    thead.appendChild(theading(t("ethernet_caps.column.type")));
+    thead.appendChild(theading(t("common.table.parent")));
+    thead.appendChild(theading(t("ethernet_caps.column.ethernet")));
+    thead.appendChild(theading(t("ethernet_caps.column.requested")));
+    thead.appendChild(theading(t("ethernet_caps.column.applied")));
+    thead.appendChild(theading(t("ethernet_caps.column.limiting_device")));
+    thead.appendChild(theading(t("ethernet_caps.column.interface")));
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
@@ -147,19 +153,19 @@ function updateSummary(query, rows, requestFailed = false) {
     const end = totalRows === 0 ? 0 : start + Math.max(0, rows.length - 1);
 
     if (requestFailed) {
-        summary.textContent = "Ethernet cap data unavailable";
-        pager.textContent = "Retry the page after the connection is restored.";
+        summary.textContent = t("ethernet_caps.unavailable");
+        pager.textContent = t("ethernet_caps.retry_hint");
         prev.disabled = true;
         next.disabled = true;
         return;
     }
 
     summary.textContent = totalRows === 0
-        ? "No active Ethernet caps"
-        : `${totalRows} Ethernet-limited targets`;
+        ? t("ethernet_caps.none_active")
+        : tn("ethernet_caps.targets_count", totalRows);
     pager.textContent = totalRows === 0
-        ? "Page 1 / 1"
-        : `Showing ${start}–${end} of ${totalRows} • Page ${currentPage} / ${totalPages}`;
+        ? t("common.page.position", {page: 1, pages: 1})
+        : t("ethernet_caps.showing", {start, end, total: totalRows, page: currentPage, pages: totalPages});
     prev.disabled = currentPage <= 1;
     next.disabled = currentPage >= totalPages;
 }
@@ -186,7 +192,7 @@ async function requestPage() {
         updateSummary(data.query, data.rows || []);
     } catch (_error) {
         totalRows = 0;
-        setRequestError("Ethernet cap data could not be loaded. Check the node-manager connection and retry.");
+        setRequestError(t("ethernet_caps.load_failed"));
         renderTable([]);
         updateSummary({ page: 0 }, [], true);
     }

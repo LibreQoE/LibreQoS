@@ -3,40 +3,40 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h4>Manage Users</h4>
+                <h4 data-i18n="config.users.title">Manage Users</h4>
             </div>
             <div class="card-body">
                 <div id="users-list">
                     <!-- Users will be populated here by JavaScript -->
                     <div class="text-center">
                         <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                            <span class="visually-hidden" data-i18n="config.users.loading">Loading...</span>
                         </div>
                     </div>
                 </div>
 
                 <hr>
 
-                <h5>Add New User</h5>
+                <h5 data-i18n="config.users.add.title">Add New User</h5>
                 <form id="add-user-form">
                     <div class="row mb-3">
                         <div class="col-md-4">
-                            <label for="add-username" class="form-label">Username</label>
+                            <label for="add-username" class="form-label" data-i18n="config.users.username">Username</label>
                             <input type="text" class="form-control" id="add-username" autocomplete="username" required>
                         </div>
                         <div class="col-md-4">
-                            <label for="password" class="form-label">Password</label>
+                            <label for="password" class="form-label" data-i18n="config.users.password">Password</label>
                             <input type="password" class="form-control" id="password" autocomplete="new-password" required>
                         </div>
                         <div class="col-md-4">
-                            <label for="role" class="form-label">Role</label>
+                            <label for="role" class="form-label" data-i18n="config.users.role">Role</label>
                             <select class="form-select" id="role" required>
-                                <option value="Admin">Admin</option>
-                                <option value="ReadOnly">Read Only</option>
+                                <option value="Admin" data-i18n="config.users.role.admin">Admin</option>
+                                <option value="ReadOnly" data-i18n="config.users.role.read_only">Read Only</option>
                             </select>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" data-i18n="config.users.add.submit">
                         <i class="fa fa-plus"></i> Add User
                     </button>
                 </form>
@@ -48,32 +48,32 @@
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="editUserModalLabel">Edit User</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <h5 class="modal-title" id="editUserModalLabel" data-i18n="config.users.edit.title">Edit User</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" data-i18n-aria-label="common.action.close"></button>
                     </div>
                     <div class="modal-body">
                         <form id="edit-user-form">
                             <div class="mb-3">
-                                <label for="edit-username" class="form-label">Username</label>
+                                <label for="edit-username" class="form-label" data-i18n="config.users.username">Username</label>
                                 <input type="text" class="form-control" id="edit-username" autocomplete="username" readonly>
                             </div>
                             <div class="mb-3">
-                                <label for="edit-password" class="form-label">Password</label>
+                                <label for="edit-password" class="form-label" data-i18n="config.users.password">Password</label>
                                 <input type="password" class="form-control" id="edit-password" autocomplete="new-password">
-                                <div class="form-text">Leave blank to keep current password</div>
+                                <div class="form-text" data-i18n="config.users.edit.password_help">Leave blank to keep current password</div>
                             </div>
                             <div class="mb-3">
-                                <label for="edit-role" class="form-label">Role</label>
+                                <label for="edit-role" class="form-label" data-i18n="config.users.role">Role</label>
                                 <select class="form-select" id="edit-role">
-                                    <option value="Admin">Admin</option>
-                                    <option value="ReadOnly">Read Only</option>
+                                    <option value="Admin" data-i18n="config.users.role.admin">Admin</option>
+                                    <option value="ReadOnly" data-i18n="config.users.role.read_only">Read Only</option>
                                 </select>
                             </div>
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="button" class="btn btn-primary" id="save-user-changes">Save changes</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="common.action.close">Close</button>
+                        <button type="button" class="btn btn-primary" id="save-user-changes" data-i18n="config.users.save">Save changes</button>
                     </div>
                 </div>
             </div>

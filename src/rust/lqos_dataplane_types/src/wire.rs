@@ -136,6 +136,26 @@ impl AckOutcome {
     pub fn code(self) -> u8 {
         self as u8
     }
+
+    /// The wire NAME shared by both consumers: the producer's `outcome_name`
+    /// JSON field and the broker's operator-facing reject text. It lives here so a
+    /// rename is one decision; the match has no `_` arm, so a new outcome variant
+    /// fails to compile in this crate rather than going unnamed on one side.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Applied => "APPLIED",
+            Self::RejectedInvalidFrame => "REJECTED_INVALID_FRAME",
+            Self::RejectedMalformedJson => "REJECTED_MALFORMED_JSON",
+            Self::RejectedReservedRoot => "REJECTED_RESERVED_ROOT",
+            Self::RejectedStructuralOp => "REJECTED_STRUCTURAL_OP",
+            Self::RejectedLpmPrepare => "REJECTED_LPM_PREPARE",
+            Self::AttemptExhausted => "ATTEMPT_EXHAUSTED",
+            Self::RejectedVersionMismatch => "REJECTED_VERSION_MISMATCH",
+            Self::RejectedBatchEnvelope => "REJECTED_BATCH_ENVELOPE",
+            Self::RejectedObserveMode => "REJECTED_OBSERVE_MODE",
+            Self::RebuildRequired => "REBUILD_REQUIRED",
+        }
+    }
 }
 
 /// U1/W4: the TYPED reject reason carried in the ack detail. NUMBERED + STABLE
@@ -489,7 +509,6 @@ pub enum FrameBody {
 mod tests {
     use super::*;
     use crate::DataplaneMappingOp;
-    use std::net::IpAddr;
 
     fn sample_tx() -> DataplaneTransaction {
         DataplaneTransaction {
@@ -590,6 +609,32 @@ mod tests {
         assert_eq!(AckOutcome::from_code(0), None);
         assert_eq!(AckOutcome::from_code(12), None);
         assert_eq!(AckOutcome::from_code(255), None);
+    }
+
+    /// S1 (`shared-wire-name-table`): the name table is TOTAL over the codes,
+    /// one name per outcome (a duplicate would collapse two outcomes onto one
+    /// operator label), and each name is safe to interpolate unescaped into the
+    /// producer's `outcome_name` JSON field. The literal spellings themselves
+    /// stay pinned by the consumers' independent oracles
+    /// (`wire_outcome_codes_render_the_contract_names` in the producer,
+    /// `outcome_codes_map_to_classes` / the broker's urgent-code tests).
+    #[test]
+    fn ack_outcome_wire_names_are_total_distinct_and_json_safe() {
+        let mut names = std::collections::BTreeSet::new();
+        for code in 1..=11u8 {
+            let outcome = AckOutcome::from_code(code).expect("known code decodes");
+            let name = outcome.wire_name();
+            assert!(!name.is_empty(), "code {code} must carry a name");
+            assert!(
+                !name.contains(['"', '\\']) && !name.chars().any(char::is_control),
+                "name {name} is interpolated unescaped into the producer's JSON"
+            );
+            assert!(
+                names.insert(name),
+                "name {name} (code {code}) must identify exactly one outcome"
+            );
+        }
+        assert_eq!(names.len(), 11, "eleven distinct names, one per outcome");
     }
 
     /// U1/W1: the shared frame is exactly the slot stride (the silent-misread

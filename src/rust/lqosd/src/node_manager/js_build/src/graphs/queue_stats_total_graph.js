@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -21,13 +22,13 @@ export class QueueStatsTotalGraph extends DashboardGraph {
                 selectMode: false,
                 data: [
                     {
-                        name: "ECN Marks",
+                        name: t("graph.cake.ecn_marks"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[0]
                         }
                     }, {
-                        name: "Cake Drops",
+                        name: t("graph.cake.cake_drops"),
                         icon: 'circle',
                         itemStyle: {
                             color: window.graphPalette[1]
@@ -52,28 +53,28 @@ export class QueueStatsTotalGraph extends DashboardGraph {
             },
             series: [
                 {
-                    name: 'ECN Marks',
+                    name: t("graph.cake.ecn_marks"),
                     data: [],
                     type: 'line',
                     lineStyle: { color: window.graphPalette[0] },
                     symbol: 'none',
                 },
                 {
-                    name: 'ECN Marks Up',
+                    name: t("graph.cake.ecn_marks_up"),
                     data: [],
                     type: 'line',
                     lineStyle: { color: window.graphPalette[0] },
                     symbol: 'none',
                 },
                 {
-                    name: 'Cake Drops',
+                    name: t("graph.cake.cake_drops"),
                     data: [],
                     type: 'line',
                     lineStyle: { color: window.graphPalette[1] },
                     symbol: 'none',
                 },
                 {
-                    name: 'Cake Drops Up',
+                    name: t("graph.cake.cake_drops_up"),
                     data: [],
                     type: 'line',
                     lineStyle: { color: window.graphPalette[1] },
@@ -95,7 +96,7 @@ export class QueueStatsTotalGraph extends DashboardGraph {
                     const time = this.ringbuffer.getTimestamp(idx);
                     const date = new Date(time);
                     const hhmmss = date.toLocaleTimeString('en-US', { hour12: false });
-                    let tooltip = `<b>Time:</b> ${hhmmss}<br/>`;
+                    let tooltip = `<b>${t("graph.tooltip.time")}</b> ${hhmmss}<br/>`;
                     params.forEach((item) => {
                         tooltip += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${item.color};"></span> ${item.seriesName}: <b>${item.value}</b><br/>`;
                     });

@@ -14,6 +14,7 @@ import {
     renderEffectiveNowDisplay,
     renderLimitedByDisplay,
 } from "./tree_limit_reason.mjs";
+import {clearCatalogs, EN, ES, installCatalogs, installKeyEchoCatalogs} from "../i18n/test_catalogs.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -95,6 +96,9 @@ function node({
         active_attachment_name: activeAttachment,
     };
 }
+
+test.beforeEach(() => installCatalogs());
+test.afterEach(clearCatalogs);
 
 test("rate helpers fall back from effective to configured rates", () => {
     const selected = {
@@ -381,6 +385,8 @@ test("shared rate helpers preserve configured and effective fallback behavior", 
     assert.deepEqual(effectiveMax(selected), [90, 40]);
 });
 
+// The `dt` labels carry `data-i18n` since i18n-S2b; the regexes below assert
+// the grid structure, the IDs and their order, not the absence of attributes.
 test("tree details markup keeps compact definition grid IDs", () => {
     const html = readFileSync(resolve(__dirname, "../../static2/tree.html"), "utf8");
 
@@ -398,19 +404,19 @@ test("tree details markup keeps compact definition grid IDs", () => {
     });
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item lqos-tree-detail-col-start">\s*<dt class="lqos-tree-detail-label">Base Configured Rate<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-col-start">\s*<dt class="lqos-tree-detail-label"[^>]*>Base Configured Rate<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-/,
     );
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label">Effective Now<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label"[^>]*>Effective Now<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-/,
     );
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label">Limited By<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsLimitedBy">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label"[^>]*>Limited By<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsLimitedBy">-/,
     );
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end lqos-tree-detail-last-row lqos-tree-detail-final-cell">\s*<dt class="lqos-tree-detail-label">Active Attachment<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end lqos-tree-detail-last-row lqos-tree-detail-final-cell">\s*<dt class="lqos-tree-detail-label"[^>]*>Active Attachment<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-/,
     );
     const positions = expected.map((id) => html.indexOf(`id="${id}"`));
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);
@@ -421,4 +427,77 @@ test("tree details CSS keeps desktop detail values aligned in four columns", () 
 
     assert.match(css, /\.lqos-tree-detail-grid\s*{[^}]*grid-template-columns:\s*minmax\(8\.5rem, max-content\) minmax\(0, 1fr\)\s*minmax\(8\.5rem, max-content\) minmax\(0, 1fr\);/s);
     assert.match(css, /\.lqos-tree-detail-item\s*{\s*display: contents;\s*}/);
+});
+
+test("every rate-source kind maps to catalog keys both locales define", () => {
+    // With an empty catalog each render returns the key it asked for, so the
+    // kind-to-message seam is checked through the render path, not a copy of it.
+    installKeyEchoCatalogs();
+    const parent = node({name: "Parent", configured: [294, 60], effective: [294, 60]});
+    const summaries = [
+        // parent: plain, topology-override parent, active attachment, both
+        buildNodeLimitSummary({node: node({effective: [294, 60]}), parentNode: parent}),
+        buildNodeLimitSummary({node: node({effective: [294, 60]}), parentNode: parent, topologyOverrideData: {
+            has_override: true,
+            override_parent_node_ids: ["p1"],
+            current_parent_node_id: "p1",
+            current_parent_node_name: "Pinned",
+        }}),
+        buildNodeLimitSummary({node: node({effective: [294, 60], activeAttachment: "Backhaul A"}), parentNode: parent}),
+        buildNodeLimitSummary({
+            node: node({effective: [294, 60], activeAttachment: "Backhaul A"}),
+            parentNode: parent,
+            topologyOverrideData: {
+                has_override: true,
+                override_parent_node_ids: ["p1"],
+                current_parent_node_id: "p1",
+                current_parent_node_name: "Pinned",
+            },
+        }),
+        // override, attachment, queue, base
+        buildNodeLimitSummary({node: node({effective: [250, 80]}), rateOverrideData: {
+            has_override: true,
+            override_download_bandwidth_mbps: 250,
+            override_upload_bandwidth_mbps: 80,
+        }}),
+        buildNodeLimitSummary({node: node({effective: [400, 80], activeAttachment: "Backhaul A"})}),
+        buildNodeLimitSummary({node: node({effective: [450, 90]})}),
+        buildNodeLimitSummary({node: node({configured: [294, 60], effective: [294, 60]})}),
+    ];
+    const seen = new Set();
+    for (const summary of summaries) {
+        const rendered = [
+            summary.label,
+            summary.compactReason,
+            ...summary.directions.map((direction) => direction.detail),
+        ];
+        for (const text of rendered) {
+            for (const key of text.split(" ")) {
+                assert.match(key, /^(?:tree\.limit|common\.table)\./, `"${text}" is not a catalog key`);
+                assert.ok(EN.messages[key], `en.json is missing "${key}"`);
+                assert.ok(ES.messages[key], `es.json is missing "${key}"`);
+                seen.add(key);
+            }
+        }
+    }
+    assert.ok(seen.size >= 14, `expected the full vocabulary, saw ${seen.size} keys`);
+});
+
+test("the summary and its tooltip follow the served locale", () => {
+    installCatalogs(ES);
+    const parent = node({name: "Padre", configured: [294, 60], effective: [294, 60]});
+    const summary = buildNodeLimitSummary({node: node({effective: [294, 60]}), parentNode: parent});
+
+    assert.equal(summary.label, "Padre");
+    assert.equal(summary.compactReason, "Est. padre");
+    assert.match(summary.title, /Descarga: heredada del padre Padre a 294M\./);
+    assert.match(summary.title, /Subida: heredada del padre Padre a 60M\./);
+
+    const unlimited = buildNodeLimitSummary({node: node({configured: [0, 0], effective: [0, 0]})});
+    assert.match(unlimited.title, /Sin límite/);
+
+    const target = new FakeElement(fakeDocument, "dd");
+    renderLimitedByDisplay({target, summary});
+    assert.equal(target.children[0].attributes.title,
+        `${ES.messages["tree.limit.source_tooltip"].replace("{details}", summary.title)}`);
 });

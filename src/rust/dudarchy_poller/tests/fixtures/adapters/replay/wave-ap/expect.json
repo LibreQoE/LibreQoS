@@ -1,0 +1,160 @@
+{
+  "supported": true,
+  "probes": [
+    {
+      "probe": "identity",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    },
+    {
+      "probe": "stations",
+      "outcome": "present",
+      "reason": null,
+      "rows": 2
+    }
+  ],
+  "lldp": [],
+  "arp": [],
+  "fdb": null,
+  "stations": [
+    {
+      "mac": "00:11:22:33:44:55",
+      "wlan_if": 0,
+      "hostname": "station-a",
+      "signal_dbm": null,
+      "noise_dbm": null,
+      "last_ip": null,
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null,
+      "ul_rssi": -57,
+      "dl_rssi": -55,
+      "ul_snr": 19,
+      "dl_snr": 20,
+      "tx_capacity": 1000000,
+      "rx_capacity": 1000000,
+      "dl_rate_mbps": 1000,
+      "model": "Wave-LR"
+    },
+    {
+      "mac": "00:11:22:33:44:66",
+      "wlan_if": 0,
+      "hostname": "station-b",
+      "signal_dbm": null,
+      "noise_dbm": null,
+      "last_ip": null,
+      "tx_bps": null,
+      "rx_bps": null,
+      "rx_bytes": null,
+      "tx_bytes": null,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null,
+      "ul_rssi": -60,
+      "dl_rssi": -58,
+      "ul_snr": 19,
+      "dl_snr": 20,
+      "tx_capacity": 1000000,
+      "rx_capacity": 1000000,
+      "dl_rate_mbps": 1000,
+      "model": "Wave-Nano"
+    }
+  ],
+  "interfaces": [],
+  "claims": [
+    {
+      "probe": "identity",
+      "row": null,
+      "kind": "name",
+      "value": "wave-ap-1",
+      "source": "snmp-system"
+    }
+  ],
+  "details": {
+    "interfaces": [],
+    "system": null,
+    "temperatures": [],
+    "stations": [
+      {
+        "mac": "00:11:22:33:44:55",
+        "wlan_if": 0,
+        "hostname": "station-a",
+        "signal_dbm": null,
+        "noise_dbm": null,
+        "last_ip": null,
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "ul_rssi": -57,
+        "dl_rssi": -55,
+        "ul_snr": 19,
+        "dl_snr": 20,
+        "tx_capacity": 1000000,
+        "rx_capacity": 1000000,
+        "dl_rate_mbps": 1000,
+        "model": "Wave-LR",
+        "provenance": [
+          "snmp-vendor"
+        ]
+      },
+      {
+        "mac": "00:11:22:33:44:66",
+        "wlan_if": 0,
+        "hostname": "station-b",
+        "signal_dbm": null,
+        "noise_dbm": null,
+        "last_ip": null,
+        "tx_bps": null,
+        "rx_bps": null,
+        "rx_bytes": null,
+        "tx_bytes": null,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "ul_rssi": -60,
+        "dl_rssi": -58,
+        "ul_snr": 19,
+        "dl_snr": 20,
+        "tx_capacity": 1000000,
+        "rx_capacity": 1000000,
+        "dl_rate_mbps": 1000,
+        "model": "Wave-Nano",
+        "provenance": [
+          "snmp-vendor"
+        ]
+      }
+    ],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": null,
+    "nat": null,
+    "dhcp_leases": null,
+    "radio": {
+      "frequency_mhz": 68040,
+      "channel_width_mhz": 2160,
+      "sm_count": null,
+      "tx_power_dbm": null,
+      "lan_speed_mbps": null,
+      "phy_mbps": null,
+      "provenance": [
+        "snmp-vendor"
+      ],
+      "model": "Wave AP Micro"
+    }
+  },
+  "capacity": {
+    "mbps": 1000.0,
+    "source": "per_sm_rate"
+  },
+  "residuals": []
+}

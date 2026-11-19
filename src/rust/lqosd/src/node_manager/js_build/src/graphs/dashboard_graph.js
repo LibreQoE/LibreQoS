@@ -95,6 +95,7 @@ export class DashboardGraph {
         this.pendingSetOptionRaf = null;
         this.pendingSetOptionAttempts = 0;
         if (!this.dom) {
+            // translatable: false — "DashboardGraph: missing DOM element ' '" is a programmer diagnostic, never rendered
             throw new Error(`DashboardGraph: missing DOM element '${id}'`);
         }
         emitDashboardRenderHook({
@@ -232,6 +233,7 @@ export class DashboardGraph {
         this.chart[methodName] = (...args) => {
             emitDashboardRenderHook({
                 graphId: this.id,
+                // translatable: false — "chart- -start" "chart- -ok" "chart- -error" are render-hook stage names, not copy
                 stage: `chart-${methodName}-start`,
                 argsCount: args.length,
                 ...domStateSnapshot(this.dom),

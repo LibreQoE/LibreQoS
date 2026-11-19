@@ -2,8 +2,8 @@
     <section class="lqos-config-panel">
         <div class="lqos-config-panel-header">
             <div>
-                <h5 class="lqos-config-panel-title"><i class="fa fa-ethernet me-2"></i>Ethernet Caps</h5>
-                <div class="lqos-config-panel-subtitle">Circuits and topology nodes automatically down-rated because detected Ethernet speed was below the requested rate.</div>
+                <h5 class="lqos-config-panel-title" data-i18n="ethernet_caps.title"><i class="fa fa-ethernet me-2"></i>Ethernet Caps</h5>
+                <div class="lqos-config-panel-subtitle" data-i18n="ethernet_caps.subtitle">Circuits and topology nodes automatically down-rated because detected Ethernet speed was below the requested rate.</div>
             </div>
             <div id="ethernetCapsSummary" class="small text-body-secondary"></div>
         </div>
@@ -12,20 +12,20 @@
             <div id="ethernetCapsError" class="alert alert-warning small" role="alert" aria-live="assertive" hidden></div>
             <div class="row g-2 align-items-end mb-3">
                 <div class="col-12 col-lg-5">
-                    <label class="form-label small text-body-secondary" for="ethernetCapsSearch">Search</label>
-                    <input id="ethernetCapsSearch" class="form-control" type="text" placeholder="Search targets, parents, device names…">
+                    <label class="form-label small text-body-secondary" for="ethernetCapsSearch" data-i18n="common.search.action">Search</label>
+                    <input id="ethernetCapsSearch" class="form-control" type="text" placeholder="Search targets, parents, device names…" data-i18n-placeholder="ethernet_caps.search_placeholder">
                 </div>
                 <div class="col-6 col-lg-2">
-                    <label class="form-label small text-body-secondary" for="ethernetCapsTier">Ethernet</label>
+                    <label class="form-label small text-body-secondary" for="ethernetCapsTier" data-i18n="ethernet_caps.column.ethernet">Ethernet</label>
                     <select id="ethernetCapsTier" class="form-select">
-                        <option value="">All</option>
+                        <option value="" data-i18n="topology_probes.filter.all">All</option>
                         <option value="10M">10M</option>
                         <option value="100M">100M</option>
                         <option value="1G">1G+</option>
                     </select>
                 </div>
                 <div class="col-6 col-lg-2">
-                    <label class="form-label small text-body-secondary" for="ethernetCapsPageSize">Per page</label>
+                    <label class="form-label small text-body-secondary" for="ethernetCapsPageSize" data-i18n="common.toolbar.per_page">Per page</label>
                     <select id="ethernetCapsPageSize" class="form-select">
                         <option value="50">50</option>
                         <option value="100" selected>100</option>
@@ -33,16 +33,16 @@
                     </select>
                 </div>
                 <div class="col-12 col-lg-3 d-flex justify-content-lg-end gap-2">
-                    <button id="ethernetCapsPrev" type="button" class="btn btn-outline-primary" aria-label="Previous page">
+                    <button id="ethernetCapsPrev" type="button" class="btn btn-outline-primary" aria-label="Previous page" data-i18n-aria-label="common.toolbar.previous_page">
                         <i class="fa fa-arrow-left" aria-hidden="true"></i>
                     </button>
-                    <button id="ethernetCapsNext" type="button" class="btn btn-outline-primary" aria-label="Next page">
+                    <button id="ethernetCapsNext" type="button" class="btn btn-outline-primary" aria-label="Next page" data-i18n-aria-label="common.toolbar.next_page">
                         <i class="fa fa-arrow-right" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>
             <div id="ethernetCapsTableWrap">
-                <div class="text-muted small"><i class="fa fa-spinner fa-spin me-1"></i>Loading Ethernet cap data…</div>
+                <div class="text-muted small"><i class="fa fa-spinner fa-spin me-1"></i><span data-i18n="ethernet_caps.loading">Loading Ethernet cap data…</span></div>
             </div>
             <div id="ethernetCapsPager" class="small text-body-secondary mt-3"></div>
         </div>

@@ -1,5 +1,7 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 import {readBandwidthMbps, applyBandwidthMbps} from "./config/dataplane_hygiene.mjs";
+import {renderMarkupText} from "./config/markup_text.mjs";
+import {t, tHtml} from "./i18n/index.js";
 
 // The v3 `[dataplane]` root-shaper bandwidth editor. `window.config.dataplane`
 // is the single source (`download_mbps`/`upload_mbps`); the read falls back to
@@ -18,12 +20,12 @@ function readField(id) {
 function validateConfig() {
     const download = readField("dataplaneDownload");
     if (!Number.isFinite(download) || download <= 0) {
-        alert("Download bandwidth must be a number greater than 0");
+        alert(t("config.dataplane.validation.download"));
         return false;
     }
     const upload = readField("dataplaneUpload");
     if (!Number.isFinite(upload) || upload <= 0) {
-        alert("Upload bandwidth must be a number greater than 0");
+        alert(t("config.dataplane.validation.upload"));
         return false;
     }
     return true;
@@ -34,9 +36,13 @@ function updateConfig() {
 }
 
 renderConfigMenu('dataplane');
+// The note names the `lqos.conf` sections in `<code>`, which the DOM applier
+// cannot keep: the block is empty in the page and rendered here.
+renderMarkupText({dataplaneSectionNote: tHtml("config.dataplane.note")});
 
 loadConfig(() => {
     if (!window.config) {
+        // translatable: false — "Configuration not found in window.config" is a console diagnostic, never rendered
         console.error("Configuration not found in window.config");
         return;
     }
@@ -49,7 +55,7 @@ loadConfig(() => {
         if (validateConfig()) {
             updateConfig();
             saveConfig(() => {
-                alert("Configuration saved successfully!");
+                alert(t("config.dataplane.saved"));
             });
         }
     });

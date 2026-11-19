@@ -1,0 +1,18 @@
+[advisories]
+# Scoped exception for the four zip 3.0.0 advisories. zip is a BUILD-ONLY
+# dependency of utoipa-swagger-ui 9.0.2 (the lqos_api Swagger-UI build
+# script). It is not linked into lqosd, bridge_rs, or the .deb, and the build
+# extracts the pinned utoipa-swagger-ui-vendored bundle, not an untrusted
+# archive. Fixing it requires utoipa-swagger-ui 10 + utoipa 6, a source
+# migration tracked separately. The other 11 audit vulnerabilities are fixed
+# by the Cargo.lock bump in this branch.
+ignore = [
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0367",
+]
+
+# RETIREMENT (dated): remove the four IDs above when the utoipa-swagger-ui 10 /
+# utoipa 6 / zip 9 migration lands. Tracked as bead lqos-74t.192, due
+# 2026-12-31. The ignore is GLOBAL by advisory ID; do not widen it.

@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {mkBadge} from "./bakery_shared";
+import {t} from "../i18n/index.js";
 import {
     directionSummary,
     formatStormguardMbps,
@@ -21,11 +22,11 @@ export class StormguardSiteListDashlet extends BaseDashlet {
     }
 
     title() {
-        return "StormGuard Sites";
+        return t("dashlet.name.stormguard_sites");
     }
 
     tooltip() {
-        return "<h5>StormGuard Sites</h5><p>Ranks watched sites so operators can quickly see where StormGuard is acting, cooling down, or simply holding steady.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.stormguard_sites.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -48,9 +49,9 @@ export class StormguardSiteListDashlet extends BaseDashlet {
         table.innerHTML = `
             <thead>
                 <tr>
-                    <th>Site</th>
-                    <th>Rates</th>
-                    <th>Status</th>
+                    <th>${t("topology.node_kind.site")}</th>
+                    <th>${t("common.table.rates")}</th>
+                    <th>${t("topology_probes.status")}</th>
                 </tr>
             </thead>
         `;
@@ -78,14 +79,14 @@ export class StormguardSiteListDashlet extends BaseDashlet {
 
     renderSnapshot(snapshot) {
         if (snapshot.empty) {
-            this.caption.textContent = "No watched sites are currently available.";
-            this.tbody.innerHTML = "<tr><td colspan='3' class='text-muted'>StormGuard has no live site data to rank yet.</td></tr>";
+            this.caption.textContent = t("dashlet.stormguard_sites.empty");
+            this.tbody.innerHTML = `<tr><td colspan="3" class="text-muted">${t("dashlet.stormguard_sites.no_sites")}</td></tr>`;
             return;
         }
 
         this.caption.textContent = snapshot.singleSite
-            ? "Single watched site. The detail panel on the right is the main view."
-            : "Sorted by recent change activity, cooldowns, and attention score.";
+            ? t("dashlet.stormguard_sites.single")
+            : t("dashlet.stormguard_sites.sorted");
 
         this.tbody.innerHTML = "";
         snapshot.sites.forEach((site) => {
@@ -102,7 +103,7 @@ export class StormguardSiteListDashlet extends BaseDashlet {
             name.textContent = site.site;
             const action = document.createElement("div");
             action.classList.add("small", "text-muted");
-            action.textContent = site.lastActionLabel || "No recent action";
+            action.textContent = site.lastActionLabel || t("dashlet.stormguard_sites.no_action");
             nameTd.appendChild(name);
             nameTd.appendChild(action);
 

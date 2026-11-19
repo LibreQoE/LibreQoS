@@ -12,6 +12,9 @@ import {formatRetransmit, formatRtt, retransmitFractionFromSample} from "../help
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
+import {t} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
 
 const wsClient = get_ws_client();
 const listenOnceForSeconds = (eventName, seconds, handler) => {
@@ -34,11 +37,11 @@ export class Worst10Retransmits extends DashletBaseInsight {
     }
 
     title() {
-        return "Worst 10 TCP Re-transmits";
+        return t("dashlet.name.worst_10_retransmits");
     }
 
     tooltip() {
-        return "<h5>Worst 10 TCP Re-transmits</h5><p>Worst 10 Downloaders by TCP retransmits, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.worst10.retransmits.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -71,11 +74,11 @@ export class Worst10Retransmits extends DashletBaseInsight {
             this.timeCache.tick();
 
             let items = this.timeCache.get();
-            let t = TopNTableFromMsgData(items);
+            let table = TopNTableFromMsgData(items);
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            target.appendChild(table);
         }
     }
 
@@ -83,7 +86,7 @@ export class Worst10Retransmits extends DashletBaseInsight {
         super.onTimeChange();
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
         let spinnerDiv = document.createElement("div");
-        spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        spinnerDiv.innerHTML = `<i class='fas fa-spinner fa-spin'></i> ${t("common.state.fetching_insight")}`;
         let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
         target.appendChild(spinnerDiv);
@@ -94,10 +97,10 @@ export class Worst10Retransmits extends DashletBaseInsight {
             let table = document.createElement("table");
             table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
             let thead = document.createElement("thead");
-            thead.appendChild(theading("Circuit"));
-            thead.appendChild(theading("Bytes Downloaded"));
+            thead.appendChild(theading(t("common.table.circuit")));
+            thead.appendChild(theading(t("common.table.bytes_downloaded")));
             thead.appendChild(theading("RTT"));
-            thead.appendChild(theading("Rxmits"));
+            thead.appendChild(theading(t("common.table.rxmits")));
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
 

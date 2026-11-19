@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {RingBuffer} from "../lq_js_common/helpers/ringbuffer";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {t} from "../i18n/index.js";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -12,7 +13,7 @@ export class RetransmitsGraph extends DashboardGraph {
         this.option = new GraphOptionsBuilder()
             .withLeftGridSize("15%")
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxisPercent("Retransmits", 40)
+            .withScaledAbsYAxisPercent(t("graph.axis.retransmits"), 40)
             .build();
 
         this.option.legend = {
@@ -22,11 +23,11 @@ export class RetransmitsGraph extends DashboardGraph {
             selectMode: false,
             data: [
                 {
-                    name: "Download",
+                    name: t("graph.series.download"),
                     icon: 'circle',
                 },
                 {
-                    name: "Upload",
+                    name: t("graph.series.upload"),
                     icon: 'circle',
                 },
             ],
@@ -36,13 +37,13 @@ export class RetransmitsGraph extends DashboardGraph {
         };
         this.option.series = [
             {
-                name: 'Download',
+                name: t("graph.series.download"),
                 data: [],
                 type: 'line',
                 symbol: 'none',
             },
             {
-                name: 'Upload',
+                name: t("graph.series.upload"),
                 data: [],
                 type: 'line',
                 symbol: 'none',

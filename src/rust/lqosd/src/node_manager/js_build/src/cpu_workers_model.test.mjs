@@ -9,6 +9,7 @@ import {
     cpuHeatColor,
     nodeDomIds,
     flattenOwnershipTree,
+    formatBool,
     formatCount,
     formatMetric,
     formatQueueIds,
@@ -25,6 +26,10 @@ import {
     topologyHeadline,
     topologySummary,
 } from "./cpu_workers_model.mjs";
+import {clearCatalogs, EN, ES, installCatalogs, installKeyEchoCatalogs} from "../i18n/test_catalogs.mjs";
+
+test.beforeEach(() => installCatalogs());
+test.afterEach(clearCatalogs);
 
 function ownershipFixture() {
     return {
@@ -188,8 +193,10 @@ test("sharded count is unavailable without an owner map, never zero", () => {
         ownership: {available: false, reason: "owner_map_unavailable"},
     }).ownership;
     assert.equal(ownership.available, false);
-    assert.equal(shardedSummary(ownership), "owner_map_unavailable");
+    // A reason code is not a display value: the summary renders the catalog label.
+    assert.equal(shardedSummary(ownership), "Ownership map is not available yet");
     assert.notEqual(shardedSummary(ownership), "0");
+    assert.notEqual(shardedSummary(ownership), "owner_map_unavailable");
     assert.equal(countShardedSites(null), null);
 });
 
@@ -220,7 +227,7 @@ test("an available section with missing arrays is unavailable, not empty", () =>
     assert.equal(ownership.circuits, null);
     assert.equal(ownership.nodes, null);
     assert.equal(ownership.crossings, null);
-    assert.equal(shardedSummary(ownership), "ownership_payload_incomplete");
+    assert.equal(shardedSummary(ownership), "Ownership map is incomplete");
 
     const moves = normalizeCpuWorkers({
         moves: {available: true},
@@ -228,7 +235,7 @@ test("an available section with missing arrays is unavailable, not empty", () =>
     assert.equal(moves.available, false);
     assert.equal(moves.reason, "moves_payload_incomplete");
     assert.equal(moves.items, null);
-    assert.equal(movesSummary(moves), "moves_payload_incomplete");
+    assert.equal(movesSummary(moves), "Move history is incomplete");
 });
 
 function signatureBase() {
@@ -329,8 +336,10 @@ test("topology/moves report honest-empty reasons", () => {
         cpu_topology: {available: false, reason: "topology_pending"},
         moves: {available: false, reason: "no_history_source_v1"},
     });
-    assert.equal(topologySummary(data.topology), "topology_pending");
-    assert.equal(movesSummary(data.moves), "no_history_source_v1");
+    // A reason this module has no label for is humanized, never shown raw and
+    // never rendered as a catalog key.
+    assert.equal(topologySummary(data.topology), "topology pending");
+    assert.equal(movesSummary(data.moves), "Move history is not available in v1");
     assert.equal(movesSummary({available: true, items: []}), "none observed");
 });
 
@@ -398,4 +407,88 @@ test("per-site sharded counts only mark multi-worker sites", () => {
     assert.equal(counts.has("Beta"), false);
     assert.equal(counts.has("Gamma"), false);
     assert.equal(counts.size, 1);
+});
+
+test("every displayed server code maps to a catalog key both locales define", () => {
+    // With an empty catalog each render returns the key it asked for, so the
+    // code-to-key seam is checked through the render path itself.
+    installKeyEchoCatalogs();
+    const isKey = (text) => /^cpu_workers\.[a-z0-9_.]+$/.test(text)
+        && Object.prototype.hasOwnProperty.call(EN.messages, text)
+        && Object.prototype.hasOwnProperty.call(ES.messages, text);
+
+    for (const code of [
+        "owner_map_unavailable",
+        "no_history_source_v1",
+        "bridge_report_unavailable",
+        "cpu_usage_unavailable",
+        "cpu_topology_unavailable",
+        "moves_payload_incomplete",
+        "ownership_payload_incomplete",
+    ]) {
+        const key = reasonText(code);
+        assert.ok(isKey(key), `reason "${code}" rendered "${key}"`);
+    }
+    assert.ok(isKey(reasonText(null)), "the absent-reason fallback is a key");
+    for (const state of ["ok", "partial", "unavailable", "protocol_error", "something_new"]) {
+        const key = stateLabel(state);
+        assert.ok(isKey(key), `state "${state}" rendered "${key}"`);
+    }
+    for (const headline of [
+        topologyHeadline({available: false, reason: "cpu_topology_unavailable"}),
+        topologyHeadline({available: true, hasHybridSplit: true}),
+        topologyHeadline({available: true, source: "fallback_all_possible", possible: [0, 1]}),
+        topologyHeadline({available: true, source: "fallback_all_possible"}),
+        topologyHeadline({available: true, source: "core_type_sysfs", shaping: [0]}),
+        topologyHeadline({available: true, source: "core_type_sysfs"}),
+    ]) {
+        assert.ok(isKey(headline), `topology headline rendered "${headline}"`);
+    }
+    for (const part of topologySummary({
+        available: true,
+        source: "core_type_sysfs",
+        hasHybridSplit: false,
+        excludeEfficiencyCores: true,
+        possible: [0, 1],
+        shaping: [0],
+        fromCache: true,
+    }).split(" · ")) {
+        assert.ok(isKey(part), `topology summary part rendered "${part}"`);
+    }
+    for (const text of [
+        movesSummary({available: false, reason: "no_history_source_v1"}),
+        movesSummary({available: true, items: [1, 2]}),
+        movesSummary({available: true, items: []}),
+        siteName({name: ""}),
+        circuitName({name: ""}),
+        formatQueueIds([]),
+        formatBool(true),
+        formatBool(false),
+        formatMetric(null, "available"),
+        formatMetric(null, "unsupported"),
+        formatMetric(null, null),
+        shardedSiteLabel({workerIds: [1, 2]}),
+    ]) {
+        assert.ok(isKey(text), `rendered "${text}"`);
+    }
+});
+
+test("the rendered labels follow the served locale", () => {
+    installCatalogs(ES);
+    assert.equal(reasonText("owner_map_unavailable"), "El mapa de propiedad aún no está disponible");
+    assert.equal(reasonText("brand_new_code"), "brand new code", "an unknown code is humanized, never a key");
+    assert.equal(stateLabel("partial"), "Parcial");
+    assert.equal(stateLabel("protocol_error"), "Error de protocolo");
+    assert.equal(siteName({name: "  "}), "Nombre de sitio desconocido");
+    assert.equal(circuitName({}), "Circuito desconocido");
+    assert.equal(formatQueueIds([]), "ninguna");
+    assert.equal(formatBool(true), "sí");
+    assert.equal(formatMetric(null, "available"), "no disponible");
+    assert.equal(formatMetric(null, "unsupported"), "no soportado");
+    assert.equal(topologyHeadline({available: true, hasHybridSplit: true}), "Núcleos híbridos P/E");
+    assert.equal(shardedSiteLabel({workerIds: [1, 2]}), "repartido entre 2 workers");
+    assert.equal(shardedSummary({available: false, reason: "owner_map_unavailable"}),
+        "El mapa de propiedad aún no está disponible");
+    assert.equal(ES.messages["cpu_workers.topology.all_cpus_fallback"].one, "{count} CPU (selección de respaldo)");
+    assert.equal(ES.messages["cpu_workers.topology.all_cpus_fallback"].many, "{count} CPU (selección de respaldo)");
 });

@@ -1,8 +1,15 @@
-export const WORLD_MAP_ENCODING_DESCRIPTION = "Larger points indicate more traffic, and point colors indicate Internet RTT.";
+import {t, tn} from "../i18n/index.js";
+
+/** The sentence that explains what a point's size and colour encode. */
+export function worldMapEncodingDescription() {
+    return t("dashlet.world_map.encoding");
+}
 
 export function worldMapStatusText(pointCount) {
-    const noun = pointCount === 1 ? "location" : "locations";
-    return `Showing ${pointCount} recent endpoint ${noun}. ${WORLD_MAP_ENCODING_DESCRIPTION}`;
+    return tn("dashlet.world_map.status", pointCount, {
+        count: pointCount,
+        encoding: worldMapEncodingDescription(),
+    });
 }
 
 export function applyWorldMapFeatureUpdate(dashlet, features, eventName) {
@@ -14,12 +21,12 @@ export function applyWorldMapFeatureUpdate(dashlet, features, eventName) {
     }
 
     dashlet._setStatus(worldMapStatusText(features.length));
-    dashlet.traceRender("onMessage", { eventName, pointCount: features.length });
+    dashlet.traceRender("onMessage", {eventName, pointCount: features.length});
     try {
         dashlet.graph.updateFeatures(features);
-        dashlet.traceRender("update-ok", { eventName, pointCount: features.length });
+        dashlet.traceRender("update-ok", {eventName, pointCount: features.length});
     } catch (err) {
-        dashlet.traceRender("update-error", { eventName, error: err && err.message ? err.message : String(err) });
+        dashlet.traceRender("update-error", {eventName, error: err && err.message ? err.message : String(err)});
         throw err;
     }
 }

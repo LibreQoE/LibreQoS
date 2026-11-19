@@ -11,6 +11,9 @@
 //     ✗ + typed reason, sourced from the E3b BridgePublishStatus
 //     records — rejects are surfaced HONESTLY and never retried).
 
+import {t} from "./i18n/index.js";
+
+// translatable: false — "Admin" is the server's role value, compared against and never rendered
 export function isAdminRole(role) {
     return String(role ?? "") === "Admin";
 }
@@ -45,33 +48,56 @@ export function actionsEnabledForHealth(verdict) {
     return verdict === "healthy" || verdict === "degraded" || verdict === "starting";
 }
 
+/// The four operator rate fields, by wire name. The wire name never leaves this
+/// module as a label: the message names the field through the catalog.
+function rateFieldLabel(field) {
+    switch (field) {
+    case "download_min_mbps":
+        return t("circuit.admin.field.download_min");
+    case "upload_min_mbps":
+        return t("circuit.admin.field.upload_min");
+    case "download_max_mbps":
+        return t("circuit.admin.field.download_max");
+    case "upload_max_mbps":
+        return t("circuit.admin.field.upload_max");
+    default:
+        return field;
+    }
+}
+
 export function validateRateInputs(inputs) {
-    const labels = [
-        ["download_min_mbps", "Download Min"],
-        ["upload_min_mbps", "Upload Min"],
-        ["download_max_mbps", "Download Max"],
-        ["upload_max_mbps", "Upload Max"],
+    const fields = [
+        "download_min_mbps",
+        "upload_min_mbps",
+        "download_max_mbps",
+        "upload_max_mbps",
     ];
     const errors = [];
-    for (const [key, label] of labels) {
-        const value = Number(inputs?.[key]);
+    for (const field of fields) {
+        const value = Number(inputs?.[field]);
         if (!Number.isFinite(value)) {
-            errors.push(`${label} must be a number`);
+            errors.push(t("circuit.admin.rate.not_number", {field: rateFieldLabel(field)}));
             continue;
         }
         if (value <= 0) {
             // The never-raw-zero rule: 0 is NOT a valid operator rate
             // (0/0 is the suspend encoding and the CSV cannot re-parse
             // it).
-            errors.push(`${label} must be greater than 0`);
+            errors.push(t("circuit.admin.rate.not_positive", {field: rateFieldLabel(field)}));
         }
     }
     if (errors.length === 0) {
         if (Number(inputs.download_min_mbps) > Number(inputs.download_max_mbps)) {
-            errors.push("Download Min must not exceed Download Max");
+            errors.push(t("circuit.admin.rate.min_exceeds_max", {
+                min: rateFieldLabel("download_min_mbps"),
+                max: rateFieldLabel("download_max_mbps"),
+            }));
         }
         if (Number(inputs.upload_min_mbps) > Number(inputs.upload_max_mbps)) {
-            errors.push("Upload Min must not exceed Upload Max");
+            errors.push(t("circuit.admin.rate.min_exceeds_max", {
+                min: rateFieldLabel("upload_min_mbps"),
+                max: rateFieldLabel("upload_max_mbps"),
+            }));
         }
     }
     return errors;
@@ -128,18 +154,18 @@ export function describeOutcome(outcome) {
         return "";
     }
     if (outcome.status === "noop") {
-        return "Already in this state";
+        return t("circuit.admin.outcome.noop");
     }
     if (outcome.status === "pending") {
         if (outcome.seqPos && outcome.seqLen && outcome.seqLen > 1) {
             return outcome.retrying
-                ? `Bridge retrying (attempt ${outcome.seqPos}/${outcome.seqLen})…`
-                : `Applying to bridge (${outcome.seqPos}/${outcome.seqLen})…`;
+                ? t("circuit.admin.outcome.retrying", {pos: outcome.seqPos, len: outcome.seqLen})
+                : t("circuit.admin.outcome.applying_progress", {pos: outcome.seqPos, len: outcome.seqLen});
         }
-        return "Applying to bridge…";
+        return t("circuit.actions.applying");
     }
     if (outcome.status === "applied") {
-        return "✓ Applied by bridge";
+        return t("circuit.admin.outcome.applied");
     }
     return `✗ ${outcome.reason}`;
 }
@@ -167,7 +193,7 @@ export function setActionPending(root, contextText) {
     root.querySelectorAll("button").forEach((button) => {
         button.disabled = true;
     });
-    root.appendChild(lifecycleNode(contextText || "Applying to bridge…", "text-secondary"));
+    root.appendChild(lifecycleNode(contextText || t("circuit.actions.applying"), "text-secondary"));
 }
 
 /// Settled state: ✓ applied (success tone) or ✗ + typed reason
@@ -183,7 +209,7 @@ export function setActionSettled(root, outcome) {
     };
     if (!outcome || outcome.status === "applied") {
         enable();
-        root.appendChild(lifecycleNode(describeOutcome(outcome) || "✓ Applied by bridge", "text-success"));
+        root.appendChild(lifecycleNode(describeOutcome(outcome) || t("circuit.admin.outcome.applied"), "text-success"));
         return "applied";
     }
     if (outcome.status === "pending") {

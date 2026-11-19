@@ -25,6 +25,8 @@ pub enum TopologyWriteOrigin {
     Api,
     /// The watched `libreqos_network.json` adapter.
     Watcher,
+    /// The in-process UISP integration's imported-bundle path.
+    Uisp,
 }
 
 impl TopologyWriteOrigin {
@@ -33,6 +35,7 @@ impl TopologyWriteOrigin {
         match self {
             Self::Api => "api",
             Self::Watcher => "watcher",
+            Self::Uisp => "uisp",
         }
     }
 }
@@ -164,6 +167,14 @@ pub fn compile_and_write_imported(
     origin: TopologyWriteOrigin,
     source_sha256: Option<&str>,
 ) -> Result<TopologyWriteReceipt, TopologyIngestError> {
+    // lqos-74t.196 step 5d: the one AP/OLT supplement stage, at the shared
+    // post-import/pre-placement choke point. It must run before the import
+    // artifact is serialized so the artifact and the compiled outputs describe
+    // the same document. Every supplement failure is fail-open: the returned
+    // bundle is the unsupplemented one and compilation proceeds.
+    let pins = crate::ap_supplement::SupplementPins::default();
+    let (imported, _supplement_plan) = crate::ap_supplement::apply(config, imported, &pins);
+
     let mut topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode);
     topology_import.writer = Some(origin.as_str().to_string());
     topology_import.source_sha256 = source_sha256.map(str::to_string);

@@ -1,3 +1,4 @@
+import {t} from "../i18n/index.js";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling.js";
 import {isColorBlindMode} from "../helpers/colorblind.js";
 import {heatRowAriaLabel, typeMonoMarkup} from "../executive_heat_labels.mjs";
@@ -49,6 +50,7 @@ export function isIpLike(name) {
     return /^[0-9a-fA-F:.]+$/.test(name) && (name.includes(".") || name.includes(":"));
 }
 
+// translatable: false — "Site" "Circuit" — the entity-kind badge words the rows carry and this module compares (badgeForEntityKind emits them, the aria-label and redact class read them); executive_heat_labels.mjs renders the visible name
 export function buildHeatmapRows(data) {
     const rows = [];
     const sites = (data?.sites || [])
@@ -60,7 +62,7 @@ export function buildHeatmapRows(data) {
             return t === "site" || t === "ap" || t === "";
         });
     sites.forEach(site => {
-        const siteLabel = site.site_name || "Site";
+        const siteLabel = site.site_name || t("topology.node_kind.site");
         rows.push({
             label: siteLabel,
             site_name: site.site_name || "",
@@ -71,7 +73,8 @@ export function buildHeatmapRows(data) {
     });
     const circuits = (data?.circuits || []);
     circuits.forEach(circuit => {
-        const name = circuit.circuit_name || circuit.circuit_id || `Circuit ${circuit.circuit_hash}`;
+        const name = circuit.circuit_name || circuit.circuit_id
+            || t("executive.heat.circuit_fallback", {hash: circuit.circuit_hash});
         rows.push({
             label: name,
             circuit_id: circuit.circuit_id || "",
@@ -83,8 +86,8 @@ export function buildHeatmapRows(data) {
     const asns = (data?.asns || []);
     asns.forEach(asn => {
         const label = asn.asn_name
-            ? `${asn.asn_name} (ASN ${asn.asn})`
-            : `ASN ${asn.asn}`;
+            ? t("asn_analysis.label_with_asn", {name: asn.asn_name, asn: String(asn.asn)})
+            : t("executive.leaderboard.asn_number", {asn: String(asn.asn)});
         rows.push({
             label,
             badge: "ASN",
@@ -131,6 +134,21 @@ function escapeHeatAttr(text) {
         .replace(/>/g, "&gt;");
 }
 
+/**
+ * The rendered word for the direction a value came from. One literal `t()` per
+ * branch so the extractor sees both keys.
+ * @param {"upload"|"download"|null} direction
+ * @returns {string}
+ */
+function directionLabel(direction) {
+    switch (direction) {
+        case "upload": return t("executive.heat.direction.upload");
+        case "download": return t("executive.heat.direction.download");
+        default: return "";
+    }
+}
+
+// translatable: false — 'class="fw-semibold"' is the bold-line class the tooltip body carries, not a label
 function tooltipHtmlFromLines(lines) {
     return (Array.isArray(lines) ? lines : [])
         .filter((line) => !!String(line ?? "").trim())
@@ -138,7 +156,8 @@ function tooltipHtmlFromLines(lines) {
         .join("");
 }
 
-function tooltipAttrsFromLines(lines) {
+// translatable: false — 'data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title=" " aria-label=" "' are the Bootstrap tooltip attributes this helper writes; the strings they carry are the translated lines
+export function tooltipAttrsFromLines(lines) {
     const filtered = (Array.isArray(lines) ? lines : [])
         .map((line) => String(line ?? "").trim())
         .filter(Boolean);
@@ -149,15 +168,15 @@ function tooltipAttrsFromLines(lines) {
 
 function noDataTooltipLines(blockIndex, meaning) {
     return [
-        `15-minute block ${blockIndex}`,
-        "No data",
+        t("executive.heat.block", {index: blockIndex}),
+        t("common.state.no_data"),
         meaning || "",
     ];
 }
 
 function scalarTooltipLines(blockIndex, valueLabel, valueText, meaning, extra = "") {
     return [
-        `15-minute block ${blockIndex}`,
+        t("executive.heat.block", {index: blockIndex}),
         `${valueLabel}: ${valueText}`,
         meaning,
         extra,
@@ -166,7 +185,7 @@ function scalarTooltipLines(blockIndex, valueLabel, valueText, meaning, extra = 
 
 function splitTooltipLines(blockIndex, topLabel, topValue, bottomLabel, bottomValue, meaning) {
     return [
-        `15-minute block ${blockIndex}`,
+        t("executive.heat.block", {index: blockIndex}),
         `${topLabel}: ${topValue}`,
         `${bottomLabel}: ${bottomValue}`,
         meaning,
@@ -175,11 +194,11 @@ function splitTooltipLines(blockIndex, topLabel, topValue, bottomLabel, bottomVa
 
 function rttTooltipLines(blockIndex, ulP50, ulP90, dlP50, dlP90, meaning) {
     return [
-        `15-minute block ${blockIndex}`,
-        `Upload p50 RTT: ${ulP50}`,
-        `Upload p90 RTT: ${ulP90}`,
-        `Download p50 RTT: ${dlP50}`,
-        `Download p90 RTT: ${dlP90}`,
+        t("executive.heat.block", {index: blockIndex}),
+        `${t("executive.heat.label.upload_p50_rtt")}: ${ulP50}`,
+        `${t("executive.heat.label.upload_p90_rtt")}: ${ulP90}`,
+        `${t("executive.heat.label.download_p50_rtt")}: ${dlP50}`,
+        `${t("executive.heat.label.download_p90_rtt")}: ${dlP90}`,
         meaning,
     ];
 }
@@ -198,7 +217,7 @@ export function heatmapRow(values, colorFn, formatValue, describeValue = null) {
     for (let i = 0; i < length; i++) {
         const val = values && values[i] !== undefined ? values[i] : null;
         if (val === null || val === undefined) {
-            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, "This block has no metric data yet."))}></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, t("executive.heat.no_metric_data")))}></div>`;
             continue;
         }
         const numeric = Number(val) || 0;
@@ -207,10 +226,10 @@ export function heatmapRow(values, colorFn, formatValue, describeValue = null) {
         const detail = describeValue ? describeValue(numeric) : "";
         const tooltipLines = scalarTooltipLines(
             i + 1,
-            "Value",
+            t("executive.heat.value"),
             title,
-            "This cell shows the metric value for this 15-minute block.",
-            detail ? `Context: ${detail}` : "",
+            t("executive.heat.value_hint"),
+            detail ? `${t("executive.heat.context")} ${detail}` : "",
         );
         cells += `<div class="exec-heat-cell" style="background:${color}" ${tooltipAttrsFromLines(tooltipLines)}></div>`;
     }
@@ -229,7 +248,7 @@ export function heatRow(label, badge, values, colorFn, formatValue, link = null,
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRow(values, colorFn, formatValue, describeValue)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(t("executive.heat.aria.history", {label}))}">${heatmapRow(values, colorFn, formatValue, describeValue)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
@@ -315,7 +334,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) 
             (dlP50 === null || dlP50 === undefined) &&
             (dlP90 === null || dlP90 === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, "This block has no RTT samples yet."))}></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, t("executive.heat.no_rtt_samples")))}></div>`;
             continue;
         }
 
@@ -327,7 +346,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) 
             `${fmt(ulP90)}${describe(ulP90)}`,
             `${fmt(dlP50)}${describe(dlP50)}`,
             `${fmt(dlP90)}${describe(dlP90)}`,
-            "Top row is upload, bottom row is download. Left is p50, right is p90.",
+            t("executive.heat.rtt_quad_meaning"),
         );
 
         const quad = (v) => {
@@ -375,9 +394,9 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
     // (p50 / p90) — scoped via `options.p50Only` so only the widget changes.
     const cells = options.p50Only
         ? heatmapRowSplit(quads.ul_p50, quads.dl_p50, colorFn, formatValue, {
-            topLabel: "Upload p50 RTT",
-            bottomLabel: "Download p50 RTT",
-            meaning: "Top is upload p50, bottom is download p50 (median RTT).",
+            topLabel: t("executive.heat.label.upload_p50_rtt"),
+            bottomLabel: t("executive.heat.label.download_p50_rtt"),
+            meaning: t("executive.heat.rtt_p50_meaning"),
         })
         : heatmapRowQuadrants(quads, colorFn, formatValue, describeValue);
     return `
@@ -385,7 +404,7 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} RTT heatmap history`)}">${cells}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(t("executive.heat.aria.rtt_history", {label}))}">${cells}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
@@ -395,9 +414,9 @@ function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options 
     const length = Array.isArray(topValues) && topValues.length
         ? topValues.length
         : (Array.isArray(bottomValues) && bottomValues.length ? bottomValues.length : 15);
-    const topLabel = options.topLabel || "Upload";
-    const bottomLabel = options.bottomLabel || "Download";
-    const meaning = options.meaning || "Top is upload, bottom is download.";
+    const topLabel = options.topLabel || t("common.table.upload");
+    const bottomLabel = options.bottomLabel || t("common.table.download");
+    const meaning = options.meaning || t("executive.heat.split_meaning");
     let cells = "";
     for (let i = 0; i < length; i++) {
         const top = topValues?.[i];
@@ -451,7 +470,7 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
-        <span class="exec-latest-pair" title="Upload / Download">
+        <span class="exec-latest-pair" title="${escapeHeatAttr(`${t("common.table.upload")} / ${t("common.table.download")}`)}">
             <span>${formatValue(latestTop)}</span>
             <span class="exec-latest-sep">/</span>
             <span>${formatValue(latestBottom)}</span>
@@ -466,7 +485,7 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(t("executive.heat.aria.history", {label}))}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
@@ -500,9 +519,10 @@ export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, li
     const arrow = direction === "upload" ? "↑" : direction === "download" ? "↓" : "";
     const formattedLatest = max === null
         ? `<span class="exec-latest-pair">—</span>`
-        : `<span class="exec-latest-pair" title="Upload ${formatValue(latestTop)} · Download ${formatValue(latestBottom)}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+        : `<span class="exec-latest-pair" title="${escapeHeatAttr(t("executive.heat.tooltip.upload_download", {upload: formatValue(latestTop), download: formatValue(latestBottom)}))}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+    const pair = `${formatValue(latestTop)} / ${formatValue(latestBottom)}`;
     const latestLabel = both
-        ? `${formatValue(latestTop)} / ${formatValue(latestBottom)}${direction ? ` (higher: ${direction})` : ""}`
+        ? (direction ? t("executive.heat.aria.higher", {pair, direction: directionLabel(direction)}) : pair)
         : formatValue(max);
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
@@ -512,10 +532,10 @@ export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, li
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} retransmit heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
-                topLabel: "Upload retransmits",
-                bottomLabel: "Download retransmits",
-                meaning: "Top is upload, bottom is download. Higher percentages mean more TCP retransmits during this 15-minute block.",
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(t("executive.heat.aria.retransmit_history", {label}))}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
+                topLabel: t("executive.heat.label.upload_retransmits"),
+                bottomLabel: t("executive.heat.label.download_retransmits"),
+                meaning: t("executive.heat.retransmit_meaning"),
             })}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
@@ -550,9 +570,10 @@ export function utilizationHeatRow(label, badge, blocks, colorFn, formatValue, l
     const arrow = direction === "upload" ? "↑" : direction === "download" ? "↓" : "";
     const formattedLatest = max === null
         ? `<span class="exec-latest-pair">—</span>`
-        : `<span class="exec-latest-pair" title="Upload ${formatValue(latestTop)} · Download ${formatValue(latestBottom)}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+        : `<span class="exec-latest-pair" title="${escapeHeatAttr(t("executive.heat.tooltip.upload_download", {upload: formatValue(latestTop), download: formatValue(latestBottom)}))}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+    const pair = `${formatValue(latestTop)} / ${formatValue(latestBottom)}`;
     const latestLabel = both
-        ? `${formatValue(latestTop)} / ${formatValue(latestBottom)}${direction ? ` (higher: ${direction})` : ""}`
+        ? (direction ? t("executive.heat.aria.higher", {pair, direction: directionLabel(direction)}) : pair)
         : formatValue(max);
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
@@ -562,10 +583,10 @@ export function utilizationHeatRow(label, badge, blocks, colorFn, formatValue, l
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} utilization heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
-                topLabel: "Upload utilization",
-                bottomLabel: "Download utilization",
-                meaning: "Top is upload, bottom is download. This shows how much of planned or available capacity was in use during this 15-minute block.",
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(t("executive.heat.aria.utilization_history", {label}))}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
+                topLabel: t("executive.heat.label.upload_utilization"),
+                bottomLabel: t("executive.heat.label.download_utilization"),
+                meaning: t("executive.heat.utilization_meaning"),
             })}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>

@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "id": "wave_ap",
+  "detect": {
+    "sys_object_id_exact": ["1.3.6.1.4.1.41112"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "identity",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "model", "oid": "1.3.6.1.4.1.41112.1.11.2.2.2.0", "parser": "utf8" },
+          { "name": "name", "oid": "1.3.6.1.4.1.41112.1.11.2.2.3.0", "parser": "utf8" },
+          { "name": "frequency_mhz", "oid": "1.3.6.1.4.1.41112.1.11.2.1.2.0", "parser": "u32" },
+          { "name": "channel_width_mhz", "oid": "1.3.6.1.4.1.41112.1.11.2.1.3.0", "parser": "u32" }
+        ]
+      }
+    },
+    {
+      "id": "stations",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.1", "parser": "octet_mac" },
+            { "name": "hostname", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.17", "parser": "utf8" },
+            { "name": "model", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.16", "parser": "utf8" },
+            { "name": "ul_rssi", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.5", "parser": "i64" },
+            { "name": "dl_rssi", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.21", "parser": "i64" },
+            { "name": "ul_snr", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.6", "parser": "i64" },
+            { "name": "dl_snr", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.22", "parser": "i64" },
+            { "name": "tx_capacity", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.9", "parser": "u32" },
+            { "name": "rx_capacity", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.10", "parser": "u32" },
+            { "name": "dl_rate_mbps", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.9", "parser": "kbps_to_mbps" }
+          ],
+          "index": { "kind": "station_mac" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["identity.name"] }
+    ],
+    "details": {
+      "stations": "stations",
+      "radio": "identity"
+    }
+  },
+  "budget": {
+    "max_requests": 64,
+    "max_rows": 256,
+    "max_bytes": 65536,
+    "deadline_ms": 8000
+  }
+}

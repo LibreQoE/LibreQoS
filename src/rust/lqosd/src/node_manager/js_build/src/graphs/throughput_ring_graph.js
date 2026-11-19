@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {t} from "../i18n/index.js";
 import {
     normalizeDownUpOrder,
     scaleNumber,
@@ -17,7 +18,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, windowSeconds)
-            .withScaledAbsYAxis("Throughput (bps)", 40)
+            .withScaledAbsYAxis(t("graph.axis.throughput_bps"), 40)
             .build();
 
         // `.64.2.3` (B): a TIGHT grid. ECharts' default (top:60/bottom:60) burned
@@ -43,7 +44,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 },
             },
             {
-                name: 'Mapped Traffic',
+                name: t("graph.series.mapped_traffic"),
                 data: [],
                 type: 'line',
                 stack: 'shaped',
@@ -67,7 +68,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 symbol: 'none',
             },
             {
-                name: 'Unmapped Traffic',
+                name: t("graph.series.unmapped_traffic"),
                 data: [],
                 type: 'line',
                 lineStyle: {
@@ -93,7 +94,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 if (!params || params.length === 0) return '';
                 const idx = params[0].dataIndex;
                 const ts = this.ringbuffer.getTimestamp(idx);
-                let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
+                let s = `<div><b>${t("graph.tooltip.time")}</b> ${formatTime(ts)}</div>`;
                 for (const p of params) {
                     s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value))}</b></div>`;
                 }

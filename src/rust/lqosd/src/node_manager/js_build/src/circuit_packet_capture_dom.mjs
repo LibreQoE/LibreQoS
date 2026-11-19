@@ -1,4 +1,5 @@
 import {appendIconText} from "./helpers/safe_dom.mjs";
+import {t} from "./i18n/index.js";
 
 export function setIconText(target, iconClasses, text) {
     while (target.firstChild) {
@@ -15,6 +16,6 @@ export function appendRedactableText(target, text) {
 }
 
 export function setPacketCaptureDownloadButton(button, address) {
-    setIconText(button, ["fa", "fa-download"], "Download Packet Capture for ");
+    setIconText(button, ["fa", "fa-download"], t("circuit.capture.download_for"));
     appendRedactableText(button, address);
 }

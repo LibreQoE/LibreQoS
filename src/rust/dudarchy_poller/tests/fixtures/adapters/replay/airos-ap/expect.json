@@ -1,0 +1,133 @@
+{
+  "supported": true,
+  "probes": [
+    {
+      "probe": "system",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    },
+    {
+      "probe": "lldp",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    },
+    {
+      "probe": "stations",
+      "outcome": "present",
+      "reason": null,
+      "rows": 1
+    }
+  ],
+  "lldp": [
+    {
+      "chassis_id": "00:1f:5e:aa:bb:cc",
+      "address": "10.0.0.9",
+      "port_id": "eth0",
+      "sys_name": "neighbor-1",
+      "sys_descr": "Linux 6.6",
+      "local_port": "ether2"
+    }
+  ],
+  "arp": [],
+  "fdb": null,
+  "stations": [
+    {
+      "mac": "00:27:22:aa:bb:cc",
+      "wlan_if": 1,
+      "hostname": "station-01",
+      "signal_dbm": -47,
+      "noise_dbm": null,
+      "last_ip": "172.30.1.20",
+      "tx_bps": 117000000,
+      "rx_bps": 78000000,
+      "rx_bytes": 2048,
+      "tx_bytes": 4096,
+      "uptime": null,
+      "distance_ccq": null,
+      "quality": null
+    }
+  ],
+  "interfaces": [],
+  "claims": [
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "name",
+      "value": "AP-1",
+      "source": "snmp-system"
+    },
+    {
+      "probe": "lldp",
+      "row": 0,
+      "kind": "name",
+      "value": "neighbor-1",
+      "source": "snmp-lldp"
+    },
+    {
+      "probe": "system",
+      "row": null,
+      "kind": "sysdescr",
+      "value": "airOS AC",
+      "source": "snmp-system"
+    },
+    {
+      "probe": "lldp",
+      "row": 0,
+      "kind": "sysdescr",
+      "value": "Linux 6.6",
+      "source": "snmp-lldp"
+    },
+    {
+      "probe": "lldp",
+      "row": 0,
+      "kind": "portid",
+      "value": "eth0",
+      "source": "snmp-lldp"
+    },
+    {
+      "probe": "lldp",
+      "row": 0,
+      "kind": "localport",
+      "value": "2",
+      "source": "snmp-lldp"
+    }
+  ],
+  "details": {
+    "nat": null,
+    "dhcp_leases": null,
+    "interfaces": [],
+    "system": null,
+    "temperatures": [],
+    "stations": [
+      {
+        "mac": "00:27:22:aa:bb:cc",
+        "wlan_if": 1,
+        "hostname": "station-01",
+        "signal_dbm": -47,
+        "noise_dbm": null,
+        "last_ip": "172.30.1.20",
+        "tx_bps": 117000000,
+        "rx_bps": 78000000,
+        "rx_bytes": 2048,
+        "tx_bytes": 4096,
+        "uptime": null,
+        "distance_ccq": null,
+        "quality": null,
+        "provenance": [
+          "airos-stations"
+        ]
+      }
+    ],
+    "arp": null,
+    "bridge_ports": null,
+    "bridge_vlans": null,
+    "bridge_hosts": null
+  },
+  "residuals": [],
+  "capacity": {
+    "mbps": 117.0,
+    "source": "per_sm_rate"
+  }
+}

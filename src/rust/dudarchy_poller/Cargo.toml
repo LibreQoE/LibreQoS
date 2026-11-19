@@ -1,0 +1,14 @@
+[package]
+name = "dudarchy-poller"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+
+[dependencies]
+ipnet = "2.12"
+md-5 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["rt", "macros", "time", "net", "io-util"] }
+tracing = { workspace = true }

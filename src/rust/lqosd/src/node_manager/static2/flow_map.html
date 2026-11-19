@@ -298,23 +298,24 @@
 <div class="flow-map-page">
     <div class="flow-map-controls">
         <button type="button" class="btn btn-sm btn-primary" id="flowMapRefreshBtn">
-            <i class="fa fa-rotate me-1"></i>Refresh
+            <i class="fa fa-rotate me-1"></i><span data-i18n="common.action.refresh">Refresh</span>
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapResetBtn">
-            <i class="fa fa-rotate-left me-1"></i>Reset View
+            <i class="fa fa-rotate-left me-1"></i><span data-i18n="flow_map.control.reset">Reset View</span>
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapRotateBtn" aria-pressed="false">
-            <i class="fa fa-arrows-rotate me-1"></i>Auto Rotate
+            <i class="fa fa-arrows-rotate me-1"></i><span data-i18n="flow_map.control.rotate">Auto Rotate</span>
         </button>
         <div class="form-check form-switch mb-0 ms-1">
             <input class="form-check-input" type="checkbox" role="switch" id="flowMapAutoRefresh">
-            <label class="form-check-label small text-muted" for="flowMapAutoRefresh">Auto Refresh</label>
+            <label class="form-check-label small text-muted" for="flowMapAutoRefresh" data-i18n="flow_map.control.auto_refresh">Auto Refresh</label>
         </div>
         <div class="flow-map-divider"></div>
-        <label class="small text-muted mb-0" for="flowGlobeHexSize">Hex size</label>
-        <input type="range" class="form-range" id="flowGlobeHexSize" min="6" max="64" step="1" value="32" style="width: 130px;" title="Hexagon size (coarse to fine)">
-        <label class="small text-muted mb-0" for="flowGlobeRttMax">Red at</label>
-        <input type="range" class="form-range" id="flowGlobeRttMax" min="50" max="400" step="10" value="200" style="width: 130px;" title="RTT (ms) at the red end of the colour ramp">
+        <label class="small text-muted mb-0" for="flowGlobeHexSize" data-i18n="flow_map.control.hex_size">Hex size</label>
+        <input type="range" class="form-range" id="flowGlobeHexSize" min="6" max="64" step="1" value="32" style="width: 130px;" title="Hexagon size (coarse to fine)" data-i18n-title="flow_map.control.hex_size_title">
+        <label class="small text-muted mb-0" for="flowGlobeRttMax" data-i18n="flow_map.control.red_at">Red at</label>
+        <input type="range" class="form-range" id="flowGlobeRttMax" min="50" max="400" step="10" value="200" style="width: 130px;" title="RTT (ms) at the red end of the colour ramp" data-i18n-title="flow_map.control.red_at_title">
+        <!-- translatable: false — "200 ms" is a slider value with its unit; flow_map.js rewrites it from the live slider position -->
         <span class="small text-muted" id="flowGlobeRttMaxLabel">200 ms</span>
     </div>
 
@@ -326,8 +327,8 @@
         <div class="flow-map-details" id="flowMapDetails">
             <div class="flow-map-details-title">
                 <div>
-                    <strong id="flowMapDetailsTitle">Selected endpoint</strong>
-                    <span class="small text-muted" id="flowMapDetailsSubtitle">Click a marker to pin details.</span>
+                    <strong id="flowMapDetailsTitle" data-i18n="flow_map.details.selected">Selected endpoint</strong>
+                    <span class="small text-muted" id="flowMapDetailsSubtitle" data-i18n="flow_map.details.empty_hint">Click a marker to pin details.</span>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapDetailsClose">
                     <i class="fa fa-xmark"></i>
@@ -339,13 +340,13 @@
 
         <div class="flow-map-legend">
             <div class="flow-map-legend-title">
-                <strong><i class="fa fa-swatchbook me-1"></i><span id="flowMapLegendTitle">Latency Gradient</span></strong>
-                <span class="small text-muted" id="flowMapLegendStatus">Sizing by traffic volume</span>
+                <strong><i class="fa fa-swatchbook me-1"></i><span id="flowMapLegendTitle" data-i18n="flow_map.legend.title">Internet latency (nearest endpoint)</span></strong>
+                <span class="small text-muted" id="flowMapLegendStatus" data-i18n="flow_map.legend.sizing">Sizing by traffic volume</span>
             </div>
             <div class="flow-map-legend-scale">
-                <span class="small text-muted" id="flowMapLegendMin">Low</span>
+                <span class="small text-muted" id="flowMapLegendMin" data-i18n="flow_map.legend.fast">Fast</span>
                 <div class="flow-map-legend-gradient" id="flowMapLegendGradient"></div>
-                <span class="small text-muted" id="flowMapLegendMax">High</span>
+                <span class="small text-muted" id="flowMapLegendMax" data-i18n="flow_map.legend.slow">Slow</span>
             </div>
         </div>
     </div>

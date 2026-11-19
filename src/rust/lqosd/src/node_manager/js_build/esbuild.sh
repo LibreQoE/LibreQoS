@@ -6,12 +6,24 @@ ENTRYPOINTS_FILE="${SCRIPT_DIR}/entrypoints.txt"
 SRC_DIR="${SCRIPT_DIR}/src"
 OUT_DIR="${SCRIPT_DIR}/out"
 ESBUILD_VERSION="${ESBUILD_VERSION:-0.25.3}"
-ESBUILD_TARGETS="${ESBUILD_TARGETS:-chrome85,firefox78,safari14}"
+# safari14.1 is the node_manager browser floor, a product decision rather than a
+# syntax requirement: esbuild --target only gates syntax downleveling and never
+# Intl availability. What actually needs 14.1 is Intl.DateTimeFormat
+# dateStyle/timeStyle in src/i18n/format.js (Safari 14.1, April 2021);
+# Intl.RelativeTimeFormat is available from 14.0. The iOS equivalent is 14.5.
+ESBUILD_TARGETS="${ESBUILD_TARGETS:-chrome85,firefox78,safari14.1}"
 ESBUILD_INSTALL_DIR="${ESBUILD_INSTALL_DIR:-${SCRIPT_DIR}/../../../../target/esbuild}"
 ESBUILD_STAGE_PATTERN="${ESBUILD_INSTALL_DIR}/staging.XXXXXX"
 
 if [[ ! -f "${ENTRYPOINTS_FILE}" ]]; then
   echo "Missing entrypoints file: ${ENTRYPOINTS_FILE}" >&2
+  exit 1
+fi
+
+# node compiles the i18n catalogs. Checked here, before anything under out/ is
+# rebuilt, so a host without node fails before the static tree is touched.
+if ! command -v node >/dev/null 2>&1; then
+  echo "Missing required dependency: node (builds the i18n catalogs)." >&2
   exit 1
 fi
 
@@ -111,3 +123,7 @@ for script in "${scripts[@]}"; do
   echo "Building ${script}"
   "${ESBUILD_BIN}" "${SRC_DIR}/${script}" --bundle --minify --sourcemap --target="${ESBUILD_TARGETS}" --outdir="${OUT_DIR}"
 done
+
+# Catalogs are plain <script> files, so they are not esbuild entrypoints.
+echo "Building i18n catalogs"
+node "${SCRIPT_DIR}/i18n/build-catalogs.mjs"

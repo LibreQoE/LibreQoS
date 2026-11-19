@@ -5,69 +5,69 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">VISP Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Configure GraphQL UBO API access, tenant selection, and optional online-user enrichment from VISP.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.visp.title">VISP Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.visp.subtitle">Configure GraphQL UBO API access, tenant selection, and optional online-user enrichment from VISP.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableVisp">
-                <label class="form-check-label" for="enableVisp">Enable VISP Integration</label>
-                <div class="form-text">Toggle automated imports from VISP (GraphQL UBO API)</div>
+                <label class="form-check-label" for="enableVisp" data-i18n="config.visp.enable">Enable VISP Integration</label>
+                <div class="form-text" data-i18n="config.visp.enable_help">Toggle automated imports from VISP (GraphQL UBO API)</div>
             </div>
 
             <div class="mb-3">
-                <label for="vispClientId" class="form-label">Client ID</label>
+                <label for="vispClientId" class="form-label" data-i18n="config.visp.client_id">Client ID</label>
                 <input type="text" class="form-control" id="vispClientId" autocomplete="off">
             </div>
 
             <div class="mb-3">
-                <label for="vispClientSecret" class="form-label">Client Secret</label>
+                <label for="vispClientSecret" class="form-label" data-i18n="config.visp.client_secret">Client Secret</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="vispClientSecret" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearVispClientSecret">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearVispClientSecret" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="vispClientSecretStatus"></div>
             </div>
 
             <div class="mb-3">
-                <label for="vispUsername" class="form-label">Appuser Username</label>
+                <label for="vispUsername" class="form-label" data-i18n="config.visp.appuser_username">Appuser Username</label>
                 <input type="text" class="form-control" id="vispUsername" autocomplete="username">
-                <div class="form-text">Same credentials used to login to VISP UBO</div>
+                <div class="form-text" data-i18n="config.visp.appuser_help">Same credentials used to login to VISP UBO</div>
             </div>
 
             <div class="mb-3">
-                <label for="vispPassword" class="form-label">Appuser Password</label>
+                <label for="vispPassword" class="form-label" data-i18n="config.visp.appuser_password">Appuser Password</label>
                 <div class="input-group">
                     <input type="password" class="form-control" id="vispPassword" autocomplete="new-password">
-                    <button type="button" class="btn btn-outline-secondary" id="clearVispPassword">Clear</button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearVispPassword" data-i18n="common.action.clear">Clear</button>
                 </div>
                 <div class="form-text" id="vispPasswordStatus"></div>
             </div>
 
             <div class="mb-3">
-                <label for="vispIspId" class="form-label">ISP ID (Tenant)</label>
+                <label for="vispIspId" class="form-label" data-i18n="config.visp.isp_id">ISP ID (Tenant)</label>
                 <input type="number" class="form-control" id="vispIspId" min="0" step="1">
-                <div class="form-text">Leave blank to auto-select the first ISP ID returned by the token endpoint</div>
+                <div class="form-text" data-i18n="config.visp.isp_id_help">Leave blank to auto-select the first ISP ID returned by the token endpoint</div>
             </div>
 
             <div class="mb-3">
-                <label for="vispTimeout" class="form-label">Request Timeout (seconds)</label>
+                <label for="vispTimeout" class="form-label" data-i18n="config.visp.timeout">Request Timeout (seconds)</label>
                 <input type="number" class="form-control" id="vispTimeout" min="15" step="5">
             </div>
 
             <div class="mb-3">
-                <label for="vispOnlineUsersDomain" class="form-label">Online Users Domain (Optional)</label>
+                <label for="vispOnlineUsersDomain" class="form-label" data-i18n="config.visp.online_domain">Online Users Domain (Optional)</label>
                 <input type="text" class="form-control" id="vispOnlineUsersDomain" autocomplete="off">
-                <div class="form-text">Used to enrich IPs via online RADIUS sessions if VISP is missing static IPs</div>
+                <div class="form-text" data-i18n="config.visp.online_domain_help">Used to enrich IPs via online RADIUS sessions if VISP is missing static IPs</div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveVisp" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveVisp" class="btn btn-outline-primary" data-i18n="config.visp.save">Save Changes</button>
         </div>
     </form>
 </div>

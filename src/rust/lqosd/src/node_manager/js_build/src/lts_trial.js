@@ -1,245 +1,30 @@
+import {escapeHtml} from "./i18n/escape.mjs";
+import {formatNumber} from "./i18n/format.js";
+import {t, tAttr, tn} from "./i18n/index.js";
 import {PLACEHOLDER_TEASERS} from "./lts_teasers_shared";
 import {buildSignupApiUrl, sendWsRequest, wsClient} from "./lts_trial_shared";
+import {regionName} from "./region_names.mjs";
 
-// Paddle-compatible countries (excluding embargoed nations)
-const ALLOWED_COUNTRIES = [
-    { code: 'ad', name: 'Andorra' },
-    { code: 'ae', name: 'United Arab Emirates' },
-    { code: 'ag', name: 'Antigua and Barbuda' },
-    { code: 'ai', name: 'Anguilla' },
-    { code: 'al', name: 'Albania' },
-    { code: 'am', name: 'Armenia' },
-    { code: 'ao', name: 'Angola' },
-    { code: 'ar', name: 'Argentina' },
-    { code: 'at', name: 'Austria' },
-    { code: 'au', name: 'Australia' },
-    { code: 'aw', name: 'Aruba' },
-    { code: 'ax', name: 'Åland Islands' },
-    { code: 'az', name: 'Azerbaijan' },
-    { code: 'ba', name: 'Bosnia and Herzegovina' },
-    { code: 'bb', name: 'Barbados' },
-    { code: 'bd', name: 'Bangladesh' },
-    { code: 'be', name: 'Belgium' },
-    { code: 'bf', name: 'Burkina Faso' },
-    { code: 'bg', name: 'Bulgaria' },
-    { code: 'bh', name: 'Bahrain' },
-    { code: 'bi', name: 'Burundi' },
-    { code: 'bj', name: 'Benin' },
-    { code: 'bl', name: 'Saint Barthélemy' },
-    { code: 'bm', name: 'Bermuda' },
-    { code: 'bn', name: 'Brunei' },
-    { code: 'bo', name: 'Bolivia' },
-    { code: 'bq', name: 'Caribbean Netherlands' },
-    { code: 'br', name: 'Brazil' },
-    { code: 'bs', name: 'Bahamas' },
-    { code: 'bt', name: 'Bhutan' },
-    { code: 'bw', name: 'Botswana' },
-    { code: 'bz', name: 'Belize' },
-    { code: 'ca', name: 'Canada' },
-    { code: 'cc', name: 'Cocos (Keeling) Islands' },
-    { code: 'cd', name: 'Congo (DRC)' },
-    { code: 'cf', name: 'Central African Republic' },
-    { code: 'cg', name: 'Congo' },
-    { code: 'ch', name: 'Switzerland' },
-    { code: 'ci', name: 'Côte d\'Ivoire' },
-    { code: 'ck', name: 'Cook Islands' },
-    { code: 'cl', name: 'Chile' },
-    { code: 'cm', name: 'Cameroon' },
-    { code: 'cn', name: 'China' },
-    { code: 'co', name: 'Colombia' },
-    { code: 'cr', name: 'Costa Rica' },
-    { code: 'cv', name: 'Cape Verde' },
-    { code: 'cw', name: 'Curaçao' },
-    { code: 'cx', name: 'Christmas Island' },
-    { code: 'cy', name: 'Cyprus' },
-    { code: 'cz', name: 'Czech Republic' },
-    { code: 'de', name: 'Germany' },
-    { code: 'dj', name: 'Djibouti' },
-    { code: 'dk', name: 'Denmark' },
-    { code: 'dm', name: 'Dominica' },
-    { code: 'do', name: 'Dominican Republic' },
-    { code: 'dz', name: 'Algeria' },
-    { code: 'ec', name: 'Ecuador' },
-    { code: 'ee', name: 'Estonia' },
-    { code: 'eg', name: 'Egypt' },
-    { code: 'er', name: 'Eritrea' },
-    { code: 'es', name: 'Spain' },
-    { code: 'et', name: 'Ethiopia' },
-    { code: 'fi', name: 'Finland' },
-    { code: 'fj', name: 'Fiji' },
-    { code: 'fk', name: 'Falkland Islands' },
-    { code: 'fm', name: 'Micronesia' },
-    { code: 'fo', name: 'Faroe Islands' },
-    { code: 'fr', name: 'France' },
-    { code: 'ga', name: 'Gabon' },
-    { code: 'gb', name: 'United Kingdom' },
-    { code: 'gd', name: 'Grenada' },
-    { code: 'ge', name: 'Georgia' },
-    { code: 'gf', name: 'French Guiana' },
-    { code: 'gg', name: 'Guernsey' },
-    { code: 'gh', name: 'Ghana' },
-    { code: 'gi', name: 'Gibraltar' },
-    { code: 'gl', name: 'Greenland' },
-    { code: 'gm', name: 'Gambia' },
-    { code: 'gn', name: 'Guinea' },
-    { code: 'gp', name: 'Guadeloupe' },
-    { code: 'gq', name: 'Equatorial Guinea' },
-    { code: 'gr', name: 'Greece' },
-    { code: 'gs', name: 'South Georgia' },
-    { code: 'gt', name: 'Guatemala' },
-    { code: 'gu', name: 'Guam' },
-    { code: 'gw', name: 'Guinea-Bissau' },
-    { code: 'gy', name: 'Guyana' },
-    { code: 'hk', name: 'Hong Kong' },
-    { code: 'hm', name: 'Heard Island' },
-    { code: 'hn', name: 'Honduras' },
-    { code: 'hr', name: 'Croatia' },
-    { code: 'ht', name: 'Haiti' },
-    { code: 'hu', name: 'Hungary' },
-    { code: 'id', name: 'Indonesia' },
-    { code: 'ie', name: 'Ireland' },
-    { code: 'il', name: 'Israel' },
-    { code: 'im', name: 'Isle of Man' },
-    { code: 'in', name: 'India' },
-    { code: 'io', name: 'British Indian Ocean Territory' },
-    { code: 'iq', name: 'Iraq' },
-    { code: 'is', name: 'Iceland' },
-    { code: 'it', name: 'Italy' },
-    { code: 'je', name: 'Jersey' },
-    { code: 'jm', name: 'Jamaica' },
-    { code: 'jo', name: 'Jordan' },
-    { code: 'jp', name: 'Japan' },
-    { code: 'ke', name: 'Kenya' },
-    { code: 'kg', name: 'Kyrgyzstan' },
-    { code: 'kh', name: 'Cambodia' },
-    { code: 'ki', name: 'Kiribati' },
-    { code: 'km', name: 'Comoros' },
-    { code: 'kn', name: 'Saint Kitts and Nevis' },
-    { code: 'kr', name: 'South Korea' },
-    { code: 'kw', name: 'Kuwait' },
-    { code: 'ky', name: 'Cayman Islands' },
-    { code: 'kz', name: 'Kazakhstan' },
-    { code: 'la', name: 'Laos' },
-    { code: 'lb', name: 'Lebanon' },
-    { code: 'lc', name: 'Saint Lucia' },
-    { code: 'li', name: 'Liechtenstein' },
-    { code: 'lk', name: 'Sri Lanka' },
-    { code: 'lr', name: 'Liberia' },
-    { code: 'ls', name: 'Lesotho' },
-    { code: 'lt', name: 'Lithuania' },
-    { code: 'lu', name: 'Luxembourg' },
-    { code: 'lv', name: 'Latvia' },
-    { code: 'ly', name: 'Libya' },
-    { code: 'ma', name: 'Morocco' },
-    { code: 'mc', name: 'Monaco' },
-    { code: 'md', name: 'Moldova' },
-    { code: 'me', name: 'Montenegro' },
-    { code: 'mf', name: 'Saint Martin' },
-    { code: 'mg', name: 'Madagascar' },
-    { code: 'mh', name: 'Marshall Islands' },
-    { code: 'mk', name: 'North Macedonia' },
-    { code: 'ml', name: 'Mali' },
-    { code: 'mm', name: 'Myanmar' },
-    { code: 'mn', name: 'Mongolia' },
-    { code: 'mo', name: 'Macao' },
-    { code: 'mp', name: 'Northern Mariana Islands' },
-    { code: 'mq', name: 'Martinique' },
-    { code: 'mr', name: 'Mauritania' },
-    { code: 'ms', name: 'Montserrat' },
-    { code: 'mt', name: 'Malta' },
-    { code: 'mu', name: 'Mauritius' },
-    { code: 'mv', name: 'Maldives' },
-    { code: 'mw', name: 'Malawi' },
-    { code: 'mx', name: 'Mexico' },
-    { code: 'my', name: 'Malaysia' },
-    { code: 'mz', name: 'Mozambique' },
-    { code: 'na', name: 'Namibia' },
-    { code: 'nc', name: 'New Caledonia' },
-    { code: 'ne', name: 'Niger' },
-    { code: 'nf', name: 'Norfolk Island' },
-    { code: 'ng', name: 'Nigeria' },
-    { code: 'ni', name: 'Nicaragua' },
-    { code: 'nl', name: 'Netherlands' },
-    { code: 'no', name: 'Norway' },
-    { code: 'np', name: 'Nepal' },
-    { code: 'nr', name: 'Nauru' },
-    { code: 'nu', name: 'Niue' },
-    { code: 'nz', name: 'New Zealand' },
-    { code: 'om', name: 'Oman' },
-    { code: 'pa', name: 'Panama' },
-    { code: 'pe', name: 'Peru' },
-    { code: 'pf', name: 'French Polynesia' },
-    { code: 'pg', name: 'Papua New Guinea' },
-    { code: 'ph', name: 'Philippines' },
-    { code: 'pk', name: 'Pakistan' },
-    { code: 'pl', name: 'Poland' },
-    { code: 'pm', name: 'Saint Pierre and Miquelon' },
-    { code: 'pn', name: 'Pitcairn Islands' },
-    { code: 'pr', name: 'Puerto Rico' },
-    { code: 'ps', name: 'Palestine' },
-    { code: 'pt', name: 'Portugal' },
-    { code: 'pw', name: 'Palau' },
-    { code: 'py', name: 'Paraguay' },
-    { code: 'qa', name: 'Qatar' },
-    { code: 're', name: 'Réunion' },
-    { code: 'ro', name: 'Romania' },
-    { code: 'rs', name: 'Serbia' },
-    { code: 'rw', name: 'Rwanda' },
-    { code: 'sa', name: 'Saudi Arabia' },
-    { code: 'sb', name: 'Solomon Islands' },
-    { code: 'sc', name: 'Seychelles' },
-    { code: 'se', name: 'Sweden' },
-    { code: 'sg', name: 'Singapore' },
-    { code: 'sh', name: 'Saint Helena' },
-    { code: 'si', name: 'Slovenia' },
-    { code: 'sj', name: 'Svalbard and Jan Mayen' },
-    { code: 'sk', name: 'Slovakia' },
-    { code: 'sl', name: 'Sierra Leone' },
-    { code: 'sm', name: 'San Marino' },
-    { code: 'sn', name: 'Senegal' },
-    { code: 'so', name: 'Somalia' },
-    { code: 'sr', name: 'Suriname' },
-    { code: 'ss', name: 'South Sudan' },
-    { code: 'st', name: 'São Tomé and Príncipe' },
-    { code: 'sv', name: 'El Salvador' },
-    { code: 'sx', name: 'Sint Maarten' },
-    { code: 'sz', name: 'Eswatini' },
-    { code: 'tc', name: 'Turks and Caicos Islands' },
-    { code: 'td', name: 'Chad' },
-    { code: 'tf', name: 'French Southern Territories' },
-    { code: 'tg', name: 'Togo' },
-    { code: 'th', name: 'Thailand' },
-    { code: 'tj', name: 'Tajikistan' },
-    { code: 'tk', name: 'Tokelau' },
-    { code: 'tl', name: 'Timor-Leste' },
-    { code: 'tm', name: 'Turkmenistan' },
-    { code: 'tn', name: 'Tunisia' },
-    { code: 'to', name: 'Tonga' },
-    { code: 'tr', name: 'Turkey' },
-    { code: 'tt', name: 'Trinidad and Tobago' },
-    { code: 'tv', name: 'Tuvalu' },
-    { code: 'tw', name: 'Taiwan' },
-    { code: 'tz', name: 'Tanzania' },
-    { code: 'ua', name: 'Ukraine' },
-    { code: 'ug', name: 'Uganda' },
-    { code: 'um', name: 'U.S. Outlying Islands' },
-    { code: 'us', name: 'United States' },
-    { code: 'uy', name: 'Uruguay' },
-    { code: 'uz', name: 'Uzbekistan' },
-    { code: 'va', name: 'Vatican City' },
-    { code: 'vc', name: 'Saint Vincent and the Grenadines' },
-    { code: 've', name: 'Venezuela' },
-    { code: 'vg', name: 'British Virgin Islands' },
-    { code: 'vi', name: 'U.S. Virgin Islands' },
-    { code: 'vn', name: 'Vietnam' },
-    { code: 'vu', name: 'Vanuatu' },
-    { code: 'wf', name: 'Wallis and Futuna' },
-    { code: 'ws', name: 'Samoa' },
-    { code: 'ye', name: 'Yemen' },
-    { code: 'yt', name: 'Mayotte' },
-    { code: 'za', name: 'South Africa' },
-    { code: 'zm', name: 'Zambia' },
-    { code: 'zw', name: 'Zimbabwe' }
+// Paddle-compatible countries (excluding embargoed nations). Only the ISO codes
+// live here: `initializeCountrySelector` labels each option with the engine's
+// CLDR region name for the active locale, so the list carries no copy.
+const ALLOWED_COUNTRY_CODES = [
+    'ad', 'ae', 'ag', 'ai', 'al', 'am', 'ao', 'ar', 'at', 'au', 'aw', 'ax', 'az', 'ba', 'bb',
+    'bd', 'be', 'bf', 'bg', 'bh', 'bi', 'bj', 'bl', 'bm', 'bn', 'bo', 'bq', 'br', 'bs', 'bt',
+    'bw', 'bz', 'ca', 'cc', 'cd', 'cf', 'cg', 'ch', 'ci', 'ck', 'cl', 'cm', 'cn', 'co', 'cr',
+    'cv', 'cw', 'cx', 'cy', 'cz', 'de', 'dj', 'dk', 'dm', 'do', 'dz', 'ec', 'ee', 'eg', 'er',
+    'es', 'et', 'fi', 'fj', 'fk', 'fm', 'fo', 'fr', 'ga', 'gb', 'gd', 'ge', 'gf', 'gg', 'gh',
+    'gi', 'gl', 'gm', 'gn', 'gp', 'gq', 'gr', 'gs', 'gt', 'gu', 'gw', 'gy', 'hk', 'hm', 'hn',
+    'hr', 'ht', 'hu', 'id', 'ie', 'il', 'im', 'in', 'io', 'iq', 'is', 'it', 'je', 'jm', 'jo',
+    'jp', 'ke', 'kg', 'kh', 'ki', 'km', 'kn', 'kr', 'kw', 'ky', 'kz', 'la', 'lb', 'lc', 'li',
+    'lk', 'lr', 'ls', 'lt', 'lu', 'lv', 'ly', 'ma', 'mc', 'md', 'me', 'mf', 'mg', 'mh', 'mk',
+    'ml', 'mm', 'mn', 'mo', 'mp', 'mq', 'mr', 'ms', 'mt', 'mu', 'mv', 'mw', 'mx', 'my', 'mz',
+    'na', 'nc', 'ne', 'nf', 'ng', 'ni', 'nl', 'no', 'np', 'nr', 'nu', 'nz', 'om', 'pa', 'pe',
+    'pf', 'pg', 'ph', 'pk', 'pl', 'pm', 'pn', 'pr', 'ps', 'pt', 'pw', 'py', 'qa', 're', 'ro',
+    'rs', 'rw', 'sa', 'sb', 'sc', 'se', 'sg', 'sh', 'si', 'sj', 'sk', 'sl', 'sm', 'sn', 'so',
+    'sr', 'ss', 'st', 'sv', 'sx', 'sz', 'tc', 'td', 'tf', 'tg', 'th', 'tj', 'tk', 'tl', 'tm',
+    'tn', 'to', 'tr', 'tt', 'tv', 'tw', 'tz', 'ua', 'ug', 'um', 'us', 'uy', 'uz', 'va', 'vc',
+    've', 'vg', 'vi', 'vn', 'vu', 'wf', 'ws', 'ye', 'yt', 'za', 'zm', 'zw',
     // Note: Excluded embargoed countries: Cuba (cu), Iran (ir), North Korea (kp), Russia (ru), Syria (sy)
 ];
 
@@ -279,6 +64,7 @@ $(document).ready(async function() {
 function isDarkMode() {
     const currentTheme = localStorage.getItem('theme');
     if (currentTheme === null) {
+        // translatable: false — "(prefers-color-scheme: dark)" is the media feature the browser matches
         return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     return currentTheme === 'dark';
@@ -293,9 +79,9 @@ function applyDarkMode() {
 // Initialize country selector
 function initializeCountrySelector() {
     const countrySelect = $('#country');
-    
-    ALLOWED_COUNTRIES.forEach(country => {
-        countrySelect.append(`<option value="${country.code}">${country.name}</option>`);
+
+    ALLOWED_COUNTRY_CODES.forEach(code => {
+        countrySelect.append($('<option>', {value: code}).text(regionName(code)));
     });
     
     // Update flag when country changes
@@ -314,7 +100,7 @@ function detectUserCountry() {
     const userLang = navigator.language || navigator.userLanguage;
     const countryCode = userLang.split('-')[1]?.toLowerCase();
     
-    if (countryCode && ALLOWED_COUNTRIES.find(c => c.code === countryCode)) {
+    if (countryCode && ALLOWED_COUNTRY_CODES.includes(countryCode)) {
         $('#country').val(countryCode).trigger('change');
     }
 }
@@ -331,6 +117,7 @@ async function loadTeasers() {
         currentTeasers = response.teasers || PLACEHOLDER_TEASERS;
         displayTeasers();
     } catch (error) {
+        // translatable: false — "Failed to load teasers:" is a console diagnostic, never rendered
         console.error('Failed to load teasers:', error);
         currentTeasers = PLACEHOLDER_TEASERS;
         displayTeasers();
@@ -358,9 +145,10 @@ function displayTeasers() {
     // Create carousel slides
     slides.forEach((slideItems, slideIndex) => {
         // Add indicator
+        // translatable: false — 'class="active" aria-current="true"' is the indicator attribute pair the carousel reads, not copy
         const indicator = `<button type="button" data-bs-target="#teaserCarousel" data-bs-slide-to="${slideIndex}" 
                           ${slideIndex === 0 ? 'class="active" aria-current="true"' : ''} 
-                          aria-label="Slide ${slideIndex + 1}"></button>`;
+                          aria-label="${tAttr("trial.carousel.slide", {number: slideIndex + 1})}"></button>`;
         indicatorsContainer.append(indicator);
         
         // Create slide
@@ -368,7 +156,7 @@ function displayTeasers() {
             const featuresHtml = teaser.features ? 
                 `<ul class="list-unstyled">${teaser.features.map(f => `<li><i class="fas fa-check text-success"></i> ${f}</li>`).join('')}</ul>` : '';
                 
-            const ctaText = teaser.ctaText || 'Try Insight Free';
+            const ctaText = teaser.ctaText || t("trial.teaser.cta");
             const imageSrc = teaser.image || teaser.imageUrl;
                 
             return `
@@ -411,6 +199,7 @@ function displayTeasers() {
         $('#teaserCarousel').carousel();
     } else {
         // Hide controls if only one slide
+        // translatable: false — '.carousel-control-prev, .carousel-control-next, .carousel-indicators' is a DOM selector
         $('.carousel-control-prev, .carousel-control-next, .carousel-indicators').hide();
     }
 }
@@ -436,6 +225,7 @@ async function fetchNodeId() {
             }
         }
     } catch (error) {
+        // translatable: false — "Failed to fetch node ID:" is a console diagnostic, never rendered
         console.error('Failed to fetch node ID:', error);
         nodeId = null;
     }
@@ -454,13 +244,17 @@ async function fetchCircuitCount() {
             // If using configured count (no active circuits), show with note
             const displayCount = count || configuredCount;
             const isConfigured = count === 0 && configuredCount > 0;
-            
-            $('#circuitNumber').text(displayCount.toLocaleString() + (isConfigured ? ' Configured' : ' Active'));
+
+            $('#circuitNumber').text(formatNumber(displayCount));
+            $('#circuitState').text(isConfigured
+                ? tn("trial.count.configured_circuits", displayCount)
+                : tn("trial.count.active_circuits", displayCount));
             const monthlyPrice = (displayCount * 0.30).toFixed(2);
             $('#monthlyPrice').text(monthlyPrice);
             $('#circuitCount').fadeIn();
         }
     } catch (error) {
+        // translatable: false — "Failed to fetch circuit count:" is a console diagnostic, never rendered
         console.error('Failed to fetch circuit count:', error);
     }
 }
@@ -498,7 +292,7 @@ function openInitialViewFromQuery() {
 }
 
 // Show loading modal
-function showLoading(message = 'Processing...') {
+function showLoading(message = t("trial.progress.processing")) {
     $('#loadingMessage').text(message);
     $('#creatingAccountModal').modal('show');
 }
@@ -552,12 +346,14 @@ function attachEventHandlers() {
     $('#btnExistingCustomer').on('click', () => {
         // Analytics tracking for existing customer path
         const trackingImg = new Image();
+        // translatable: false — "&type=existing" is a query-string parameter the signup ping records
         trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now() + '&type=existing';
         showSection('licenseKeySection');
     });
     $('#btnNewCustomer').on('click', () => {
         // Analytics tracking for new customer path
         const trackingImg = new Image();
+        // translatable: false — "&type=new" is a query-string parameter the signup ping records
         trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now() + '&type=new';
         redirectToTrialSetup();
     });
@@ -579,7 +375,7 @@ function attachEventHandlers() {
         }
         
         $('#licenseKey').removeClass('is-invalid');
-        showLoading('Validating license key...');
+        showLoading(t("trial.license.validating"));
         
         try {
             const response = await $.ajax({
@@ -594,26 +390,26 @@ function attachEventHandlers() {
                 hideLoading();
                 showSection('successSection');
                 $('#successMessage').html(`
-                    <strong>License Key:</strong> ${licenseKey}<br>
-                    <small>Your license has been validated.</small>
+                    <strong>${t("trial.success.key_label")}</strong> ${escapeHtml(licenseKey)}<br>
+                    <small>${t("trial.success.validated")}</small>
                 `);
-                $('#configStatus').text('Saving configuration...');
+                $('#configStatus').text(t("trial.success.saving"));
 
                 wsClient.send({ LtsSignUp: { license_key: licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
-                $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
+                $('#configStatus').text(t("trial.success.license_applied"));
                 setTimeout(() => {
                     $('#configSpinner').hide();
-                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);
+                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> ${t("trial.success.saved")}`);
                     $('#btnDashboard').fadeIn();
                 }, 5000);
             } else {
                 hideLoading();
-                showError(response.message || 'Invalid license key.');
+                showError(response.message || t("trial.license.rejected"));
             }
         } catch (error) {
             hideLoading();
-            showError('Failed to validate license key. Please try again.');
+            showError(t("trial.license.validate_failed"));
         }
     });
     
@@ -629,7 +425,7 @@ function attachEventHandlers() {
         }
         
         $('#recoveryEmail').removeClass('is-invalid');
-        showLoading('Sending recovery email...');
+        showLoading(t("trial.recovery.sending"));
         
         try {
             await $.ajax({
@@ -640,12 +436,12 @@ function attachEventHandlers() {
             });
             
             hideLoading();
-            showError('If a license key exists for this email, you will receive it shortly.');
+            showError(t("trial.recovery.sent"));
             $('#recoveryEmail').val('');
             showSection('licenseKeySection');
         } catch (error) {
             hideLoading();
-            showError('Failed to send recovery email. Please try again.');
+            showError(t("trial.recovery.send_failed"));
         }
     });
     
@@ -682,7 +478,7 @@ function attachEventHandlers() {
             website: $('#website').val().trim()
         };
 
-        showLoading('Creating your account...');
+        showLoading(t("trial.signup.creating"));
         console.log('[signupForm] showLoading called at', new Date().toISOString());
 
         try {
@@ -700,27 +496,27 @@ function attachEventHandlers() {
                 hideLoading();
                 showSection('successSection');
                 $('#successMessage').html(`
-                    <strong>License Key:</strong> ${response.licenseKey}<br>
-                    <small>Your trial is almost active. Watch for an email from Insight with your account details. No charge occurs until the trial ends, and you can cancel any time.</small>
+                    <strong>${t("trial.success.key_label")}</strong> ${escapeHtml(response.licenseKey)}<br>
+                    <small>${t("trial.success.created_detail")}</small>
                 `);
-                $('#configStatus').text('Saving configuration...');
+                $('#configStatus').text(t("trial.success.saving"));
 
                 wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
-                $('#configStatus').html(`Your Insight trial has been created. Check your email for the next steps while configuration is being saved.`);
+                $('#configStatus').text(t("trial.success.created"));
                 setTimeout(() => {
                     $('#configSpinner').hide();
-                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);
+                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> ${t("trial.success.saved")}`);
                     $('#btnDashboard').fadeIn();
                 }, 5000);
             } else {
                 console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
-                showError('Failed to create account. Please try again.');
+                showError(t("trial.signup.create_failed"));
             }
         } catch (error) {
             console.log('[signupForm] AJAX error at', new Date().toISOString(), error);
             hideLoading();
-            showError('Failed to create account. Please check your information and try again.');
+            showError(t("trial.signup.create_failed_detail"));
         }
     });
 }

@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="auto">
+<html lang="%%LANG%%" dir="%%DIR%%" data-bs-theme="auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LibreQoS Node Manager</title>
+    <!-- UI locale: catalog for the language this request resolved to. -->
+    %%I18N_SCRIPT%%
+    <!-- Locale list the page's language selector is built from. -->
+    <script src="i18n/locales.js%CACHEBUSTERS%"></script>
+    <title data-i18n="common.page_title">LibreQoS Node Manager</title>
     <script>
     (function () {
         try {
@@ -26,26 +30,34 @@
 </head>
 <body class="min-vh-100 d-flex flex-column">
 
+<!-- UI language, before sign-in: the same control the sidebar carries, built
+     from the locale list in the head. Shipped hidden, so a browser that runs no
+     bundle shows no empty select; the switcher reveals it with its options. -->
+<div id="languageControl" class="d-flex justify-content-end align-items-center gap-2 px-3 pt-3" hidden>
+    <label class="form-label mb-0 small" for="languageSelect" data-i18n="common.language.label">Language</label>
+    <select class="form-select form-select-sm w-auto" id="languageSelect"></select>
+</div>
+
 <div id="container" class="pad4 flex-fill d-flex align-items-start">
     <div class="row w-100">
         <div class="col-sm-4"></div>
         <div class="col-sm-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body">
-                    <h5 class="card-title">Login</h5>
-                    <p>Please enter a username and password to access LibreQoS.</p>
-                    <p>You can control access locally with <em>bin/lqusers</em> from the console.</p>
+                    <h5 class="card-title" data-i18n="login.action">Login</h5>
+                    <p data-i18n="login.intro">Please enter a username and password to access LibreQoS.</p>
+                    <p data-i18n="login.users_hint">You can control access locally with bin/lqusers from the console.</p>
                     <table class="table">
                         <tr>
-                            <td>Username</td>
+                            <td data-i18n="login.username">Username</td>
                             <td><input type="text" id="username" /></td>
                         </tr>
                         <tr>
-                            <td>Password</td>
+                            <td data-i18n="login.password">Password</td>
                             <td><input type="password" id="password" /></td>
                         </tr>
                     </table>
-                    <a class="btn btn-primary" id="btnLogin">Login</a>
+                    <a class="btn btn-primary" id="btnLogin" data-i18n="login.action">Login</a>
                 </div>
             </div>
         </div>
@@ -55,15 +67,20 @@
 
 <div id="loginError" class="alert alert-danger d-none mt-3 mx-auto" style="max-width: 720px;">
     <i class="fas fa-exclamation-triangle me-2"></i>
-    <span id="loginErrorText">Login failed. You can manage users via the <code>lqusers</code> CLI tool on the LibreQoS server.</span>
+    <span id="loginErrorText" data-i18n="login.error_default">Login failed. You can manage users via the lqusers CLI tool on the LibreQoS server.</span>
 </div>
 
-<script src="login.js"></script>
-
 <footer class="justify-content-center text-body-tertiary text-center py-3">
-    &copy; Copyright 2022-2024, LibreQoE LLC
+    <span data-i18n="common.footer.copyright">&copy; Copyright 2022-</span><span id="year"></span><span data-i18n="common.footer.rights">, LibreQoE LLC. All Rights Reserved.</span>
 </footer>
 
+<script>
+    // The live end year sits between the two catalog fragments, so it is written
+    // at load time exactly as the shell's footer does; no message carries a year.
+    document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+
+<script src="login.js"></script>
 <script src="vendor/bootstrap.bundle.min.js"></script>
 </body>
 </html>

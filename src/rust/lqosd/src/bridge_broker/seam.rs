@@ -199,6 +199,13 @@ impl SeamSegment {
         }
     }
 
+    /// Test-only: how many command frames this client has pushed (the ring's
+    /// producer index) — lets a test assert the broker actually emitted.
+    #[cfg(test)]
+    pub(crate) fn pushed_frames(&self) -> u64 {
+        self.cmd_produced
+    }
+
     /// Test-only: inject a bridge ack into the ack ring. This is the producer
     /// side of the real `resolve_pending` wait path.
     #[cfg(test)]

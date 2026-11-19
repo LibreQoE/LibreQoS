@@ -5,62 +5,62 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">IP Ranges</h5>
-                    <div class="lqos-config-panel-subtitle">Define allow and ignore subnet lists used during discovery and shaping decisions.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.iprange.title">IP Ranges</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.iprange.subtitle">Define allow and ignore subnet lists used during discovery and shaping decisions.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="card h-100">
-                        <div class="card-header">Ignored Subnets</div>
+                        <div class="card-header" data-i18n="config.iprange.ignored.title">Ignored Subnets</div>
                         <div class="card-body">
                             <div class="mb-3">
                                 <select class="form-select" id="ignoredSubnets" size="5"></select>
                             </div>
                             <div class="input-group mb-3">
-                                <input type="text" class="form-control" id="newIgnoredSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24 or 2001:db8::/32)">
-                                <button class="btn btn-outline-primary" type="button" id="addIgnoredSubnet">Add</button>
+                                <input type="text" class="form-control" id="newIgnoredSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24 or 2001:db8::/32)" data-i18n-placeholder="config.iprange.placeholder">
+                                <button class="btn btn-outline-primary" type="button" id="addIgnoredSubnet" data-i18n="config.iprange.add">Add</button>
                             </div>
-                            <button class="btn btn-outline-danger" type="button" id="removeIgnoredSubnet">Remove Selected</button>
+                            <button class="btn btn-outline-danger" type="button" id="removeIgnoredSubnet" data-i18n="config.iprange.remove">Remove Selected</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="card h-100">
-                        <div class="card-header">Allowed Subnets</div>
+                        <div class="card-header" data-i18n="config.iprange.allowed.title">Allowed Subnets</div>
                         <div class="card-body">
                             <div class="mb-3">
                                 <select class="form-select" id="allowedSubnets" size="5"></select>
                             </div>
                             <div class="input-group mb-3">
-                                <input type="text" class="form-control" id="newAllowedSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24 or 2001:db8::/32)">
-                                <button class="btn btn-outline-primary" type="button" id="addAllowedSubnet">Add</button>
+                                <input type="text" class="form-control" id="newAllowedSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24 or 2001:db8::/32)" data-i18n-placeholder="config.iprange.placeholder">
+                                <button class="btn btn-outline-primary" type="button" id="addAllowedSubnet" data-i18n="config.iprange.add">Add</button>
                             </div>
-                            <button class="btn btn-outline-danger" type="button" id="removeAllowedSubnet">Remove Selected</button>
+                            <button class="btn btn-outline-danger" type="button" id="removeAllowedSubnet" data-i18n="config.iprange.remove">Remove Selected</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12">
                     <div class="lqos-config-section">
-                        <h6 class="lqos-config-section-title">Unknown IP Handling</h6>
-                        <div class="lqos-config-section-subtitle">Decide how IPs not explicitly listed in either set should be treated.</div>
+                        <h6 class="lqos-config-section-title" data-i18n="config.iprange.unknown.title">Unknown IP Handling</h6>
+                        <div class="lqos-config-section-subtitle" data-i18n="config.iprange.unknown.subtitle">Decide how IPs not explicitly listed in either set should be treated.</div>
 
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="unknownHonorsIgnore">
-                                    <label class="form-check-label" for="unknownHonorsIgnore">Unknown IPs Honor Ignore List</label>
-                                    <div class="form-text">Should IPs not in any list be treated as ignored?</div>
+                                    <label class="form-check-label" for="unknownHonorsIgnore" data-i18n="config.iprange.unknown.ignore">Unknown IPs Honor Ignore List</label>
+                                    <div class="form-text" data-i18n="config.iprange.unknown.ignore_help">Should IPs not in any list be treated as ignored?</div>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="unknownHonorsAllow">
-                                    <label class="form-check-label" for="unknownHonorsAllow">Unknown IPs Honor Allow List</label>
-                                    <div class="form-text">Should IPs not in any list be treated as allowed?</div>
+                                    <label class="form-check-label" for="unknownHonorsAllow" data-i18n="config.iprange.unknown.allow">Unknown IPs Honor Allow List</label>
+                                    <div class="form-text" data-i18n="config.iprange.unknown.allow_help">Should IPs not in any list be treated as allowed?</div>
                                 </div>
                             </div>
                         </div>
@@ -70,7 +70,7 @@
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.iprange.save">Save Changes</button>
         </div>
     </form>
 </div>

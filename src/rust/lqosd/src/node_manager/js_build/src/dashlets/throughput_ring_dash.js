@@ -1,6 +1,12 @@
 import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 import {ThroughputRingBufferGraphTimescale} from "../graphs/throughput_ring_graph_timescale";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {t, tn} from "../i18n/index.js";
+
+// translatable: false — "Live" is the time-period token the page compares against, not a label
+// translatable: false — "Throughput" is the websocket event name this dashlet subscribes to
+// translatable: false — ".dashbox-title [data-bs-toggle='tooltip']" is a selector, not text
+// translatable: false — "_zoomed" is the element-id suffix of the zoom clone
 
 export class ThroughputRingDash extends DashletBaseInsight{
     // `.66.3`: the 30 s Executive instance was REPLACED by `LiveTrafficPulseDash`
@@ -25,34 +31,34 @@ export class ThroughputRingDash extends DashletBaseInsight{
 
     periodLabel() {
         switch (this.currentPeriod()) {
-            case "1h": return "Last 1 Hour";
-            case "6h": return "Last 6 Hours";
-            case "12h": return "Last 12 Hours";
-            case "24h": return "Last 24 Hours";
-            case "7d": return "Last 7 Days";
+            case "1h": return t("dashlet.throughput.ring.period.1h");
+            case "6h": return t("dashlet.throughput.ring.period.6h");
+            case "12h": return t("dashlet.throughput.ring.period.12h");
+            case "24h": return t("dashlet.throughput.ring.period.24h");
+            case "7d": return t("dashlet.throughput.ring.period.7d");
             default:
-                return `Last ${Math.round(this.windowSeconds / 60)} Minutes`;
+                return tn("dashlet.throughput.ring.period.minutes", Math.round(this.windowSeconds / 60));
         }
     }
 
     periodDescription() {
         switch (this.currentPeriod()) {
-            case "1h": return "the last 1 hour";
-            case "6h": return "the last 6 hours";
-            case "12h": return "the last 12 hours";
-            case "24h": return "the last 24 hours";
-            case "7d": return "the last 7 days";
+            case "1h": return t("dashlet.throughput.ring.describe.1h");
+            case "6h": return t("dashlet.throughput.ring.describe.6h");
+            case "12h": return t("dashlet.throughput.ring.describe.12h");
+            case "24h": return t("dashlet.throughput.ring.describe.24h");
+            case "7d": return t("dashlet.throughput.ring.describe.7d");
             default:
-                return `the last ${Math.round(this.windowSeconds / 60)} minutes`;
+                return tn("dashlet.throughput.ring.describe.minutes", Math.round(this.windowSeconds / 60));
         }
     }
 
     title() {
-        return this.periodLabel() + " Traffic";
+        return t("dashlet.throughput.ring.title", {period: this.periodLabel()});
     }
 
     tooltip() {
-        return "<h5>" + this.periodLabel() + " Throughput</h5><p>Mapped (AQM controlled and limited) and Unmapped (not found in your Shaped Devices file) traffic over " + this.periodDescription() + ".</p>"
+        return t("dashlet.throughput.ring.tooltip", {window: this.periodDescription()});
     }
 
     subscribeTo() {
@@ -106,7 +112,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
     legendKeyHtml() {
         const palette = window.graphPalette || [];
         const dot = (color) => `<span class="dashbox-legend-dot" style="background:${color}"></span>`;
-        return `${dot(palette[0])}<span>Mapped</span> ${dot(palette[1])}<span>Unmapped</span>`;
+        return `${dot(palette[0])}<span>${t("graph.pie.mapped")}</span> ${dot(palette[1])}<span>${t("graph.pie.unmapped")}</span>`;
     }
 
     // `.64.2.3`: re-render the handle key from the CURRENT palette (the dots were

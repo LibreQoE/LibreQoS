@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "station-mac-octet-mac",
+  "detect": { "sys_descr_contains": ["X"] },
+  "surfaces": [{ "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }],
+  "probes": [{ "id": "stations", "surface": "snmp", "read": { "kind": "table", "table": { "columns": [{ "name": "mac", "oid": "1.3.6.1.4.1.41112.1.11.2.3.1.1", "parser": "display_mac" }], "index": { "kind": "station_mac" } } } }],
+  "maps": { "details": { "stations": "stations" } }
+}

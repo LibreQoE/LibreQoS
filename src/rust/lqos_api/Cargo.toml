@@ -13,8 +13,8 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.46.1", features = ["full"] }
 tracing = "0.1.41"
-utoipa = "5.4.0"
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
+utoipa = "6.0.0"
+utoipa-swagger-ui = { version = "10.0.2", features = ["axum", "vendored"] }
 sysinfo = "0.32.1"
 once_cell = "1"
 trippy-core = "0.13.0"

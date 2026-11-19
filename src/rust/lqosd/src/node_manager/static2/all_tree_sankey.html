@@ -1,11 +1,11 @@
 <div class="row align-items-center g-2">
     <div class="col small">
-        Top node:: <span id="rootNode"></span> <button class="btn btn-primary btn-sm" id="btnRoot"><i class="fa fa-tree"></i> Reset</button>
-        <label for="maxDepth">Max Depth:</label> <input type="number" min="2" max="10" id="maxDepth">
+        <span data-i18n="sankey.top_node">Top node:</span> <span id="rootNode"></span> <button class="btn btn-primary btn-sm" id="btnRoot" data-i18n="topology_manager.action.reset"><i class="fa fa-tree"></i> Reset</button>
+        <label for="maxDepth" data-i18n="sankey.max_depth">Max Depth:</label> <input type="number" min="2" max="10" id="maxDepth">
     </div>
     <div class="col-auto small d-flex align-items-center gap-2 flex-nowrap">
-        <button class="btn btn-warning btn-sm" id="btnPause"><i class="fa fa-pause"></i> Pause</button>
-        <label for="cadence" class="mb-0">Refresh Rate:</label>
+        <button class="btn btn-warning btn-sm" id="btnPause" data-i18n="dashboard.pause"><i class="fa fa-pause"></i> Pause</button>
+        <label for="cadence" class="mb-0" data-i18n="dashboard.refresh_rate">Refresh Rate:</label>
         <input type="number" min="1" max="120" id="cadence" value="1" style="width: 60px">
     </div>
 </div>

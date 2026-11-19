@@ -1,3 +1,4 @@
+// translatable: false — "Unknown period: " is a developer console diagnostic for an unrecognised period token
 export function periodNameToSeconds(period) {
     switch (period) { // Convert to seconds
         case "1h": return 3600;

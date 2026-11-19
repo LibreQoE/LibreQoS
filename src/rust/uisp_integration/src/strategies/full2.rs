@@ -14,7 +14,9 @@ use crate::strategies::full2::directionality::{
 };
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
-use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
+use crate::strategies::full2::net_json_parent::{
+    DeviceRef, NetJsonParent, assign_export_names, device_ref_for_node, walk_parents,
+};
 use crate::strategies::legacy_bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
 use crate::strategies::legacy_routes_override::RouteOverride;
 use crate::uisp_types::{UispAttachmentRateSource, UispDevice, UispSite};
@@ -1172,6 +1174,20 @@ async fn build_imported_full2_bundle_from_data(
             .cmp(&right.export_name)
             .then_with(|| left.node_id.cmp(&right.node_id))
     });
+    // Card v3.2 §5.5: emit a DeviceRef only where UISP does not already model the
+    // equipment. Ubiquiti APs are UISP-managed and skipped; blackbox APs get one.
+    let device_refs: HashMap<String, DeviceRef> = graph
+        .node_indices()
+        .filter_map(|node| {
+            let GraphMapping::AccessPoint { id, .. } = &graph[node] else {
+                return None;
+            };
+            let device = uisp_data.find_device_by_id(id)?;
+            let node_id = graph[node].network_json_id();
+            device_ref_for_node(&node_id, device).map(|reference| (node_id, reference))
+        })
+        .collect();
+
     for node_id in root_child_ids {
         let node_info = parents
             .get(node_id)
@@ -1179,7 +1195,7 @@ async fn build_imported_full2_bundle_from_data(
         visited.insert(node_id.clone());
         network_json.insert(
             node_info.export_name.clone(),
-            walk_parents(&parents, node_id, &mut visited).into(),
+            walk_parents(&parents, &device_refs, node_id, &mut visited).into(),
         );
     }
     topology_parent_candidates.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));

@@ -30,19 +30,16 @@
 //!   live counters) carries forward in `state::publish_network_json`.
 
 use lqos_config::{NetworkJson, NetworkJsonNode, TopologyOperatorViewFile};
-use lqos_dataplane_types::DATA_PLANE_ROOT_NODE_ID;
+use lqos_dataplane_types::{DATA_PLANE_ROOT_NAME, DATA_PLANE_ROOT_NODE_ID};
 use lqos_utils::units::DownUpOrder;
 use std::collections::{BTreeMap, BTreeSet};
-
-/// The synthetic root's store name (MEDIUM-2: consumers string-match it).
-pub(crate) const TREE_ROOT_NAME: &str = "Root";
 
 /// The structure-less store published when no artifact has ever loaded
 /// (T1b honest-empty posture): root only, zero topology. Root-only keeps
 /// the index-0 invariants every consumer assumes.
 pub(crate) fn structureless_tree() -> NetworkJson {
     let mut tree = NetworkJson::new();
-    tree.nodes.push(zeroed_node(TREE_ROOT_NAME.to_string(), None));
+    tree.nodes.push(zeroed_node(DATA_PLANE_ROOT_NAME.to_string(), None));
     tree
 }
 
@@ -61,7 +58,7 @@ pub(crate) struct ArtifactTreeBuild {
 }
 
 fn root_like(name: &str) -> bool {
-    name.trim().eq_ignore_ascii_case(DATA_PLANE_ROOT_NODE_ID) || name.trim() == TREE_ROOT_NAME
+    name.trim().eq_ignore_ascii_case(DATA_PLANE_ROOT_NODE_ID) || name.trim() == DATA_PLANE_ROOT_NAME
 }
 
 fn zeroed_node(name: String, id: Option<String>) -> NetworkJsonNode {
@@ -191,7 +188,7 @@ pub(crate) fn build_tree_from_operator_view(
 
     let mut tree = NetworkJson::new();
     // MEDIUM-2: the synthetic root, exactly as >=10 consumers hardcode it.
-    tree.nodes.push(zeroed_node(TREE_ROOT_NAME.to_string(), None));
+    tree.nodes.push(zeroed_node(DATA_PLANE_ROOT_NAME.to_string(), None));
 
     let mut index_by_id: BTreeMap<String, usize> = BTreeMap::new();
     for emit in &emittable {

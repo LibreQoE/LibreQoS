@@ -20,15 +20,15 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig,
-    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, PowerConfig, PowerProfile, QueueMode,
-    RadiusAccountingClient,
+    ApPollingConfig, BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig,
+    IntegrationConfig, LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MaintenanceWindowConfig,
+    MikrotikIpv6Config, PowerConfig, PowerProfile, QueueMode, RadiusAccountingClient,
     RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    MaintenanceWindowConfig, TopologyConfig, TopologySource, TopologySourceConflict,
-    TopologySourceOrigin, TopologySourceRuntime, Tunables, normalize_external_hostname,
-    validate_rate_profile_mbps, validate_topology_selection,
+    TopologyConfig, TopologySource, TopologySourceConflict, TopologySourceOrigin,
+    TopologySourceRuntime, Tunables, normalize_external_hostname, validate_rate_profile_mbps,
+    validate_topology_selection,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
@@ -1746,4 +1746,115 @@ mod tests {
         assert!(!topology_source_is(&config, TopologySource::LibreqosNetwork));
     }
 
+}
+
+/// The dynamic-circuits proof harness ships ONE config source:
+/// `scripts/test/fixtures/dynamic_circuits_e2e.lqos.conf`. It is rendered by
+/// `scripts/test/dynamic_circuits_e2e.sh` into its work dir and loaded here
+/// through the same path `lqosd` uses, so a renamed key, a schema bump or a
+/// newly-required field fails in CI instead of at the operator's first live run.
+#[cfg(test)]
+mod proof_harness_config_tests {
+    use super::load_config_from_location;
+
+    /// Renders the committed harness fixture into a directory OWNED by one test.
+    ///
+    /// `test` is part of the path (u8 REV-C6): libtest runs the two tests below on
+    /// separate threads of one process, so a shared `lqos.conf` let one test
+    /// truncate the file while the other was reading it — a gate that fails
+    /// non-deterministically on identical content. The directory is RECREATED per
+    /// render, so a previous run's loader backups (`lqos.conf.*_migrated`) cannot
+    /// accumulate next to the file under test either.
+    fn render_fixture(test: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../scripts/test/fixtures/dynamic_circuits_e2e.lqos.conf");
+        let raw = std::fs::read_to_string(&template)
+            .unwrap_or_else(|err| panic!("read {}: {err}", template.display()));
+        let dir =
+            std::env::temp_dir().join(format!("u8-proof-config-{}-{test}", std::process::id()));
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).expect("clear the test work dir");
+        }
+        std::fs::create_dir_all(dir.join("lqos")).expect("test work dir");
+        let rendered = raw
+            .replace("@WORK@", dir.to_string_lossy().as_ref())
+            .replace("@TTL@", "300")
+            .replace("@RADIUS_PORT@", "11813");
+        let path = dir.join("lqos.conf");
+        std::fs::write(&path, rendered).expect("write the rendered config");
+        (dir, path)
+    }
+
+    #[test]
+    fn the_dynamic_circuits_proof_config_loads() {
+        let (_dir, path) = render_fixture("loads");
+        let config = load_config_from_location(path.to_str().expect("utf-8 path"))
+            .expect("the proof harness config must load");
+
+        let dynamic = config
+            .dynamic_circuits
+            .as_ref()
+            .expect("the harness turns dynamic circuits on");
+        assert!(dynamic.enabled, "dynamic_circuits.enabled");
+        assert_eq!(dynamic.ttl_seconds, 300, "ttl_seconds renders from the script");
+        assert_eq!(
+            dynamic
+                .ranges
+                .iter()
+                .map(|rule| rule.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["range-24", "range-all"],
+            "both proof ranges survive the loader"
+        );
+        assert_eq!(
+            dynamic.ranges[0].ip_range.to_string(),
+            "192.168.66.0/24",
+            "the /24 fallback arm"
+        );
+        assert_eq!(
+            dynamic.ranges[1].ip_range.to_string(),
+            "0.0.0.0/0",
+            "the catch-all arm"
+        );
+
+        let radius = config
+            .radius_accounting
+            .as_ref()
+            .expect("the harness turns the listener on");
+        assert!(radius.enabled, "radius_accounting.enabled");
+        assert!(
+            radius.dynamic_circuit_application.enabled,
+            "the RADIUS->dynamic-circuit gate is on"
+        );
+        assert_eq!(radius.clients.len(), 1, "one loopback NAS client");
+        assert!(
+            config.dataplane_bridge.is_some(),
+            "the bridge analytics socket section must survive (the seam)"
+        );
+        assert!(
+            config.ip_ranges.ignore_subnets.is_empty(),
+            "an empty ignore list is what lets the testbed addressing through"
+        );
+    }
+
+    /// The fixture is the SCRIPT's source of truth, so the render must be visible
+    /// in the file the script actually sed-renders. A token the script forgets to
+    /// substitute would reach the loader as a literal `@WORK@` path.
+    #[test]
+    fn the_proof_fixture_carries_the_script_tokens() {
+        let (_dir, path) = render_fixture("tokens");
+        let rendered = std::fs::read_to_string(&path).expect("read the rendered config");
+        assert!(
+            !rendered.contains('@'),
+            "the script must substitute every @TOKEN@"
+        );
+        let raw = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../../scripts/test/fixtures/dynamic_circuits_e2e.lqos.conf"),
+        )
+        .expect("fixture");
+        for token in ["@WORK@", "@TTL@", "@RADIUS_PORT@"] {
+            assert!(raw.contains(token), "the fixture must keep {token}");
+        }
+    }
 }

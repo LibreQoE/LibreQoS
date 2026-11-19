@@ -5,6 +5,7 @@
 // Layout parity: TWO stacked panels (throughput bps / RTT ms) like the ECharts
 // grids, with the RTT threshold bands drawn on the lower panel.
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
+import {t} from "../i18n/index.js";
 
 function formatBps(value) {
     return `${scaleNumber(Math.abs(toNumber(value, 0)), 1)}bps`;
@@ -30,6 +31,7 @@ function hexToRgba(hex, alpha) {
     const r = parseInt(n.slice(1, 3), 16);
     const g = parseInt(n.slice(3, 5), 16);
     const b = parseInt(n.slice(5, 7), 16);
+    // translatable: false — "rgba( , , , )" is the CSS colour function the channel triple builds
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
@@ -42,6 +44,7 @@ function getWaveformTheme(direction = "down") {
     const isDark = document.documentElement.getAttribute("data-bs-theme") !== "light";
     const throughputColor = throughputPaletteColor(direction, direction === "up" ? "#32d3bd" : "#4992ff");
     if (isDark) {
+        // translatable: false — "rgba(216, 226, 244, 0.62)" "rgba(216, 226, 244, 0.28)" "rgba(216, 226, 244, 0.045)" "rgba(9, 20, 31, 0.03)" "rgba(255, 255, 255, 0.32)" "rgba(42, 168, 108, 0.08)" "rgba(228, 154, 44, 0.07)" "rgba(225, 84, 84, 0.08)" — the dark waveform axis, ceiling and RTT band colours, not labels
         return {
             axisText: "rgba(216, 226, 244, 0.62)",
             axisLine: "rgba(216, 226, 244, 0.28)",
@@ -57,6 +60,7 @@ function getWaveformTheme(direction = "down") {
             rttBandBad: "rgba(225, 84, 84, 0.08)",
         };
     }
+    // translatable: false — "rgba(54, 67, 86, 0.72)" "rgba(77, 94, 118, 0.28)" "rgba(77, 94, 118, 0.08)" "rgba(255, 255, 255, 0.02)" "rgba(110, 120, 134, 0.34)" "rgba(46, 163, 111, 0.06)" "rgba(214, 148, 40, 0.06)" "rgba(196, 82, 82, 0.06)" — the light waveform axis, ceiling and RTT band colours, not labels
     return {
         axisText: "rgba(54, 67, 86, 0.72)",
         axisLine: "rgba(77, 94, 118, 0.28)",
@@ -108,6 +112,7 @@ function formatAxisNumber(value) {
     return value.toFixed(0);
 }
 
+// translatable: false — "11px system-ui, sans-serif" is the axis font stack, not a label
 const AXIS_FONT = "11px system-ui, sans-serif";
 
 /// §`lqos-74t.47.4`: the uPlot drop-in for `QueuingActivityWaveform`.
@@ -116,6 +121,7 @@ export class QueuingActivityWaveform {
         this.id = id;
         this.dom = document.getElementById(id);
         if (!this.dom) {
+            // translatable: false — "QueuingActivityWaveform(uPlot): missing DOM element ' '" is a programmer diagnostic, never rendered
             throw new Error(`QueuingActivityWaveform(uPlot): missing DOM element '${id}'`);
         }
         this.dom.classList.remove("muted");
@@ -205,17 +211,17 @@ export class QueuingActivityWaveform {
             if (!c) return null;
             if (kind === "bps") {
                 return [
-                    ["Enqueued (DL)", c.enqDown[idx], self.downColors.enqueuedLine],
-                    ["Throughput (DL)", c.tpDown[idx], self.downColors.throughputLine],
-                    ["Ceiling Base (DL)", c.ceilDown[idx], self.downColors.ceilingInactive],
-                    ["Enqueued (UL)", c.enqUp[idx], self.upColors.enqueuedLine],
-                    ["Throughput (UL)", c.tpUp[idx], self.upColors.throughputLine],
-                    ["Ceiling Base (UL)", c.ceilUp[idx], self.upColors.ceilingInactive],
+                    [t("graph.queuing.enqueued_down"), c.enqDown[idx], self.downColors.enqueuedLine],
+                    [t("graph.queuing.throughput_down"), c.tpDown[idx], self.downColors.throughputLine],
+                    [t("graph.queuing.ceiling_down"), c.ceilDown[idx], self.downColors.ceilingInactive],
+                    [t("graph.queuing.enqueued_up"), c.enqUp[idx], self.upColors.enqueuedLine],
+                    [t("graph.queuing.throughput_up"), c.tpUp[idx], self.upColors.throughputLine],
+                    [t("graph.queuing.ceiling_up"), c.ceilUp[idx], self.upColors.ceilingInactive],
                 ].map(([name, v, color]) => ({name, text: formatBps(v), color}));
             }
             return [
-                ["Access RTT (P50)", c.lan[idx], self.downColors.throughputLine],
-                ["Internet RTT (P50)", c.wan[idx], self.upColors.throughputLine],
+                [t("graph.queuing.access_rtt"), c.lan[idx], self.downColors.throughputLine],
+                [t("graph.queuing.internet_rtt"), c.wan[idx], self.upColors.throughputLine],
             ].map(([name, v, color]) => ({name, text: formatRttMs(v), color}));
         };
         return {
@@ -285,12 +291,12 @@ export class QueuingActivityWaveform {
             plugins: [this.makeTooltipPlugin("bps")],
             series: [
                 {},
-                {label: "Enqueued (DL)", scale: "bps", stroke: down.enqueuedLine, width: 1.4, dash: [2, 4], points: {show: false}, paths: this.stepped},
-                {label: "Throughput (DL)", scale: "bps", stroke: down.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("down"), paths: this.stepped},
-                {label: "Ceiling Base (DL)", scale: "bps", stroke: down.ceilingInactive, width: 1, dash: [4, 4], points: {show: false}, paths: this.stepped},
-                {label: "Enqueued (UL)", scale: "bps", stroke: up.enqueuedLine, width: 1.4, dash: [2, 4], points: {show: false}, paths: this.stepped},
-                {label: "Throughput (UL)", scale: "bps", stroke: up.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("up"), paths: this.stepped},
-                {label: "Ceiling Base (UL)", scale: "bps", stroke: up.ceilingInactive, width: 1, dash: [4, 4], points: {show: false}, paths: this.stepped},
+                {label: t("graph.queuing.enqueued_down"), scale: "bps", stroke: down.enqueuedLine, width: 1.4, dash: [2, 4], points: {show: false}, paths: this.stepped},
+                {label: t("graph.queuing.throughput_down"), scale: "bps", stroke: down.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("down"), paths: this.stepped},
+                {label: t("graph.queuing.ceiling_down"), scale: "bps", stroke: down.ceilingInactive, width: 1, dash: [4, 4], points: {show: false}, paths: this.stepped},
+                {label: t("graph.queuing.enqueued_up"), scale: "bps", stroke: up.enqueuedLine, width: 1.4, dash: [2, 4], points: {show: false}, paths: this.stepped},
+                {label: t("graph.queuing.throughput_up"), scale: "bps", stroke: up.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("up"), paths: this.stepped},
+                {label: t("graph.queuing.ceiling_up"), scale: "bps", stroke: up.ceilingInactive, width: 1, dash: [4, 4], points: {show: false}, paths: this.stepped},
             ],
         };
     }
@@ -312,15 +318,15 @@ export class QueuingActivityWaveform {
                     ...this.axisCommon("x", 2, down),
                     values: (u, splits) => splits.map((v) => {
                         const s = Math.round((this.displayNow - v) / 1000);
-                        return s <= 0 ? "now" : `-${s}s`;
+                        return s <= 0 ? t("graph.axis.now") : `-${s}s`;
                     }),
                 },
                 {...this.axisCommon("rtt", 1, down), grid: {show: false}, values: (u, splits) => splits.map((v) => `${v} ms`)},
             ],
             series: [
                 {},
-                {label: "Access RTT (P50)", scale: "rtt", stroke: down.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("rtt"), paths: this.stepped},
-                {label: "Internet RTT (P50)", scale: "rtt", stroke: up.throughputLine, width: 1.6, points: {show: false}, paths: this.stepped},
+                {label: t("graph.queuing.access_rtt"), scale: "rtt", stroke: down.throughputLine, width: 1.6, points: {show: false}, fill: this.fillFn("rtt"), paths: this.stepped},
+                {label: t("graph.queuing.internet_rtt"), scale: "rtt", stroke: up.throughputLine, width: 1.6, points: {show: false}, paths: this.stepped},
             ],
             plugins: [
                 this.makeTooltipPlugin("rtt"),

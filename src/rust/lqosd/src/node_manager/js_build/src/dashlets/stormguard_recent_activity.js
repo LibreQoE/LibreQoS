@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {mkBadge} from "./bakery_shared";
+import {t} from "../i18n/index.js";
 import {
     formatStormguardAgeSeconds,
     stormguardActivityRows,
@@ -20,11 +21,11 @@ export class StormguardRecentActivityDashlet extends BaseDashlet {
     }
 
     title() {
-        return "StormGuard Recent Activity";
+        return t("dashlet.name.stormguard_recent_activity");
     }
 
     tooltip() {
-        return "<h5>StormGuard Recent Activity</h5><p>Shows the freshest StormGuard actions and holding states so operators can quickly answer what the control loop is doing right now.</p>";
+        return `<h5>${this.title()}</h5><p>${t("dashlet.stormguard_activity.tooltip")}</p>`;
     }
 
     subscribeTo() {
@@ -43,12 +44,12 @@ export class StormguardRecentActivityDashlet extends BaseDashlet {
         table.innerHTML = `
             <thead>
                 <tr>
-                    <th>Site</th>
-                    <th>Dir</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                    <th>Age</th>
-                    <th>Why</th>
+                    <th>${t("topology.node_kind.site")}</th>
+                    <th>${t("stormguard_debug.column.dir")}</th>
+                    <th>${t("topology_probes.status")}</th>
+                    <th>${t("config.lts.api_keys.table.action")}</th>
+                    <th>${t("common.table.age")}</th>
+                    <th>${t("common.table.why")}</th>
                 </tr>
             </thead>
         `;
@@ -77,7 +78,7 @@ export class StormguardRecentActivityDashlet extends BaseDashlet {
     renderSnapshot(snapshot) {
         const rows = stormguardActivityRows(snapshot, 12);
         if (rows.length === 0) {
-            this.tbody.innerHTML = "<tr><td colspan='6' class='text-muted'>No recent StormGuard activity yet.</td></tr>";
+            this.tbody.innerHTML = `<tr><td colspan="6" class="text-muted">${t("dashlet.stormguard_activity.empty")}</td></tr>`;
             return;
         }
 
@@ -86,9 +87,9 @@ export class StormguardRecentActivityDashlet extends BaseDashlet {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td class="fw-semibold">${row.site}</td>
-                <td>${row.direction === "download" ? "<i class='fa fa-arrow-down text-primary'></i> Down" : "<i class='fa fa-arrow-up text-success'></i> Up"}</td>
+                <td>${row.direction === "download" ? `<i class="fa fa-arrow-down text-primary"></i> ${t("common.table.down")}` : `<i class="fa fa-arrow-up text-success"></i> ${t("common.table.up")}`}</td>
                 <td></td>
-                <td>${row.action || "Holding"}</td>
+                <td>${row.action || t("dashlet.stormguard.state.holding")}</td>
                 <td>${row.ageSeconds != null ? formatStormguardAgeSeconds(row.ageSeconds) : "—"}</td>
                 <td class="text-muted">${row.reason}</td>
             `;

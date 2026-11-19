@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "id": "empty-probes",
+  "detect": {
+    "sys_descr_contains": [
+      "X"
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "snmp",
+      "transport": "snmp_v2c",
+      "credential_ref": "snmp"
+    }
+  ],
+  "probes": []
+}

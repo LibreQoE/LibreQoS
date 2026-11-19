@@ -5,35 +5,35 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">WispGate Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Configure API credentials and endpoint details for automated imports from WispGate.</div>
+                    <h5 class="lqos-config-panel-title" data-i18n="config.wispgate.title">WispGate Integration</h5>
+                    <div class="lqos-config-panel-subtitle" data-i18n="config.wispgate.subtitle">Configure API credentials and endpoint details for automated imports from WispGate.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableWispgate">
-                <label class="form-check-label" for="enableWispgate">Enable WispGate Integration</label>
-                <div class="form-text">Enable integration with WispGate system</div>
+                <label class="form-check-label" for="enableWispgate" data-i18n="config.wispgate.enable">Enable WispGate Integration</label>
+                <div class="form-text" data-i18n="config.wispgate.enable_help">Enable integration with WispGate system</div>
             </div>
 
             <div class="mb-3">
-                <label for="wispgate_api_token" class="form-label">API KEY</label>
+                <label for="wispgate_api_token" class="form-label" data-i18n="config.wispgate.api_key">API KEY</label>
                 <input type="text" class="form-control" id="wispgate_api_token">
-                <div class="form-text">WispGate API Token</div>
+                <div class="form-text" data-i18n="config.wispgate.api_key_help">WispGate API Token</div>
             </div>
 
             <div class="mb-3">
-                <label for="wispgate_api_url" class="form-label">API URL</label>
+                <label for="wispgate_api_url" class="form-label" data-i18n="config.wispgate.api_url">API URL</label>
                 <input type="text" class="form-control" id="wispgate_api_url">
-                <div class="form-text">WispGate API URL</div>
+                <div class="form-text" data-i18n="config.wispgate.api_url_help">WispGate API URL</div>
             </div>
 
             </div>
         </section>
 
         <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            <button type="button" id="saveButton" class="btn btn-outline-primary" data-i18n="config.wispgate.save">Save Changes</button>
         </div>
     </form>
 </div>

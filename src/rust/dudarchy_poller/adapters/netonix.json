@@ -1,0 +1,166 @@
+{
+  "schema_version": 2,
+  "id": "netonix",
+  "detect": {
+    "sys_object_id_prefixes": ["1.3.6.1.4.1.46242"],
+    "sys_descr_contains": ["Netonix"]
+  },
+  "surfaces": [
+    { "id": "snmp", "transport": "snmp_v2c", "credential_ref": "snmp" }
+  ],
+  "probes": [
+    {
+      "id": "system",
+      "surface": "snmp",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "sys_descr", "oid": "1.3.6.1.2.1.1.1.0", "parser": "utf8" },
+          { "name": "sys_name", "oid": "1.3.6.1.2.1.1.5.0", "parser": "utf8" },
+          { "name": "sys_object_id", "oid": "1.3.6.1.2.1.1.2.0", "parser": "oid" }
+        ]
+      }
+    },
+    {
+      "id": "if_table",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "description", "oid": "1.3.6.1.2.1.2.2.1.2", "parser": "utf8" },
+            { "name": "raw_type", "oid": "1.3.6.1.2.1.2.2.1.3", "parser": "u32" },
+            { "name": "mac", "oid": "1.3.6.1.2.1.2.2.1.6", "parser": "octet_mac" },
+            { "name": "admin_state", "oid": "1.3.6.1.2.1.2.2.1.7", "parser": "u32" },
+            { "name": "oper_state", "oid": "1.3.6.1.2.1.2.2.1.8", "parser": "u32" },
+            { "name": "name", "oid": "1.3.6.1.2.1.31.1.1.1.1", "parser": "utf8" },
+            { "name": "alias", "oid": "1.3.6.1.2.1.31.1.1.1.18", "parser": "utf8" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    },
+    {
+      "id": "lldp",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "local_port", "oid": "1.0.8802.1.1.2.1.4.1.1.2", "parser": "u32" },
+            { "name": "chassis_id", "oid": "1.0.8802.1.1.2.1.4.1.1.5", "parser": "octet_mac" },
+            { "name": "port_id", "oid": "1.0.8802.1.1.2.1.4.1.1.7", "parser": "utf8" },
+            { "name": "sys_name", "oid": "1.0.8802.1.1.2.1.4.1.1.9", "parser": "utf8" },
+            { "name": "sys_descr", "oid": "1.0.8802.1.1.2.1.4.1.1.10", "parser": "utf8" }
+          ],
+          "index": { "kind": "lldp_rem" }
+        }
+      }
+    },
+    {
+      "id": "arp_media",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.22.1.2", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_v4" }
+        }
+      }
+    },
+    {
+      "id": "arp_physical",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.4.35.1.4", "parser": "octet_mac" }
+          ],
+          "index": { "kind": "arp_typed" }
+        }
+      }
+    },
+    {
+      "id": "fdb",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "mac", "oid": "1.3.6.1.2.1.17.4.3.1.1", "parser": "octet_mac" },
+            { "name": "port", "oid": "1.3.6.1.2.1.17.4.3.1.2", "parser": "u32" },
+            { "name": "status", "oid": "1.3.6.1.2.1.17.4.3.1.3", "parser": "u32" }
+          ],
+          "index": { "kind": "dot1d_row_id" },
+          "bridge_port_resolution": "identity"
+        }
+      }
+    },
+    {
+      "id": "vendor",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "scalars",
+        "scalars": [
+          { "name": "version", "oid": "1.3.6.1.4.1.46242.1.0", "parser": "utf8" }
+        ]
+      }
+    },
+    {
+      "id": "temperatures",
+      "surface": "snmp",
+      "on_absent": "optional",
+      "read": {
+        "kind": "table",
+        "table": {
+          "columns": [
+            { "name": "name", "oid": "1.3.6.1.4.1.46242.3.1.2", "parser": "utf8" },
+            { "name": "celsius", "oid": "1.3.6.1.4.1.46242.3.1.3", "parser": "i64" }
+          ],
+          "index": { "kind": "single" }
+        }
+      }
+    }
+  ],
+  "maps": {
+    "claims": [
+      { "kind": "name", "fields": ["system.sys_name", "lldp.sys_name"] },
+      { "kind": "sysdescr", "fields": ["system.sys_descr", "lldp.sys_descr"] },
+      { "kind": "portid", "fields": ["lldp.port_id"] },
+      { "kind": "localport", "fields": ["lldp.local_port"] }
+    ],
+    "details": {
+      "interfaces": "if_table",
+      "system": "vendor",
+      "temperatures": "temperatures",
+      "arp": "arp_media"
+    },
+    "residuals": [
+      {
+        "name": "total-draw",
+        "source": "docs/recon/netonix.md: .1.3.6.1.4.1.46242.6.0 is a whole-switch draw integer with no detail surface"
+      },
+      {
+        "name": "psu-rails",
+        "source": "docs/recon/netonix.md: .1.3.6.1.4.1.46242.4.1 is a centivolt PSU-rail table with no detail surface"
+      },
+      {
+        "name": "poe-mode",
+        "source": "docs/recon/netonix.md: .1.3.6.1.4.1.46242.5.1.2 is the per-port PoE mode with no detail surface"
+      },
+      {
+        "name": "port-uptime",
+        "source": "docs/recon/netonix.md: per-port uptime table has no DeviceDetails field"
+      }
+    ]
+  }
+}

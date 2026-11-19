@@ -2,6 +2,7 @@ export const SSL_DISABLE_REDIRECT_DELAY_MS = 1500;
 
 export function directHttpUrlFromLocation(locationLike, port = "9123") {
     const url = new URL(locationLike.href);
+    // translatable: false — "http:" is the URL scheme the browser parses, not a label
     url.protocol = "http:";
     url.username = "";
     url.password = "";

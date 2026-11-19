@@ -118,6 +118,59 @@ pub fn clear_by_identity(code: &str, dedupe_key: &str) -> usize {
     before.saturating_sub(guard.len())
 }
 
+/// The code a recovered issue is retained under (see
+/// [`mark_recovered_by_identity`]).
+pub fn recovered_code(code: &str) -> String {
+    format!("{code}_RECOVERED")
+}
+
+/// Heals the ACTIVE issues of `(code, dedupe_key)` WITHOUT hiding the event:
+/// they are replaced by ONE retained `<code>_RECOVERED` Warning record, so an
+/// operator who opens the list after the heal still sees it (jackrabbit
+/// 2026-11-16: alerts healed between 30 s polls and were never seen,
+/// `lqos-74t.197`).
+///
+/// - An earlier recovered record of the same identity is replaced, so there is
+///   one per identity.
+/// - The record goes like any other item: operator acknowledge, or the 24 h TTL.
+/// - A later re-raise of `code` is a NEW active item, because the recovered
+///   code never dedupes with it.
+///
+/// Returns the number of active issues converted; 0 means nothing was recorded.
+pub fn mark_recovered_by_identity(
+    code: &str,
+    dedupe_key: &str,
+    message: String,
+    context: Option<String>,
+) -> usize {
+    let key = urgent_identity_key(code, Some(dedupe_key));
+    let recovered = recovered_code(code);
+    let mut guard = URGENT.lock();
+    prune_expired(&mut guard);
+    let same_key = |issue: &UrgentIssue| issue.dedupe_key.as_deref().unwrap_or("") == key;
+    let active = guard.iter().filter(|i| i.code == code && same_key(i)).count();
+    let Some(source) = guard
+        .iter()
+        .find(|i| i.code == code && same_key(i))
+        .map(|i| i.source.clone())
+    else {
+        return 0;
+    };
+    guard.retain(|i| !(same_key(i) && (i.code == code || i.code == recovered)));
+    guard.push_back(UrgentIssue {
+        id: NEXT_ID.fetch_add(1, Ordering::Relaxed) + 1,
+        ts: now_unix(),
+        source,
+        severity: UrgentSeverity::Warning,
+        code: recovered,
+        message,
+        context,
+        dedupe_key: Some(key),
+    });
+    prune_expired(&mut guard);
+    active
+}
+
 pub fn clear_all() {
     let mut guard = URGENT.lock();
     guard.clear();
@@ -191,6 +244,55 @@ mod tests {
             1
         );
         assert!(list().iter().all(|i| i.code != "BRIDGE_SEAM_REPLACED"));
+    }
+
+    #[test]
+    fn recovered_issue_stays_visible_and_a_reraise_is_a_new_active_item() {
+        let _guard = test_lock();
+        clear_all();
+        let (code, key) = ("CIRCUIT_BLACKHOLE", "circuit-blackhole:x");
+        // Healing an identity that was never raised records nothing.
+        assert_eq!(mark_recovered_by_identity(code, key, "r".into(), None), 0);
+        assert!(list().is_empty());
+
+        submit(
+            UrgentSource::System,
+            UrgentSeverity::Error,
+            code.to_string(),
+            "held".to_string(),
+            Some("ctx".to_string()),
+            Some(key.to_string()),
+        );
+        assert_eq!(
+            mark_recovered_by_identity(code, key, "recovered".into(), Some("raised_at_unix=1".into())),
+            1
+        );
+        let items = list();
+        assert_eq!(items.len(), 1, "the event stays visible (badge count 1)");
+        assert_eq!(items[0].code, "CIRCUIT_BLACKHOLE_RECOVERED");
+        assert_eq!(items[0].severity, UrgentSeverity::Warning);
+        assert_eq!(items[0].context.as_deref(), Some("raised_at_unix=1"));
+
+        // A re-raise is a NEW active Error item beside the recovered record.
+        submit(
+            UrgentSource::System,
+            UrgentSeverity::Error,
+            code.to_string(),
+            "held again".to_string(),
+            None,
+            Some(key.to_string()),
+        );
+        let items = list();
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().any(|i| i.code == code && i.severity == UrgentSeverity::Error));
+        // Its heal replaces the old recovered record: one per identity.
+        assert_eq!(mark_recovered_by_identity(code, key, "recovered 2".into(), None), 1);
+        let items = list();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].message, "recovered 2");
+        // The recovered record is operator-clearable.
+        assert!(clear(items[0].id));
+        assert!(list().is_empty());
     }
 
     #[test]
