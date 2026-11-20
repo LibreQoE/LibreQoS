@@ -318,6 +318,7 @@ mod tests {
             ("config_general.html", include_str!("static2/config_general.html")),
             ("i18n/en.json", include_str!("static2/i18n/en.json")),
             ("i18n/es.json", include_str!("static2/i18n/es.json")),
+            ("i18n/pt-BR.json", include_str!("static2/i18n/pt-BR.json")),
         ] {
             assert!(
                 doc.contains("0.0.0.0:9123"),

@@ -366,9 +366,29 @@ fn watch_for_topology_runtime_status_changing() -> Result<()> {
     }
 }
 
-pub fn effective_parent_for_circuit(circuit_id: &str) -> Option<RuntimeCircuitParent> {
+/// Returns the current effective-parent snapshot.
+///
+/// `publish_shaping_inputs` replaces the map wholesale, so `Arc` identity
+/// identifies a publication: it is the invalidation signal for any cache
+/// derived from this map.
+pub(crate) fn effective_circuit_parents_snapshot() -> Arc<FxHashMap<String, RuntimeCircuitParent>> {
+    EFFECTIVE_CIRCUIT_PARENTS.load_full()
+}
+
+/// Looks an effective parent up in a snapshot obtained from
+/// [`effective_circuit_parents_snapshot`], normalizing the circuit id exactly
+/// as the global lookup does.
+pub(crate) fn effective_parent_for_circuit_in<'a>(
+    parents: &'a FxHashMap<String, RuntimeCircuitParent>,
+    circuit_id: &str,
+) -> Option<&'a RuntimeCircuitParent> {
     let circuit_key = non_empty_circuit_id_key(circuit_id)?;
-    EFFECTIVE_CIRCUIT_PARENTS.load().get(&circuit_key).cloned()
+    parents.get(&circuit_key)
+}
+
+pub fn effective_parent_for_circuit(circuit_id: &str) -> Option<RuntimeCircuitParent> {
+    let parents = effective_circuit_parents_snapshot();
+    effective_parent_for_circuit_in(&parents, circuit_id).cloned()
 }
 
 #[derive(Clone, Copy, Debug, Default)]

@@ -113,7 +113,7 @@ test("the runtime setup wizard keeps its ruled Spanish and shows the server stat
         ],
         [
             "setup_runtime.custom.step_integration",
-            "Defina el comportamiento compartido de la topología en Integración - común.",
+            "Defina el comportamiento compartido de la topología en Fuentes de datos.",
         ],
         ["setup_runtime.manual.title", "Editar manualmente la lista de suscriptores"],
         ["setup_runtime.state.title", "Estado detectado en ejecución"],

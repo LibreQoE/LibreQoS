@@ -41,7 +41,7 @@ mod test_fixtures;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use analytics_ipc::WorkerAffinityReport;
@@ -194,7 +194,13 @@ struct BrokerState {
     /// unchanged — a size-stable same-mtime rewrite is re-picked-up on
     /// the NEXT change; the poll is 2s and the artifact is
     /// compiler-published).
-    artifact_cache: Option<(std::time::SystemTime, u64, DataplaneTransaction)>,
+    ///
+    /// W1: the parsed world is SHARED, never deep-cloned — every reader takes
+    /// the `Arc` (a refcount bump) and only reads. W2: the raw content key is
+    /// stored BESIDE the parse that produced it, so the idle tick no longer
+    /// rebuilds it twice per 2s (a key computed from anything else could
+    /// desynchronize from the cached world; this one cannot).
+    artifact_cache: Option<(std::time::SystemTime, u64, Arc<CachedArtifact>)>,
     /// The bad-layout attach warning was already surfaced (review fix
     /// 5: once, not every 10s). Reset on a successful attach.
     bad_layout_reported: bool,
@@ -2181,9 +2187,11 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
     // in-flight publish so §2.4(14) can compare the trigger key with the c5
     // desired key on the same step the ack resolves.
     let desired_now = read_artifact_cached(artifact, &mut state.artifact_cache);
-    if let Some(desired) = desired_now.as_ref() {
-        state.last_desired_generation = Some(desired.generation.clone());
-        state.last_desired_world_key = Some(translate::content_key(desired));
+    if let Some(desired) = desired_now.as_deref() {
+        state.last_desired_generation = Some(desired.tx.generation.clone());
+        // W2: the key was computed once, from this exact parse — no per-op hex
+        // strings per tick (it is part of the cached artifact).
+        state.last_desired_world_key = Some(desired.content_key.clone());
     }
 
     // 2. Resolve any in-flight publish first (G3: newest-wins only
@@ -2206,7 +2214,7 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
 
     // 2c. W3: ONE convergence rule. The capture no longer arms a gate; a
     // mismatch starts the bounded stale timer and never suppresses emission.
-    refresh_placement_stale(state, desired_now.as_ref());
+    refresh_placement_stale(state, desired_now.as_deref().map(|artifact| &artifact.tx));
 
     // 3. Start a new publish when idle. C3(b): a consecutive-reject backoff
     // throttles the re-diff instead of a per-tick reject storm.
@@ -2215,8 +2223,9 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
         .is_some_and(|deadline| std::time::Instant::now() < deadline);
     if state.pending.is_none()
         && !backoff_active
-        && let Some(desired) = desired_now.as_ref()
+        && let Some(artifact) = desired_now.as_deref()
     {
+        let desired = &artifact.tx;
         // R3 rider (F8): the steady key must be FLOOR-CONSISTENT —
         // semantic_diff floors desired at entry, and post-adoption the
         // baseline holds PUBLISHED (already-floored) content. Keying the
@@ -2314,9 +2323,13 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
         }
         // P7/B3 retired (R3 card §2, DRIVER (b)): the projection is always
         // `desired − held` (the REJECT-driven hold) — never a full-desired bypass.
-        let projected =
-            translate::project_desired(desired, state.applied.tx(), &state.held_ops);
-        let desired_key = translate::content_key(&translate::apply_suspend_floor(&projected));
+        // W1: both steps BORROW on the steady path (nothing held, nothing to
+        // floor — the artifact is floored at the source), so an idle tick copies
+        // no world. A held op or a suspended pair is the only way to flip
+        // `Cow::Owned`, and both are rare by construction.
+        let projected = translate::project_desired(desired, state.applied.tx(), &state.held_ops);
+        let floored = translate::apply_suspend_floor(&projected);
+        let desired_key = translate::content_key(&floored);
         let already_applied = state.applied.key() == Some(desired_key.as_str());
         // WP2 (`docs/wp2_wp3_fence_convergence_and_adopt_card.md`): the TERMINAL
         // fence is keyed on the STRUCTURAL identity (never the shaping
@@ -2806,30 +2819,47 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
     }
 }
 
+/// A parsed artifact: the world every consumer reads, plus the one content key
+/// computed from it.
+///
+/// Shared by `Arc` for both parts (W1): the broker has exactly ONE actor thread,
+/// so the "contention" is a refcount bump, and the whole point of the cache is to
+/// avoid re-reading the file — re-cloning its contents per 2s poll defeated that.
+/// The key is a PURE function of `tx`, computed once at parse, so it can never
+/// disagree with the world it is cached beside (unlike a separately-keyed memo).
+struct CachedArtifact {
+    tx: DataplaneTransaction,
+    content_key: String,
+}
+
 /// Reads + parses the artifact unless its stat identity (mtime, size)
 /// matches the last successful parse (review fix 3) — the poll is 2s
 /// and a re-read/re-parse of an unchanged file every tick is waste.
 fn read_artifact_cached(
     path: &PathBuf,
-    cache: &mut Option<(std::time::SystemTime, u64, DataplaneTransaction)>,
-) -> Option<DataplaneTransaction> {
+    cache: &mut Option<(std::time::SystemTime, u64, Arc<CachedArtifact>)>,
+) -> Option<Arc<CachedArtifact>> {
     if let Ok(meta) = std::fs::metadata(path)
         && let Ok(mtime) = meta.modified()
-        && let Some((cached_mtime, cached_size, cached_tx)) = cache.as_ref()
+        && let Some((cached_mtime, cached_size, cached)) = cache.as_ref()
         && mtime == *cached_mtime
         && meta.len() == *cached_size
     {
-        return Some(cached_tx.clone());
+        return Some(Arc::clone(cached));
     }
     match std::fs::read_to_string(path) {
         Ok(raw) => match serde_json::from_str::<DataplaneTransaction>(&raw) {
             Ok(tx) => {
+                let artifact = Arc::new(CachedArtifact {
+                    content_key: translate::content_key(&tx),
+                    tx,
+                });
                 if let Ok(meta) = std::fs::metadata(path)
                     && let Ok(mtime) = meta.modified()
                 {
-                    *cache = Some((mtime, meta.len(), tx.clone()));
+                    *cache = Some((mtime, meta.len(), Arc::clone(&artifact)));
                 }
-                Some(tx)
+                Some(artifact)
             }
             Err(err) => {
                 warn!(
@@ -2845,6 +2875,164 @@ fn read_artifact_cached(
             warn!("Bridge broker: cannot read {}: {err:?}", path.display());
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod artifact_cache_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A temp artifact owned by the test. The name is unique (nanos + counter,
+    /// like `shaped_devices_tracker/mod.rs`) and `Drop` removes it, so a failing
+    /// assert cannot leave the fixture behind (REV-T3).
+    struct TempArtifact {
+        path: PathBuf,
+    }
+
+    impl TempArtifact {
+        fn with_contents(contents: &str) -> Self {
+            let fixture = Self {
+                path: unique_artifact_path(),
+            };
+            fixture.write(contents);
+            fixture
+        }
+
+        fn write(&self, contents: &str) {
+            std::fs::write(&self.path, contents).expect("write the fixture artifact");
+        }
+
+        fn path(&self) -> &PathBuf {
+            &self.path
+        }
+    }
+
+    impl Drop for TempArtifact {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn unique_artifact_path() -> PathBuf {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be monotonic enough for tests")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "lqosd-artifact-cache-{}-{unique}-{}.json",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    fn fixture_world(generation: &str, leaves: usize) -> DataplaneTransaction {
+        let rate = || lqos_dataplane_types::DataplaneRatePair {
+            commit_kbps: 10_000,
+            ceil_kbps: 20_000,
+        };
+        DataplaneTransaction {
+            generation: generation.to_string(),
+            inner_ops: Vec::new(),
+            leaf_ops: (0..leaves)
+                .map(|i| DataplaneLeafOp::Upsert {
+                    circuit_id: format!("c{i}"),
+                    parent_node_id: "site-1".to_string(),
+                    download: rate(),
+                    upload: rate(),
+                    aqm: lqos_dataplane_types::DataplaneLeafAqm::None,
+                    admin_up: true,
+                })
+                .collect(),
+            mapping_ops: vec![lqos_dataplane_types::DataplaneMappingOp::Clear],
+            lpm_delta: Vec::new(),
+            steering_vlans: Vec::new(),
+            schema_version: Some(2),
+            apply_mode: Default::default(),
+            circuit_capacity: None,
+        }
+    }
+
+    fn fixture_json(world: &DataplaneTransaction) -> String {
+        serde_json::to_string(world).expect("serialize the fixture world")
+    }
+
+    /// W1: an UNCHANGED artifact is shared, never re-parsed or deep-cloned. The
+    /// pointer identity is the contract — a `.clone()` reintroduced here would
+    /// hand every reader its own copy of the world again.
+    #[test]
+    fn an_unchanged_artifact_is_shared_not_cloned() {
+        let world = fixture_world("gen-shared", 0);
+        let fixture = TempArtifact::with_contents(&fixture_json(&world));
+
+        let mut cache = None;
+        let first = read_artifact_cached(fixture.path(), &mut cache).expect("first read");
+        let second = read_artifact_cached(fixture.path(), &mut cache).expect("cached read");
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "a cached artifact must be SHARED, not cloned"
+        );
+        assert_eq!(first.tx.generation, "gen-shared");
+        // The key travels WITH the parse it was computed from.
+        assert_eq!(first.content_key, translate::content_key(&world));
+    }
+
+    /// REV-T2(a): a changed `(mtime, len)` identity is RE-READ, not served from
+    /// the cache. Serving the cached world here is the stale-shaping failure
+    /// mode, invisible to every test above because they never move the file.
+    #[test]
+    fn a_changed_artifact_is_reparsed_and_the_new_generation_is_visible() {
+        let fixture = TempArtifact::with_contents(&fixture_json(&fixture_world("gen-1", 1)));
+        let mut cache = None;
+        let first = read_artifact_cached(fixture.path(), &mut cache).expect("first read");
+        assert_eq!(first.tx.generation, "gen-1");
+
+        // One more leaf changes the file LENGTH, so the miss cannot depend on
+        // the filesystem's mtime granularity.
+        let second_world = fixture_world("gen-2", 2);
+        fixture.write(&fixture_json(&second_world));
+        let second = read_artifact_cached(fixture.path(), &mut cache).expect("re-read");
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "a changed artifact must be re-parsed, not shared"
+        );
+        assert_eq!(second.tx.generation, "gen-2");
+        assert_eq!(second.content_key, translate::content_key(&second_world));
+
+        // The re-parse REPLACES the cache entry, so the next poll is a hit again.
+        let third = read_artifact_cached(fixture.path(), &mut cache).expect("cached read");
+        assert!(Arc::ptr_eq(&second, &third));
+    }
+
+    /// REV-T2(b): an unparseable artifact returns `None` and must NOT evict the
+    /// last good parse — a torn write during publish is transient, and dropping
+    /// the world would leave the broker with nothing to re-diff against.
+    #[test]
+    fn an_unparseable_artifact_returns_none_and_keeps_the_previous_parse_cached() {
+        let fixture = TempArtifact::with_contents(&fixture_json(&fixture_world("gen-1", 1)));
+        let mut cache = None;
+        let first = read_artifact_cached(fixture.path(), &mut cache).expect("first read");
+
+        fixture.write("{ this is not a transaction");
+        assert!(read_artifact_cached(fixture.path(), &mut cache).is_none());
+
+        let (_, _, cached) = cache.as_ref().expect("the previous parse must stay cached");
+        assert!(
+            Arc::ptr_eq(cached, &first),
+            "an unparseable publish must not evict the last good parse"
+        );
+    }
+
+    /// REV-T2(c): a missing artifact is `None` (boot ordering, a producer that
+    /// has not published yet) — never a panic and never a cached world.
+    #[test]
+    fn a_missing_artifact_returns_none() {
+        let path = unique_artifact_path();
+        let mut cache = None;
+        assert!(read_artifact_cached(&path, &mut cache).is_none());
+        assert!(cache.is_none());
     }
 }
 

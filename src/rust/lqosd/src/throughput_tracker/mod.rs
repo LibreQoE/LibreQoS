@@ -323,6 +323,40 @@ impl BridgeIpRow {
     }
 }
 
+/// One published bridge per-IP row as `IpStats`, for the readers that rank
+/// BORROWS of the live snapshot instead of materializing a row per host.
+///
+/// `circuit_id` is borrowed from the catalog snapshot the caller holds for the
+/// call and cloned exactly once, for the row actually returned — the ranking
+/// pass above this must not allocate a `String` per host.
+fn bridge_live_ip_stats(
+    ip: &IpAddr,
+    row: &crate::bridge_analytics::IpLiveRow,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+) -> IpStats {
+    let circuit_id = catalog
+        .device_longest_match_for_ip(&XdpIpAddress::from_ip(*ip))
+        .map(|(_, device)| device.circuit_id.as_str())
+        .unwrap_or_default();
+    IpStats {
+        ip_address: ip.to_string(),
+        circuit_id: circuit_id.to_string(),
+        // 3b (rev 861) demand-source sweep: ranked/displayed throughput is the
+        // DELIVERED (shaped) series.
+        bits_per_second: row.shaped_bytes_per_second.to_bits_from_bytes(),
+        packets_per_second: row.packets_per_second,
+        median_tcp_rtt: row
+            .rtt_current_p50_nanos
+            .map(|nanos| nanos as f32 / 1_000_000.0)
+            .unwrap_or(0.0),
+        tc_handle: TcHandle::default(),
+        tcp_retransmit_sample: down_up_retransmit_sample(
+            DownUpOrder::new(row.tcp_retransmits, 0),
+            DownUpOrder::new(row.tcp_packets, 0),
+        ),
+    }
+}
+
 /// The bridge-ranked reader rows (empty + stale-safe on a kernel box is not
 /// reachable here — callers gate on `is_active`).
 fn bridge_ip_rows() -> Vec<BridgeIpRow> {
@@ -416,27 +450,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .skip(start as usize)
             .take(end.saturating_sub(start) as usize)
-            .map(|(ip, row)| {
-                let (circuit_id, _circuit_name) = catalog
-                    .device_longest_match_for_ip(&XdpIpAddress::from_ip(**ip))
-                    .map(|(_, device)| (device.circuit_id.clone(), device.circuit_name.clone()))
-                    .unwrap_or_default();
-                IpStats {
-                    ip_address: ip.to_string(),
-                    circuit_id,
-                    bits_per_second: row.shaped_bytes_per_second.to_bits_from_bytes(),
-                    packets_per_second: row.packets_per_second,
-                    median_tcp_rtt: row
-                        .rtt_current_p50_nanos
-                        .map(|nanos| nanos as f32 / 1_000_000.0)
-                        .unwrap_or(0.0),
-                    tc_handle: TcHandle::default(),
-                    tcp_retransmit_sample: down_up_retransmit_sample(
-                        DownUpOrder::new(row.tcp_retransmits, 0),
-                        DownUpOrder::new(row.tcp_packets, 0),
-                    ),
-                }
-            })
+            .map(|(ip, row)| bridge_live_ip_stats(ip, row, &catalog))
             .collect();
         return BusResponse::TopDownloaders(result);
     }
@@ -486,19 +500,59 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
     BusResponse::TopDownloaders(result)
 }
 
+/// The upload widget's bridge ranking pass: rank BORROWS of the per-IP rows by
+/// the delivered (shaped) upload series, then materialize only the requested
+/// window — the download twin's shape (`top_n`), which never clones a `String`
+/// per host in the snapshot.
+///
+/// Kept as its own function rather than folded into the download arm, per the
+/// W5 scope ruling: the two widgets' arms have drifted in row data, so a
+/// one-parameter merge is a behavior question, not a mechanical one. This unit
+/// changes only the upload arm's borrow pattern.
+fn ranked_bridge_upload_ip_stats(
+    by_ip: &FxHashMap<IpAddr, crate::bridge_analytics::IpLiveRow>,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    start: u32,
+    end: u32,
+) -> Vec<IpStats> {
+    let mut rows: Vec<(&IpAddr, &crate::bridge_analytics::IpLiveRow)> =
+        by_ip.iter().filter(|(ip, _)| !ip.is_loopback()).collect();
+    rows.sort_by_key(|(_, row)| std::cmp::Reverse(row.shaped_bytes_per_second.up));
+    rows.iter()
+        .skip(start as usize)
+        .take(end.saturating_sub(start) as usize)
+        .map(|(ip, row)| bridge_live_ip_stats(ip, row, catalog))
+        .collect()
+}
+
+/// The upload widget's bridge-mode dispatch: rank and window `snapshot.by_ip`
+/// into the `TopUploaders` response. Split out so the dispatch face (response
+/// variant, argument order, window) is callable with a caller-supplied snapshot
+/// instead of the process globals the branch reads.
+fn bridge_upload_response(
+    snapshot: &crate::bridge_analytics::BridgeStatsSnapshot,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    start: u32,
+    end: u32,
+) -> BusResponse {
+    BusResponse::TopUploaders(ranked_bridge_upload_ip_stats(
+        &snapshot.by_ip,
+        catalog,
+        start,
+        end,
+    ))
+}
+
 pub fn top_n_up(start: u32, end: u32) -> BusResponse {
     // K2 slice-3 3a: mirror the download-side bridge dispatch, ranking the
     // per-IP upload interval rate.
     if crate::bridge_analytics::is_active() {
-        let mut rows = bridge_ip_rows();
-        rows.sort_by_key(|row| std::cmp::Reverse(row.bytes.up));
-        let result = rows
-            .iter()
-            .skip(start as usize)
-            .take(end.saturating_sub(start) as usize)
-            .map(BridgeIpRow::to_ip_stats)
-            .collect();
-        return BusResponse::TopUploaders(result);
+        let snapshot = crate::bridge_analytics::snapshot();
+        let catalog = lqos_network_devices::network_devices_catalog();
+        // W5: rank borrows and slice first, exactly as `top_n` does; the old
+        // path built a `BridgeIpRow` (and cloned `circuit_id`) for every host
+        // on the 1s dashboard tick, then threw all but `end - start` away.
+        return bridge_upload_response(&snapshot, &catalog, start, end);
     }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
@@ -2777,5 +2831,309 @@ mod bridge_reader_tests {
         assert_eq!(stats.packets_per_second, DownUpOrder::new(10, 20));
         assert_eq!(stats.median_tcp_rtt, 12.5);
         assert_eq!(stats.tc_handle, TcHandle::default());
+    }
+}
+
+/// W5: the upload ranking widget borrows like its download twin.
+#[cfg(test)]
+mod bridge_ranking_tests {
+    use super::{
+        BridgeIpRow, bridge_live_ip_stats, bridge_upload_response, ranked_bridge_upload_ip_stats,
+    };
+    use crate::bridge_analytics::{BridgeStatsSnapshot, IpLiveRow};
+    use crate::node_manager::local_api::executive_cache::allocation_counter::count_allocations;
+    use fxhash::FxHashMap;
+    use lqos_bus::{BusResponse, TcHandle};
+    use lqos_config::{ConfigShapedDevices, ShapedDevice};
+    use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
+    use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
+    use lqos_utils::XdpIpAddress;
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::Arc;
+
+    const IP_MAPPED: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 30));
+    const IP_UNMAPPED: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+
+    fn host(ip: [u8; 4], demand_up: u64, shaped_up: u64) -> (IpAddr, IpLiveRow) {
+        (
+            IpAddr::V4(Ipv4Addr::from(ip)),
+            IpLiveRow {
+                bytes_per_second: DownUpOrder::new(0, demand_up),
+                shaped_bytes_per_second: DownUpOrder::new(0, shaped_up),
+                packets_per_second: DownUpOrder::new(0, 7),
+                rtt_current_p50_nanos: Some(4_000_000),
+                tcp_packets: 100,
+                tcp_retransmits: 3,
+                ..IpLiveRow::default()
+            },
+        )
+    }
+
+    fn shaped_device(mapped_ip: [u8; 4], circuit_id: &str) -> ShapedDevice {
+        ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            circuit_name: format!("Circuit {circuit_id}"),
+            device_id: format!("device {circuit_id}"),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::from(mapped_ip), 32)],
+            ..Default::default()
+        }
+    }
+
+    fn catalog(mapped_ip: [u8; 4], circuit_id: &str) -> NetworkDevicesCatalog {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![shaped_device(mapped_ip, circuit_id)]);
+        NetworkDevicesCatalog::from_snapshots(
+            ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped)),
+            Arc::new(Vec::new()),
+        )
+    }
+
+    /// What this pins, exactly: the DELIVERED (shaped) upload series orders the
+    /// rows, the loopback host is dropped, `start`/`end` slice the ranked rows
+    /// (`end < start` and an out-of-range start both yield an empty window),
+    /// equal-rate hosts keep the snapshot's iteration order, and all seven
+    /// `IpStats` fields are mapped as declared.
+    ///
+    /// What it does NOT pin: cost. An eager catalog join for every host renders
+    /// these same rows, so the borrow/join-window property is pinned by
+    /// `upload_ranking_bills_the_window_not_the_host_count`, and the dispatch
+    /// face by `top_n_up_bridge_branch_dispatches_the_ranked_upload_window`.
+    #[test]
+    fn upload_ranking_is_shaped_windowed_and_catalog_joined() {
+        let by_ip: FxHashMap<IpAddr, IpLiveRow> = [
+            // Demand ranks 10 > 20 = 40 > 30; shaped is the reverse.
+            host([192, 0, 2, 10], 900, 100),
+            host([192, 0, 2, 20], 800, 200),
+            host([192, 0, 2, 30], 700, 300),
+            // Tie partner for `.20`, straddling the 0..2 window boundary.
+            host([192, 0, 2, 40], 0, 200),
+            host([127, 0, 0, 1], 999_999, 9_999),
+        ]
+        .into_iter()
+        .collect();
+
+        // The tie order is the snapshot's own iteration order (stable sort),
+        // so derive the expectation from that iteration instead of hardcoding
+        // an order the hash map is free to choose.
+        let tie_order: Vec<String> = by_ip
+            .iter()
+            .filter(|(_, row)| row.shaped_bytes_per_second.up == 200)
+            .map(|(ip, _)| ip.to_string())
+            .collect();
+        assert_eq!(tie_order.len(), 2, "fixture must hold two equal-rate hosts");
+
+        let rows =
+            ranked_bridge_upload_ip_stats(&by_ip, &catalog([192, 0, 2, 30], "c-gamma"), 0, 2);
+        assert_eq!(
+            rows[0].ip_address, "192.0.2.30",
+            "ranked on the shaped upload series, loopback dropped"
+        );
+        assert_eq!(rows[0].circuit_id, "c-gamma", "the returned row joins the catalog");
+        assert_eq!(
+            rows[0].bits_per_second,
+            DownUpOrder::new(0, 300 * 8),
+            "bits/s come from the shaped byte rate"
+        );
+        assert_eq!(rows[0].packets_per_second, DownUpOrder::new(0, 7));
+        assert_eq!(rows[0].median_tcp_rtt, 4.0);
+        assert_eq!(rows[0].tcp_retransmit_sample.down.retransmits.0, 3);
+        assert_eq!(rows[0].tcp_retransmit_sample.down.packets.0, 100);
+        assert_eq!(rows[0].tc_handle, TcHandle::default());
+        assert!(
+            tie_order.contains(&rows[1].ip_address),
+            "window boundary falls inside the tie: got {}",
+            rows[1].ip_address
+        );
+        assert_eq!(rows[1].circuit_id, "", "an unmapped host keeps the empty id");
+        assert_eq!(rows[1].bits_per_second, DownUpOrder::new(0, 200 * 8));
+
+        // `start` is a real offset into the ranked rows, not a take-only
+        // window: 1..3 is exactly the tied pair, in snapshot order.
+        let offset =
+            ranked_bridge_upload_ip_stats(&by_ip, &catalog([192, 0, 2, 30], "c-gamma"), 1, 3);
+        assert_eq!(
+            offset.iter().map(|row| row.ip_address.clone()).collect::<Vec<_>>(),
+            tie_order,
+            "start/end select the window after ranking"
+        );
+
+        // Empty windows: `end < start` must not underflow, and a start past the
+        // ranked rows must not panic.
+        assert!(
+            ranked_bridge_upload_ip_stats(&by_ip, &catalog([192, 0, 2, 30], "c-gamma"), 3, 1)
+                .is_empty()
+        );
+        assert!(
+            ranked_bridge_upload_ip_stats(&by_ip, &catalog([192, 0, 2, 30], "c-gamma"), 99, 120)
+                .is_empty()
+        );
+    }
+
+    /// A world whose hosts are ALL catalog-mapped and distinctly ranked, so the
+    /// pre-unit `bridge_ip_rows()` cost (one `circuit_id` clone per host) would
+    /// bill once per host here.
+    fn mapped_world(hosts: usize) -> (FxHashMap<IpAddr, IpLiveRow>, NetworkDevicesCatalog) {
+        assert!(hosts <= 200, "fixture uses a /24 octet per host");
+        let mut by_ip = FxHashMap::default();
+        let mut devices = Vec::with_capacity(hosts);
+        for index in 0..hosts {
+            let ip = [198, 51, 100, 10 + index as u8];
+            by_ip.insert(
+                IpAddr::V4(Ipv4Addr::from(ip)),
+                IpLiveRow {
+                    shaped_bytes_per_second: DownUpOrder::new(0, 1_000 + index as u64),
+                    packets_per_second: DownUpOrder::new(0, 7),
+                    ..IpLiveRow::default()
+                },
+            );
+            devices.push(shaped_device(ip, &format!("c-{index}")));
+        }
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(devices);
+        (
+            by_ip,
+            NetworkDevicesCatalog::from_snapshots(
+                ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped)),
+                Arc::new(Vec::new()),
+            ),
+        )
+    }
+
+    /// REV-C1/T1: the ranked upload pass bills the WINDOW, not the host count.
+    ///
+    /// Both worlds are built outside every counted window. The only term that
+    /// may grow with the world is the borrows `Vec`'s grow events (amortized
+    /// doubling), so a doubled world is allowed exactly ONE extra allocation.
+    /// A per-host catalog join — the pre-unit cost, and the regression this unit
+    /// exists to prevent — bills 64 extra allocations and turns this red.
+    #[test]
+    fn upload_ranking_bills_the_window_not_the_host_count() {
+        let single = mapped_world(64);
+        let double = mapped_world(128);
+
+        let measure = |(by_ip, catalog): &(FxHashMap<IpAddr, IpLiveRow>, NetworkDevicesCatalog)| {
+            count_allocations(|| {
+                std::hint::black_box(ranked_bridge_upload_ip_stats(by_ip, catalog, 0, 2));
+            })
+        };
+        let single_allocs = measure(&single);
+        let double_allocs = measure(&double);
+
+        // Term-by-term budget for a 64-host world and a 2-row window, built
+        // from the measured primitives: `IpAddr`'s Display path bills 2
+        // allocations per returned `ip_address`, a `String::to_string` bills 1,
+        // the window `Vec` bills 1, and the borrows `Vec` bills one
+        // amortized-doubling event per capacity step (5 steps to 64 hosts).
+        // The stable sort's scratch does not allocate at these sizes on this
+        // toolchain, so it contributes no term; if it ever starts to, this pin
+        // goes red as a toolchain note rather than a regression.
+        let window_rows = 2;
+        let borrows_growth_events = 5; // capacities 4, 8, 16, 32, 64
+        let single_expected = borrows_growth_events
+            + 1 // window `Vec`
+            + window_rows * (2 + 1); // ip_address Display (2) + circuit_id (1)
+        assert_eq!(
+            single_allocs, single_expected,
+            "64 hosts / 2 returned rows: expected {single_expected} allocations \
+             (borrows Vec growth, window Vec, ip + circuit_id per row), \
+             measured {single_allocs}. A per-host join is back."
+        );
+        assert_eq!(
+            double_allocs,
+            single_expected + 1,
+            "128 hosts / 2 returned rows: the doubled world may add exactly one \
+             borrows-Vec grow event, measured {double_allocs}. Anything else means \
+             the pass is scaling with the host count."
+        );
+    }
+
+    /// REV-T2: the dispatch face — response variant, argument order, window.
+    ///
+    /// `bridge_upload_response` is the exact function `top_n_up`'s bridge arm
+    /// calls, so this pins what the arm RETURNS for a given snapshot/catalog
+    /// pair. The arm itself selects on `bridge_analytics::is_active()`, a
+    /// process global no other test locks against: flipping it here was tried
+    /// and broke seven parallel active-flow/bus-reader tests in this module, so
+    /// the limitation is recorded instead of paid for (packet RESIDUAL).
+    #[test]
+    fn upload_dispatch_returns_the_ranked_window_with_ordered_arguments() {
+        let by_ip: FxHashMap<IpAddr, IpLiveRow> = [
+            host([192, 0, 2, 10], 0, 100),
+            host([192, 0, 2, 20], 0, 200),
+            host([192, 0, 2, 30], 0, 300),
+        ]
+        .into_iter()
+        .collect();
+        let snapshot = BridgeStatsSnapshot {
+            by_ip,
+            ..Default::default()
+        };
+        // `192.0.2.10` is the in-window mapped host; `192.0.2.20` is in-window
+        // and unmapped, so one call pins both sides of the join.
+        let catalog = catalog([192, 0, 2, 10], "c-alpha");
+
+        let rows = match bridge_upload_response(&snapshot, &catalog, 1, 3) {
+            BusResponse::TopUploaders(rows) => rows,
+            other => panic!("the bridge arm must dispatch TopUploaders, got {other:?}"),
+        };
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.ip_address.as_str())
+                .collect::<Vec<_>>(),
+            vec!["192.0.2.20", "192.0.2.10"],
+            "start/end reach the ranked window in that order"
+        );
+        assert_eq!(rows[0].circuit_id, "", "unmapped host keeps the empty id");
+        assert_eq!(rows[1].circuit_id, "c-alpha");
+        assert_eq!(
+            rows[1].bits_per_second,
+            DownUpOrder::new(0, 100 * 8),
+            "the window reports the shaped series"
+        );
+    }
+
+    /// REV-T5: the surviving old constructor (`bridge_ip_rows` +
+    /// `BridgeIpRow::to_ip_stats`, still serving the empty/stale-safe readers)
+    /// and the borrowed helper must render the same row for the same input —
+    /// mapped and unmapped alike. Local fixtures only; this reads no global.
+    #[test]
+    fn borrowed_row_matches_the_old_constructor() {
+        let catalog = catalog([192, 0, 2, 30], "c-gamma");
+        let by_ip: FxHashMap<IpAddr, IpLiveRow> = [
+            host([192, 0, 2, 10], 900, 100),
+            host([192, 0, 2, 30], 700, 300),
+        ]
+        .into_iter()
+        .collect();
+
+        for ip in [IP_MAPPED, IP_UNMAPPED] {
+            let live = &by_ip[&ip];
+            let borrowed = bridge_live_ip_stats(&ip, live, &catalog);
+            // The old constructor's field mapping, verbatim.
+            let (circuit_hash, circuit_id) = catalog
+                .device_longest_match_for_ip(&XdpIpAddress::from_ip(ip))
+                .map(|(_, device)| (Some(device.circuit_hash), device.circuit_id.clone()))
+                .unwrap_or((None, String::new()));
+            let old = BridgeIpRow {
+                ip,
+                bytes: live.shaped_bytes_per_second,
+                packets: live.packets_per_second,
+                rtt_ms: live
+                    .rtt_current_p50_nanos
+                    .map(|nanos| nanos as f32 / 1_000_000.0),
+                circuit_hash,
+                runtime_circuit_id: circuit_id,
+                retransmits: down_up_retransmit_sample(
+                    DownUpOrder::new(live.tcp_retransmits, 0),
+                    DownUpOrder::new(live.tcp_packets, 0),
+                ),
+            };
+            assert_eq!(
+                borrowed,
+                old.to_ip_stats(),
+                "old and new bridge row builders diverged for {ip}"
+            );
+        }
     }
 }

@@ -8,5 +8,10 @@
     "tag": "es",
     "name": "Español",
     "dir": "ltr"
+  },
+  {
+    "tag": "pt-BR",
+    "name": "Português (Brasil)",
+    "dir": "ltr"
   }
 ]

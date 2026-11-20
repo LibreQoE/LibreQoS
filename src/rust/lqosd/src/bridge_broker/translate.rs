@@ -59,6 +59,7 @@ use lqos_dataplane_types::{
 // shape choice now routes through the SHARED override-aware predicates
 // (`bulk_shape_threshold_for` / `churn_is_full_world_for`), which are the single
 // source of truth for both ends (R-OVERRIDE-PARITY).
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use tracing::warn;
 
@@ -264,9 +265,26 @@ fn floor_suspended_pair(pair: &mut lqos_dataplane_types::DataplaneRatePair) {
 /// rate path, the structural views, the boot full-emission, and the
 /// per-tx baselines all agree (a suspended circuit can never emit 0/0,
 /// and steady-state re-diffs against the floored projection stay empty).
-pub(crate) fn apply_suspend_floor(desired: &DataplaneTransaction) -> DataplaneTransaction {
-    let mut desired = desired.clone();
-    for op in &mut desired.leaf_ops {
+///
+/// BORROWS when no pair needs flooring — the steady state, since the artifact
+/// is already floored at the source (§`lqos-74t.30`), so the idle tick's floor
+/// costs a scan and no world copy.
+pub(crate) fn apply_suspend_floor(desired: &DataplaneTransaction) -> Cow<'_, DataplaneTransaction> {
+    let any_suspended = desired.leaf_ops.iter().any(|op| {
+        let DataplaneLeafOp::Upsert {
+            download, upload, ..
+        } = op
+        else {
+            return false;
+        };
+        lqos_dataplane_types::pair_needs_suspend_floor(download)
+            || lqos_dataplane_types::pair_needs_suspend_floor(upload)
+    });
+    if !any_suspended {
+        return Cow::Borrowed(desired);
+    }
+    let mut floored = desired.clone();
+    for op in &mut floored.leaf_ops {
         if let DataplaneLeafOp::Upsert {
             download, upload, ..
         } = op
@@ -275,7 +293,7 @@ pub(crate) fn apply_suspend_floor(desired: &DataplaneTransaction) -> DataplaneTr
             floor_suspended_pair(upload);
         }
     }
-    desired
+    Cow::Owned(floored)
 }
 
 fn leaf_identity(op: &DataplaneLeafOp) -> Option<(&LeafKey, &DataplaneLeafOp)> {
@@ -648,13 +666,16 @@ pub(crate) fn held_ops_from_tx(
 /// node; a held NEW leaf drops (and its map); a held leaf MOVE reverts; a held
 /// leaf remove keeps the applied leaf. Applying it is a FIXED POINT: re-diffing
 /// the projection against itself yields nothing (L2-2).
-pub(crate) fn project_desired(
-    desired: &DataplaneTransaction,
+///
+/// BORROWS when nothing is held — the steady state — so the idle tick no longer
+/// copies the whole world just to hand the same bytes back.
+pub(crate) fn project_desired<'a>(
+    desired: &'a DataplaneTransaction,
     base: Option<&DataplaneTransaction>,
     held: &BTreeSet<HeldOp>,
-) -> DataplaneTransaction {
+) -> Cow<'a, DataplaneTransaction> {
     if held.is_empty() {
-        return desired.clone();
+        return Cow::Borrowed(desired);
     }
     let empty_inner: Vec<DataplaneInnerOp> = Vec::new();
     let empty_leaf: Vec<DataplaneLeafOp> = Vec::new();
@@ -842,7 +863,7 @@ pub(crate) fn project_desired(
         .cloned()
         .collect();
 
-    DataplaneTransaction {
+    Cow::Owned(DataplaneTransaction {
         generation: desired.generation.clone(),
         inner_ops,
         leaf_ops,
@@ -852,7 +873,7 @@ pub(crate) fn project_desired(
         lpm_delta: Vec::new(),
         apply_mode: desired.apply_mode,
         circuit_capacity: None,
-    }
+    })
 }
 
 /// Duplicate MAPPING IDENTITIES in a desired world: an identity bound to MORE
@@ -1754,6 +1775,52 @@ mod tests {
                 && upload.ceil_kbps == lqos_dataplane_types::SUSPEND_RATE_KBPS
                 && *admin_up)
         );
+    }
+
+    /// W1: the steady path BORROWS. If either step starts copying the world again
+    /// on a no-op, this fails — that copy was the idle tick's entire cost.
+    #[test]
+    fn projection_and_floor_borrow_when_nothing_changes() {
+        let desired = base();
+        let nothing_held = BTreeSet::new();
+        let projected = project_desired(&desired, Some(&base()), &nothing_held);
+        assert!(
+            matches!(projected, Cow::Borrowed(_)),
+            "nothing held => borrow, never a world copy"
+        );
+
+        // The artifact is floored at the source (§`lqos-74t.30`), so the broker's
+        // defensive pass is a scan and a borrow.
+        let floored = apply_suspend_floor(&desired);
+        assert!(
+            matches!(floored, Cow::Borrowed(_)),
+            "already-floored world => borrow"
+        );
+
+        // A suspended (0/0) pair is the one case that MUST copy: it is the only
+        // case where the pass changes a byte.
+        let mut suspended = desired.clone();
+        if let DataplaneLeafOp::Upsert {
+            download, upload, ..
+        } = suspended.leaf_ops.get_mut(1).expect("leaf 1")
+        {
+            *download = pair(0, 0);
+            *upload = pair(0, 0);
+        }
+        let floored = apply_suspend_floor(&suspended);
+        assert!(
+            matches!(floored, Cow::Owned(_)),
+            "a suspended pair => copy + floor"
+        );
+        // Idempotent: the floored world floors to ITSELF, which is what makes the
+        // steady state a borrow (`suspend_carries_the_trickle_floor_never_zero`
+        // pins the rates; this pins the second pass's shape).
+        let twice = apply_suspend_floor(&floored);
+        assert!(
+            matches!(twice, Cow::Borrowed(_)),
+            "second floor pass borrows"
+        );
+        assert_eq!(content_key(&floored), content_key(&twice));
     }
 
     #[test]

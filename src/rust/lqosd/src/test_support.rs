@@ -14,6 +14,15 @@ pub(crate) fn runtime_config_test_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Serializes tests that mutate the process-global `network.json` tree, which
+/// `bridge_analytics` and `node_manager` both read through `lqos_network_devices`.
+/// Callers hold it for the whole lifetime of their installed tree, not per write:
+/// a per-write guard would let another test replace the tree mid-test.
+pub(crate) fn network_json_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Serializes tests that mutate the process-global operator warning sink or the
 /// shaping runtime status (`lqos-74t.35` failure-surfacing).
 pub(crate) fn failure_surfacing_test_lock() -> &'static Mutex<()> {

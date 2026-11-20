@@ -89,6 +89,67 @@ pub const ENV_RAW_QUEUE_STALE_MS: &str = "LQOS_RAW_QUEUE_STALE_MS";
 
 pub mod wire;
 
+/// Renders one CBOR blob in the framing the ORIGINAL `format!("{cbor:02x?}")`
+/// produced: `[` + lowercase zero-padded two-digit hex per byte, `,`-space
+/// joined + `]`. So `[1, 10, 255]` becomes `[01, 0a, ff]`.
+///
+/// This is the literal byte shape of the cross-end digest contract — **not**
+/// bare hex and **not** the raw CBOR. Changing it changes every content key,
+/// so the pinned cross-end vector test is the gate for any edit here.
+fn write_framed_hex(blob: &[u8], out: &mut Vec<u8>) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.push(b'[');
+    for (index, byte) in blob.iter().enumerate() {
+        if index > 0 {
+            out.extend_from_slice(b", ");
+        }
+        out.push(HEX[usize::from(byte >> 4)]);
+        out.push(HEX[usize::from(byte & 0x0f)]);
+    }
+    out.push(b']');
+}
+
+/// Every op's framed piece in ONE arena, in the order the key hashes them.
+///
+/// One reusable CBOR buffer and one arena mean the whole transaction costs its
+/// arena growth instead of two allocations per op (the old shape built a hex
+/// `String` per op). `spans` are ordered by the FRAMED bytes — never by the raw
+/// blob: `]` (0x5d) sorts above `,` (0x2c), so a blob that is a byte prefix of
+/// another sorts *after* it once framed, the opposite of raw-byte order. A
+/// raw-blob sort would reorder the hashed stream and silently move the key.
+fn sorted_framed_pieces(tx: &DataplaneTransaction) -> (Vec<u8>, Vec<std::ops::Range<usize>>) {
+    use serde::Serialize;
+
+    fn encode<T: Serialize>(
+        value: &T,
+        cbor: &mut Vec<u8>,
+        pieces: &mut Vec<u8>,
+        spans: &mut Vec<std::ops::Range<usize>>,
+    ) -> Option<()> {
+        cbor.clear();
+        ciborium::into_writer(value, &mut *cbor).ok()?;
+        let start = pieces.len();
+        write_framed_hex(cbor, pieces);
+        spans.push(start..pieces.len());
+        Some(())
+    }
+
+    let mut cbor: Vec<u8> = Vec::new();
+    let mut pieces: Vec<u8> = Vec::new();
+    let mut spans: Vec<std::ops::Range<usize>> = Vec::new();
+    for op in &tx.inner_ops {
+        encode(op, &mut cbor, &mut pieces, &mut spans);
+    }
+    for op in &tx.leaf_ops {
+        encode(op, &mut cbor, &mut pieces, &mut spans);
+    }
+    for op in &tx.mapping_ops {
+        encode(op, &mut cbor, &mut pieces, &mut spans);
+    }
+    spans.sort_unstable_by(|a, b| pieces[a.clone()].cmp(&pieces[b.clone()]));
+    (pieces, spans)
+}
+
 /// The semantic CONTENT KEY of a transaction — SHA-256 over the sorted
 /// per-op CBOR encodings (parsed content, not file bytes; op ORDER is not
 /// content — the compiler's ordering may vary without a semantic change).
@@ -99,28 +160,17 @@ pub mod wire;
 /// the broker adopts it directly, so the adopt is a PURE function of the
 /// report and the two ends can never drift. The algorithm is the historical
 /// `lqosd::bridge_broker::translate::content_key` verbatim (the broker
-/// delegates here).
+/// delegates here) — the only change is that the per-op hex `String`s are
+/// rendered into one shared arena instead of allocated per op.
 pub fn content_key(tx: &DataplaneTransaction) -> String {
-    use serde::Serialize;
     use sha2::{Digest, Sha256};
 
-    fn piece<T: Serialize>(value: &T) -> Option<String> {
-        let mut cbor = Vec::new();
-        ciborium::into_writer(value, &mut cbor)
-            .ok()
-            .map(|_| format!("{cbor:02x?}"))
-    }
-
-    let mut pieces: Vec<String> = Vec::new();
-    pieces.extend(tx.inner_ops.iter().filter_map(piece));
-    pieces.extend(tx.leaf_ops.iter().filter_map(piece));
-    pieces.extend(tx.mapping_ops.iter().filter_map(piece));
-    pieces.sort();
+    let (pieces, spans) = sorted_framed_pieces(tx);
     let mut hasher = Sha256::new();
     hasher.update(b"lqosd-bridge-broker-tx-content");
     hasher.update([0xff_u8]);
-    for piece in &pieces {
-        hasher.update(piece.as_bytes());
+    for span in &spans {
+        hasher.update(&pieces[span.clone()]);
         hasher.update([0xfe_u8]);
     }
     let digest = hasher.finalize();
@@ -207,6 +257,16 @@ pub struct DataplaneRatePair {
 /// `SUSPEND_FLOOR_MBPS` HOME) -- not duplicated here.
 pub const SUSPEND_RATE_KBPS: u32 = 1024;
 
+/// A `0/0` direction pair — the "unlimited/disabled" pair the suspend floor
+/// must remove. Pair-level ONLY: the CONFIG-side suspend sentinel is
+/// `lqos_overrides::CircuitSpeedOverride::is_suspend_floor`; this is the
+/// post-compile marker that reaches the wire. One home for the predicate so a
+/// caller that only needs to know WHETHER flooring applies (the broker's
+/// copy-on-write floor) cannot drift from the floor itself.
+pub fn pair_needs_suspend_floor(pair: &DataplaneRatePair) -> bool {
+    pair.commit_kbps == 0 && pair.ceil_kbps == 0
+}
+
 /// `lqos-74t.30` (encode-once): floor a direction pair so it can NEVER be
 /// `0/0`. A `0/0` pair is `is_disabled()` == FULL line rate at the bridge, so
 /// the product compiler's whole-Mbps rounding (`0.01.round() == 0`, and
@@ -221,7 +281,7 @@ pub const SUSPEND_RATE_KBPS: u32 = 1024;
 /// leaf rate construction, or `assert_analysis_emission_equality` FATALs at
 /// boot (`AnalysisEmissionDivergence`).
 pub fn floor_suspended_pair(pair: &mut DataplaneRatePair) {
-    if pair.commit_kbps == 0 && pair.ceil_kbps == 0 {
+    if pair_needs_suspend_floor(pair) {
         pair.commit_kbps = SUSPEND_RATE_KBPS;
         pair.ceil_kbps = SUSPEND_RATE_KBPS;
     }
@@ -1007,6 +1067,71 @@ mod tests {
     }
 }
 
+/// TEST-ONLY allocation counter (REV-T1): pins `content_key`'s PRIMARY effect —
+/// it allocates per WORLD, never per op. Disarmed, it costs one relaxed load per
+/// allocation and keeps no bookkeeping, so the rest of this test binary behaves
+/// exactly as it would with the system allocator.
+#[cfg(test)]
+mod allocation_counter {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    static ARMED: AtomicBool = AtomicBool::new(false);
+    static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+    /// Runs `op` with the counter armed and returns how many allocations it
+    /// made on ANY thread. Disarms even if `op` panics, so a failure cannot
+    /// leave the counter running for the rest of the binary.
+    pub fn count_allocations(op: impl FnOnce()) -> usize {
+        struct Disarm;
+
+        impl Drop for Disarm {
+            fn drop(&mut self) {
+                ARMED.store(false, Ordering::SeqCst);
+            }
+        }
+
+        ALLOCATIONS.store(0, Ordering::SeqCst);
+        ARMED.store(true, Ordering::SeqCst);
+        let disarm = Disarm;
+        op();
+        drop(disarm);
+        ALLOCATIONS.load(Ordering::SeqCst)
+    }
+
+    struct CountingAllocator;
+
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            if ARMED.load(Ordering::Relaxed) {
+                ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+            }
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            if ARMED.load(Ordering::Relaxed) {
+                ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+            }
+            unsafe { System.alloc_zeroed(layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            if ARMED.load(Ordering::Relaxed) {
+                ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+            }
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+
+    #[global_allocator]
+    static GLOBAL: CountingAllocator = CountingAllocator;
+}
+
 #[cfg(test)]
 mod content_key_tests {
     use super::*;
@@ -1079,6 +1204,238 @@ mod content_key_tests {
         assert_eq!(
             key,
             "tx-4f0310c97bbee8e4ae029a01065664e9856cc88a4553db6a1bdf70396d2c70a4"
+        );
+    }
+
+    /// The HISTORICAL implementation (pre-cleanup), kept ONLY as the test oracle
+    /// for the cross-end contract: the rewrite must hash the same bytes. The
+    /// digest is shared with INSIGHT and the bridge, so this is a frozen contract
+    /// — do not edit this oracle, and delete it only with the key itself.
+    fn reference_content_key(tx: &DataplaneTransaction) -> String {
+        use serde::Serialize;
+        use sha2::{Digest, Sha256};
+
+        fn piece<T: Serialize>(value: &T) -> Option<String> {
+            let mut cbor = Vec::new();
+            ciborium::into_writer(value, &mut cbor)
+                .ok()
+                .map(|_| format!("{cbor:02x?}"))
+        }
+
+        let mut pieces: Vec<String> = Vec::new();
+        pieces.extend(tx.inner_ops.iter().filter_map(piece));
+        pieces.extend(tx.leaf_ops.iter().filter_map(piece));
+        pieces.extend(tx.mapping_ops.iter().filter_map(piece));
+        pieces.sort();
+        let mut hasher = Sha256::new();
+        hasher.update(b"lqosd-bridge-broker-tx-content");
+        hasher.update([0xff_u8]);
+        for piece in &pieces {
+            hasher.update(piece.as_bytes());
+            hasher.update([0xfe_u8]);
+        }
+        let digest = hasher.finalize();
+        format!("tx-{digest:02x}")
+    }
+
+    /// BYTE-IDENTITY PROOF against the reference implementation over a corpus
+    /// covering every op family, both orders, duplicates, and the empty world.
+    /// The digest is a frozen external contract (INSIGHT + the bridge), so an
+    /// allocation-only rewrite is admissible only if this is green — and the
+    /// oracle reproduces the pinned vector, which shows it IS the frozen
+    /// algorithm rather than a second invention.
+    #[test]
+    fn content_key_is_byte_identical_to_the_reference_implementation() {
+        assert_eq!(
+            reference_content_key(&tx("pinned", vec![leaf("c1", 10_000)])),
+            "tx-4f0310c97bbee8e4ae029a01065664e9856cc88a4553db6a1bdf70396d2c70a4",
+            "the oracle must BE the frozen algorithm"
+        );
+
+        let mut corpus: Vec<DataplaneTransaction> = vec![
+            tx("empty", Vec::new()),
+            tx("one", vec![leaf("c1", 10_000)]),
+            tx("two", vec![leaf("c2", 20_000), leaf("c1", 5_000)]),
+            tx(
+                "many",
+                (0..64)
+                    .map(|i| leaf(&format!("c{i}"), 1_000 * (i + 1)))
+                    .collect(),
+            ),
+            tx("dup", vec![leaf("c1", 10_000), leaf("c1", 10_000)]),
+        ];
+
+        // Every op family, including the `ip_as_string` mapping path that
+        // allocates inside the CBOR pass.
+        let mut mixed = tx("mixed", vec![leaf("c1", 10_000), leaf("c2", 20_000)]);
+        mixed.inner_ops = vec![
+            DataplaneInnerOp::Upsert {
+                node_id: "site-1".to_string(),
+                parent_node_id: "root".to_string(),
+                download: DataplaneRatePair {
+                    commit_kbps: 100_000,
+                    ceil_kbps: 200_000,
+                },
+                upload: DataplaneRatePair {
+                    commit_kbps: 50_000,
+                    ceil_kbps: 100_000,
+                },
+            },
+            DataplaneInnerOp::Remove {
+                node_id: "site-9".to_string(),
+            },
+            DataplaneInnerOp::Move {
+                node_id: "site-2".to_string(),
+                new_parent_node_id: "site-1".to_string(),
+            },
+        ];
+        let ip = |text: &str| text.parse::<IpAddr>().expect("an IPv4 fixture");
+        mixed.mapping_ops = vec![
+            DataplaneMappingOp::Map {
+                prefix_len: 24,
+                ip: ip("100.97.0.1"),
+                circuit_id: "c1".to_string(),
+                device_id: "d1".to_string(),
+            },
+            DataplaneMappingOp::Del {
+                prefix_len: 24,
+                ip: ip("100.97.0.9"),
+            },
+            DataplaneMappingOp::MapTunnel {
+                vni: 4096,
+                vlan: 10,
+                circuit: "c1".to_string(),
+            },
+            DataplaneMappingOp::DelTunnel {
+                vni: 4096,
+                vlan: 10,
+            },
+            DataplaneMappingOp::MapVlan {
+                vlan: 10,
+                circuit: "c1".to_string(),
+            },
+            DataplaneMappingOp::DelVlan { vlan: 10 },
+            DataplaneMappingOp::MapMpls {
+                label: 1234,
+                circuit: "c1".to_string(),
+            },
+            DataplaneMappingOp::DelMpls { label: 1234 },
+            DataplaneMappingOp::Clear,
+        ];
+        let mut reversed = mixed.clone();
+        reversed.leaf_ops.reverse();
+        reversed.inner_ops.reverse();
+        reversed.mapping_ops.reverse();
+        corpus.push(mixed);
+        corpus.push(reversed);
+
+        for world in &corpus {
+            assert_eq!(
+                content_key(world),
+                reference_content_key(world),
+                "digest drift on the `{}` fixture",
+                world.generation
+            );
+        }
+    }
+
+    /// The FRAMED BYTE STREAM, pinned literally: `[` + lowercase two-digit hex
+    /// per byte, `, `-joined + `]`, then one `0xfe` per piece, behind the domain
+    /// prefix and one `0xff`. This is exactly what the cross-end digest hashes;
+    /// a "cleanup" to bare hex, to the raw CBOR blob, or to another separator
+    /// fails here even if both ends were re-pinned together.
+    #[test]
+    fn content_key_hashes_the_framed_hex_stream() {
+        use sha2::{Digest, Sha256};
+
+        let mut framed = Vec::new();
+        write_framed_hex(&[1, 10, 255], &mut framed);
+        assert_eq!(framed, b"[01, 0a, ff]");
+        let mut empty = Vec::new();
+        write_framed_hex(&[], &mut empty);
+        assert_eq!(empty, b"[]");
+
+        // The ordering caveat, executable: framing does NOT preserve raw byte
+        // order for prefix-related blobs — `]` (0x5d) sorts above `,` (0x2c), so
+        // the shorter blob sorts LAST once framed. That is exactly why the sort
+        // runs on the framed bytes and never on the raw CBOR blobs.
+        let mut shorter = Vec::new();
+        write_framed_hex(&[1], &mut shorter);
+        let mut longer = Vec::new();
+        write_framed_hex(&[1, 2], &mut longer);
+        assert!(longer < shorter, "framed order is not raw blob order");
+
+        // A one-op fixture pinned to the literal bytes: `Clear` is
+        // `{"op": "clear"}` in CBOR, framed by the historical `{:02x?}` shape.
+        let mut world = tx("framed", Vec::new());
+        world.mapping_ops.push(DataplaneMappingOp::Clear);
+        let (pieces, spans) = sorted_framed_pieces(&world);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(pieces, b"[a1, 62, 6f, 70, 65, 63, 6c, 65, 61, 72]");
+
+        // The digest over that exact stream: prefix, 0xff, piece, 0xfe.
+        let mut stream = b"lqosd-bridge-broker-tx-content".to_vec();
+        stream.push(0xff);
+        stream.extend_from_slice(&pieces);
+        stream.push(0xfe);
+        let digest = Sha256::digest(&stream);
+        assert_eq!(content_key(&world), format!("tx-{digest:02x}"));
+
+        // The historical formatting mechanism is an independent oracle for a
+        // richer fixture (an enum-struct op with nested rate maps).
+        let leaf_world = tx("framed", vec![leaf("c1", 10_000)]);
+        let mut cbor = Vec::new();
+        ciborium::into_writer(&leaf_world.leaf_ops[0], &mut cbor).unwrap();
+        let expected_piece = format!("{cbor:02x?}");
+        let (leaf_pieces, leaf_spans) = sorted_framed_pieces(&leaf_world);
+        assert_eq!(leaf_spans.len(), 1);
+        assert_eq!(leaf_pieces, expected_piece.as_bytes());
+    }
+
+    /// REV-T1: the unit's PRIMARY effect — `content_key` allocates per WORLD,
+    /// never per op. The 56 extra ops between the two worlds are precisely what
+    /// a reintroduced per-op `format!("{cbor:02x?}")` plus its per-op CBOR
+    /// buffer would bill: ≥ 4 allocations per op, i.e. ≥ 224 more. What is left
+    /// in the difference is the arena/`spans` doubling growth, which is
+    /// O(log ops) — a dozen allocations at most, and fewer in the 8-op world.
+    /// The bound (32) therefore sits an order of magnitude above the growth and
+    /// an order of magnitude below the regression.
+    ///
+    /// `min` over five repetitions drops allocations made by other tests running
+    /// in parallel on this binary's threads (noise only ever ADDS), so the
+    /// assertion compares the two worlds' irreducible costs, not the load.
+    #[test]
+    fn content_key_does_not_allocate_per_op() {
+        let world = |name: &str, ops: u32| {
+            tx(
+                name,
+                (0..ops)
+                    .map(|i| leaf(&format!("c{i}"), 1_000 * (i + 1)))
+                    .collect(),
+            )
+        };
+        let small = world("small", 8);
+        let large = world("large", 64);
+        // Warm-up outside every counting window.
+        std::hint::black_box(content_key(&small));
+        std::hint::black_box(content_key(&large));
+
+        let (mut small_allocs, mut large_allocs) = (usize::MAX, usize::MAX);
+        for _ in 0..5 {
+            small_allocs = small_allocs.min(super::allocation_counter::count_allocations(|| {
+                std::hint::black_box(content_key(&small));
+            }));
+            large_allocs = large_allocs.min(super::allocation_counter::count_allocations(|| {
+                std::hint::black_box(content_key(&large));
+            }));
+        }
+
+        assert!(
+            large_allocs <= small_allocs + 32,
+            "content_key must not allocate per op: 8 ops = {small_allocs} allocations, \
+             64 ops = {large_allocs} (bound {}). A per-op hex String or per-op CBOR \
+             buffer is back.",
+            small_allocs + 32
         );
     }
 }

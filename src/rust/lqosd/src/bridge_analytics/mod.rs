@@ -50,12 +50,15 @@ pub(crate) mod completion_consumer;
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::system_stats::SystemStats;
 use std::collections::VecDeque;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::shaped_devices_tracker::RuntimeCircuitParent;
 use analytics_ipc::{DEFAULT_MAX_ROWS, QdiscDetailRow, connect_queue_stats, connect_snapshot};
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
@@ -570,18 +573,127 @@ fn resolve_circuit_id_for_host(ip: &IpAddr) -> Option<String> {
 /// nodes by NAME (`s10-a-ap0`); joining on the circuit id silently never
 /// matches, which emptied the tree live-view, the site/global heatmaps, and the
 /// LTS per-site. Map each circuit to the catalog device's `parent_node`
-/// (several circuits may share a parent). One catalog build; callers resolve
-/// the name against their network.json snapshot.
-pub(crate) fn circuit_parent_node_by_id() -> FxHashMap<String, String> {
-    let catalog = lqos_network_devices::network_devices_catalog();
-    let devices = catalog
-        .iter_all_devices()
-        .map(|device| (device.circuit_id.clone(), device.parent_node.clone()));
-    circuit_parent_node_by_id_from(devices, |circuit_id| {
-        crate::shaped_devices_tracker::effective_parent_for_circuit(circuit_id)
-            .map(|parent| parent.name)
+/// (several circuits may share a parent). Callers resolve the name against
+/// their network.json snapshot.
+///
+/// The map is a pure function of the three published snapshots named by
+/// [`CircuitParentCacheKey`], so it is rebuilt only when one of them changes
+/// and shared by `Arc` otherwise: an unchanged world costs one `Arc::clone` per
+/// poll instead of the seven `String`s per circuit a rebuild allocates. Readers
+/// treat the returned map as immutable.
+pub(crate) fn circuit_parent_node_by_id() -> Arc<FxHashMap<String, String>> {
+    let shaped = lqos_network_devices::shaped_devices_catalog();
+    let dynamic = lqos_network_devices::dynamic_circuits_snapshot();
+    let effective_parents = crate::shaped_devices_tracker::effective_circuit_parents_snapshot();
+    let key = circuit_parent_cache_key(&shaped, &dynamic, Arc::clone(&effective_parents));
+    CIRCUIT_PARENT_CACHE.lock().get_or_build(key, || {
+        let devices = shaped
+            .iter_devices()
+            .chain(dynamic.iter().map(|circuit| &circuit.shaped))
+            .map(|device| (device.circuit_id.clone(), device.parent_node.clone()));
+        circuit_parent_node_by_id_from(devices, |circuit_id| {
+            crate::shaped_devices_tracker::effective_parent_for_circuit_in(
+                &effective_parents,
+                circuit_id,
+            )
+            .map(|parent| parent.name.clone())
+        })
     })
 }
+
+/// The published snapshots the circuit→parent join is derived from, with the
+/// hook that invalidates each:
+///
+/// - `shaped_generation` — the `lqos_network_devices` monotonic shaped-devices
+///   generation, bumped by `publish_shaped_devices` /
+///   `swap_shaped_devices_snapshot`.
+/// - `dynamic_attribution_stamp` — content stamp over the dynamic overlay's
+///   attribution fields. Identity cannot be used: the bridge-activity feed
+///   (`ReportBridgeActivity`) republishes the overlay whenever `last_seen_unix`
+///   advances, changing the `Arc` without changing a single attribution.
+/// - `effective_parents` — the topology effective-parent map, replaced wholesale
+///   by `publish_shaping_inputs`; `Arc` identity is the publication. The key
+///   holds the `Arc`, so a later publication cannot free the snapshot whose
+///   address the comparison reads.
+struct CircuitParentCacheKey {
+    shaped_generation: u64,
+    dynamic_attribution_stamp: u64,
+    effective_parents: Arc<FxHashMap<String, RuntimeCircuitParent>>,
+}
+
+impl CircuitParentCacheKey {
+    fn matches(&self, other: &Self) -> bool {
+        self.shaped_generation == other.shaped_generation
+            && self.dynamic_attribution_stamp == other.dynamic_attribution_stamp
+            && Arc::ptr_eq(&self.effective_parents, &other.effective_parents)
+    }
+}
+
+/// One-entry cache for the circuit→parent join; `None` until the first build.
+#[derive(Default)]
+struct CircuitParentCache {
+    entry: Option<(CircuitParentCacheKey, Arc<FxHashMap<String, String>>)>,
+}
+
+impl CircuitParentCache {
+    /// Returns the cached join when `key` still matches the snapshots it was
+    /// built from, otherwise builds through `build` and adopts the result.
+    fn get_or_build(
+        &mut self,
+        key: CircuitParentCacheKey,
+        build: impl FnOnce() -> FxHashMap<String, String>,
+    ) -> Arc<FxHashMap<String, String>> {
+        if let Some((cached_key, cached)) = &self.entry
+            && cached_key.matches(&key)
+        {
+            return Arc::clone(cached);
+        }
+        let map = Arc::new(build());
+        self.entry = Some((key, Arc::clone(&map)));
+        map
+    }
+}
+
+/// Content stamp over the dynamic overlay's attribution fields — the only two
+/// fields the join reads.
+///
+/// The hashed set IS the join's read set over the dynamic rows
+/// (`circuit_id` + `parent_node`, see [`circuit_parent_node_by_id_from`]): the
+/// join keys on the id and resolves the parent from `parent_node`. A field the
+/// join learns to read must be hashed here in the same change — otherwise the
+/// key under-invalidates and the join serves a stale attribution until another
+/// input moves. That extension point is the pair of `hash` calls below.
+fn dynamic_attribution_stamp(dynamic: &[lqos_network_devices::DynamicCircuit]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    dynamic.len().hash(&mut hasher);
+    for circuit in dynamic {
+        circuit.shaped.circuit_id.hash(&mut hasher);
+        circuit.shaped.parent_node.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// The cache key for one published world: each of the three snapshots the join
+/// derives from, reduced to its own invalidation signal. Pure, so a test can
+/// assert the field→source wiring against explicit snapshots instead of racing
+/// the process-global publishers.
+fn circuit_parent_cache_key(
+    shaped: &lqos_network_devices::ShapedDevicesCatalog,
+    dynamic: &[lqos_network_devices::DynamicCircuit],
+    effective_parents: Arc<FxHashMap<String, RuntimeCircuitParent>>,
+) -> CircuitParentCacheKey {
+    CircuitParentCacheKey {
+        shaped_generation: shaped.generation(),
+        dynamic_attribution_stamp: dynamic_attribution_stamp(dynamic),
+        effective_parents,
+    }
+}
+
+/// The circuit→parent join cache. Only [`circuit_parent_node_by_id`] touches it;
+/// the lock serializes the analytics poll thread and the tree/site heatmap
+/// readers, and a lost race can at worst rebuild the same map twice.
+static CIRCUIT_PARENT_CACHE: Lazy<parking_lot::Mutex<CircuitParentCache>> =
+    Lazy::new(|| parking_lot::Mutex::new(CircuitParentCache::default()));
 
 /// Pure core of [`circuit_parent_node_by_id`]: prefer the effective parent,
 /// fall back to the catalog's configured `parent_node`. Extracted so the
@@ -1860,9 +1972,10 @@ fn poll_and_store_with(
             // 3a group-1 increment 2: score the active flows into the
             // per-circuit QoO accumulator (shared scorer + the three gates)
             // and publish. The stale path below folds nothing.
-            // 3b DEFECT 1: build the shared circuit→parent-node attribution
-            // ONCE per tick and reuse it for the QoO node rollup + the tree
-            // live-view (the site heatmaps resolve it in their own reader).
+            // 3b DEFECT 1: the shared circuit→parent-node attribution is built
+            // once per catalog/topology publication and shared by `Arc`, so this
+            // tick reuses it for the QoO node rollup and the tree live-view (the
+            // site heatmaps resolve it in their own reader).
             let parent_by_circuit = circuit_parent_node_by_id();
             let qoo_profile = lqos_config::active_qoo_profile().ok();
             // §`lqos-74t.40.1`: the per-cycle RTT snapshot now comes from the
@@ -3814,6 +3927,7 @@ mod tree_live_tests {
 
     /// root -> site -> ap (ap's chain [0,1,2]). The CIRCUIT is a catalog row
     /// (`c1`) whose `parent_node` is `ap` — it is not a tree node.
+    /// Callers hold [`hold_network_json_lock`] for the test's lifetime.
     fn write_store() {
         lqos_network_devices::with_network_json_write(|net_json| {
             net_json.nodes.clear();
@@ -3825,11 +3939,22 @@ mod tree_live_tests {
         });
     }
 
+    /// Holds the crate-wide `network.json` lock for a test's tree lifetime, on top
+    /// of the module `TEST_LOCK` these tests also take: the tree is process-global
+    /// and `node_manager::local_api` publishes trees in its own tests, so the
+    /// module lock alone leaves a cross-module mutation window.
+    fn hold_network_json_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::test_support::network_json_test_lock()
+            .lock()
+            .expect("network.json test lock should not be poisoned")
+    }
+
     /// 3b DEFECT 1 oracle (rig-shaped): a catalog circuit `c1` with
     /// `parent_node=ap` lands under `ap` and every ancestor; unmatched is 0.
     #[test]
     fn circuit_rows_attribute_through_their_parent_node() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         write_store();
         let mut parents: FxHashMap<String, String> = FxHashMap::default();
         parents.insert("c1".to_string(), "ap".to_string());
@@ -3864,6 +3989,7 @@ mod tree_live_tests {
     #[test]
     fn current_circuit_without_parent_is_pruned_not_unmatched() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         write_store();
         let mut joined = FxHashMap::default();
         joined.insert("c1".to_string(), row(1, 1));
@@ -3877,6 +4003,7 @@ mod tree_live_tests {
     #[test]
     fn tree_live_view_rtts_use_the_tracker_median_source() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         write_store();
         let mut parents: FxHashMap<String, String> = FxHashMap::default();
         parents.insert("c1".to_string(), "ap".to_string());
@@ -3907,6 +4034,7 @@ mod tree_live_tests {
     #[test]
     fn stale_circuit_without_a_parent_is_pruned() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         write_store();
         let mut parents: FxHashMap<String, String> = FxHashMap::default();
         parents.insert("c1".to_string(), "ap".to_string());
@@ -4073,6 +4201,7 @@ mod tree_live_tests {
     #[test]
     fn sibling_circuit_rows_accumulate() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         write_store();
         let mut parents: FxHashMap<String, String> = FxHashMap::default();
         parents.insert("c1".to_string(), "ap".to_string());
@@ -4301,6 +4430,7 @@ mod tree_live_tests {
         use lqos_utils::rtt::RttBucket;
 
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         const ORPHANS: &str = lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID;
         // Root(0) -> WestRedd(1) -> {orphans umbrella(2), real_site(3)}.
         lqos_network_devices::with_network_json_write(|net_json| {
@@ -4421,6 +4551,384 @@ mod tree_live_tests {
         );
     }
 
+    /// W3: the circuit→parent join is built once per input publication and
+    /// reused otherwise. Pins: a catalog-generation bump rebuilds, a
+    /// dynamic-attribution change rebuilds, an effective-parent republication
+    /// at the SAME catalog generation rebuilds (identity, not content), and an
+    /// unchanged world returns the identical `Arc` without building.
+    #[test]
+    fn circuit_parent_cache_rebuilds_only_when_an_input_changes() {
+        let parents_with = |name: &str| -> Arc<FxHashMap<String, RuntimeCircuitParent>> {
+            let mut map = FxHashMap::default();
+            map.insert(
+                "c1".to_string(),
+                RuntimeCircuitParent {
+                    name: name.to_string(),
+                    id: Some("site-1".to_string()),
+                },
+            );
+            Arc::new(map)
+        };
+        let key = |generation: u64,
+                   stamp: u64,
+                   parents: &Arc<FxHashMap<String, RuntimeCircuitParent>>| {
+            CircuitParentCacheKey {
+                shaped_generation: generation,
+                dynamic_attribution_stamp: stamp,
+                effective_parents: Arc::clone(parents),
+            }
+        };
+        let parents = parents_with("eff-a");
+        let mut cache = CircuitParentCache::default();
+        let mut builds = 0usize;
+
+        let first = cache.get_or_build(key(7, 0, &parents), || {
+            builds += 1;
+            let mut map = FxHashMap::default();
+            map.insert("c1".to_string(), "eff-a".to_string());
+            map
+        });
+        assert_eq!(first.get("c1").map(String::as_str), Some("eff-a"));
+
+        let reused = cache.get_or_build(key(7, 0, &parents), || {
+            builds += 1;
+            FxHashMap::default()
+        });
+        assert!(
+            Arc::ptr_eq(&first, &reused),
+            "an unchanged world reuses the built map"
+        );
+        assert_eq!(builds, 1, "no rebuild without an input change");
+
+        let after_catalog_bump = cache.get_or_build(key(8, 0, &parents), || {
+            builds += 1;
+            let mut map = FxHashMap::default();
+            map.insert("c1".to_string(), "eff-b".to_string());
+            map
+        });
+        assert_eq!(
+            after_catalog_bump.get("c1").map(String::as_str),
+            Some("eff-b")
+        );
+        assert_eq!(builds, 2, "a catalog generation bump rebuilds");
+
+        // REV-T2: the rebuild ADOPTS the key of the world it built, so the next
+        // caller of the same key is a hit. Without this, a cache that stores the
+        // superseded key (or none) still shows `builds == 2` above and only
+        // degenerates on the following poll — which nothing observed.
+        let reused_after_catalog_bump = cache.get_or_build(key(8, 0, &parents), || {
+            builds += 1;
+            FxHashMap::default()
+        });
+        assert!(
+            Arc::ptr_eq(&after_catalog_bump, &reused_after_catalog_bump),
+            "the post-bump world is reused, not rebuilt"
+        );
+        assert_eq!(builds, 2, "the post-bump key was stored by its own rebuild");
+
+        let after_dynamic_change = cache.get_or_build(key(8, 11, &parents), || {
+            builds += 1;
+            FxHashMap::default()
+        });
+        assert_eq!(builds, 3, "a dynamic-attribution change rebuilds");
+        assert!(after_dynamic_change.is_empty());
+
+        let reused_after_dynamic_change = cache.get_or_build(key(8, 11, &parents), || {
+            builds += 1;
+            FxHashMap::default()
+        });
+        assert!(
+            Arc::ptr_eq(&after_dynamic_change, &reused_after_dynamic_change),
+            "the post-dynamic-change world is reused, not rebuilt"
+        );
+        assert_eq!(
+            builds, 3,
+            "the post-dynamic-change key was stored by its own rebuild"
+        );
+
+        let republished = parents_with("eff-a");
+        cache.get_or_build(key(8, 11, &republished), || {
+            builds += 1;
+            FxHashMap::default()
+        });
+        assert_eq!(builds, 4, "an effective-parent republication rebuilds");
+    }
+
+    /// The dynamic-attribution stamp keys on attribution, not liveness: the
+    /// per-poll bridge-activity republish only advances `last_seen_unix`, which
+    /// must not invalidate the join, while a parent change must.
+    ///
+    /// REV-T4: the circuit id is asserted too, because the join keys on it. The
+    /// stamp hashes exactly the join's read set over the dynamic rows
+    /// (`circuit_id` + `parent_node`, see `dynamic_attribution_stamp`'s doc) —
+    /// a field the join later learns to read must be added there.
+    #[test]
+    fn dynamic_attribution_stamp_ignores_liveness_and_tracks_attribution() {
+        let circuit = |circuit_id: &str, parent: &str, last_seen: u64| {
+            lqos_network_devices::DynamicCircuit {
+                shaped: lqos_config::ShapedDevice {
+                    circuit_id: circuit_id.to_string(),
+                    parent_node: parent.to_string(),
+                    ..Default::default()
+                },
+                last_seen_unix: last_seen,
+            }
+        };
+        let base = dynamic_attribution_stamp(&[circuit("dyn-1", "site-a", 10)]);
+        assert_eq!(
+            base,
+            dynamic_attribution_stamp(&[circuit("dyn-1", "site-a", 11)]),
+            "a liveness advance is not an attribution change"
+        );
+        assert_ne!(
+            base,
+            dynamic_attribution_stamp(&[circuit("dyn-1", "site-b", 10)]),
+            "a parent change is attribution"
+        );
+        assert_ne!(
+            base,
+            dynamic_attribution_stamp(&[circuit("dyn-2", "site-a", 10)]),
+            "a circuit-id change is attribution"
+        );
+        assert_ne!(base, dynamic_attribution_stamp(&[]));
+    }
+
+    fn shaped_device(circuit_id: &str, parent_node: &str) -> lqos_config::ShapedDevice {
+        lqos_config::ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            parent_node: parent_node.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// One test's own shaped-device world (plus an empty effective-parent map, so
+    /// the catalog parent is what the join resolves). The circuit→parent cache is
+    /// keyed on these process globals, so a test that drives the PRODUCTION entry
+    /// point holds `super::tests::TEST_LOCK` AND the crate's runtime-config lock
+    /// for the world's lifetime — the same convention as
+    /// `shaped_devices_tracker` and `node_manager::local_api::circuit` snapshot
+    /// helpers, which keeps other modules from mutating the same globals while
+    /// this world is installed. The guards restore both snapshots on drop, so a
+    /// failing assert cannot leak them into another test.
+    struct CircuitParentTestWorld {
+        _runtime_guard: std::sync::MutexGuard<'static, ()>,
+        old_shaped: Arc<lqos_config::ConfigShapedDevices>,
+        old_effective_parents: Arc<FxHashMap<String, RuntimeCircuitParent>>,
+    }
+
+    impl CircuitParentTestWorld {
+        fn install(reason: &str, devices: Vec<lqos_config::ShapedDevice>) -> Self {
+            let runtime_guard = crate::test_support::runtime_config_test_lock()
+                .lock()
+                .expect("runtime config test lock should not be poisoned");
+            let old_effective_parents = crate::shaped_devices_tracker::EFFECTIVE_CIRCUIT_PARENTS
+                .swap(Arc::new(FxHashMap::default()));
+            Self {
+                _runtime_guard: runtime_guard,
+                old_shaped: Self::publish(reason, devices),
+                old_effective_parents,
+            }
+        }
+
+        /// Republishes the shaped catalog (bumping its generation) and returns
+        /// the superseded snapshot.
+        fn publish(
+            reason: &str,
+            devices: Vec<lqos_config::ShapedDevice>,
+        ) -> Arc<lqos_config::ConfigShapedDevices> {
+            let mut shaped = lqos_config::ConfigShapedDevices::default();
+            shaped.replace_with_new_data(devices);
+            lqos_network_devices::swap_shaped_devices_snapshot(reason, Arc::new(shaped))
+        }
+
+        fn replace(&self, reason: &str, devices: Vec<lqos_config::ShapedDevice>) {
+            let _superseded = Self::publish(reason, devices);
+        }
+    }
+
+    impl Drop for CircuitParentTestWorld {
+        fn drop(&mut self) {
+            lqos_network_devices::swap_shaped_devices_snapshot(
+                "circuit-parent-cache-test-restore",
+                Arc::clone(&self.old_shaped),
+            );
+            crate::shaped_devices_tracker::EFFECTIVE_CIRCUIT_PARENTS
+                .store(Arc::clone(&self.old_effective_parents));
+        }
+    }
+
+    /// W3 repair (REV-C1): the world owns the crate's runtime-config lock for its
+    /// whole lifetime, so no other module can swap the shaped/effective-parent
+    /// globals while these production-path tests are installed. A regression that
+    /// drops the guard from the world fails here.
+    #[test]
+    fn a_circuit_parent_world_holds_the_runtime_config_lock_for_its_lifetime() {
+        let lock = crate::test_support::runtime_config_test_lock();
+        let _world = CircuitParentTestWorld::install("circuit-parent-lock-test", vec![]);
+        assert!(
+            lock.try_lock().is_err(),
+            "the installed world owns the runtime config lock"
+        );
+    }
+
+    /// W3 (REV-T1): the PRODUCTION entry point builds once per published world
+    /// and shares that map across polls. The cache-mechanics test above drives
+    /// the cache directly; this drives `circuit_parent_node_by_id()` through the
+    /// real publishers, so a regression that bypasses the cache, keys off the
+    /// wrong generator, or feeds the wrong parent snapshot fails HERE.
+    #[test]
+    fn circuit_parent_node_by_id_builds_once_per_world_and_rebuilds_on_a_catalog_bump() {
+        let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let world = CircuitParentTestWorld::install(
+            "circuit-parent-cache-test",
+            vec![shaped_device("c1", "parent-a")],
+        );
+
+        // The key's field→source wiring: each of the three published snapshots,
+        // reduced to its own invalidation signal.
+        let shaped = lqos_network_devices::shaped_devices_catalog();
+        let dynamic = lqos_network_devices::dynamic_circuits_snapshot();
+        let parents = crate::shaped_devices_tracker::effective_circuit_parents_snapshot();
+        let key = circuit_parent_cache_key(&shaped, &dynamic, Arc::clone(&parents));
+        assert_eq!(
+            key.shaped_generation,
+            shaped.generation(),
+            "the key's generation is the SHAPED catalog's, not another source's"
+        );
+        assert_eq!(
+            key.dynamic_attribution_stamp,
+            dynamic_attribution_stamp(&dynamic),
+            "the key's stamp is the dynamic overlay's attribution"
+        );
+        assert!(
+            Arc::ptr_eq(&key.effective_parents, &parents),
+            "the key holds the published effective-parent snapshot"
+        );
+
+        let first = circuit_parent_node_by_id();
+        assert_eq!(first.get("c1").map(String::as_str), Some("parent-a"));
+        let second = circuit_parent_node_by_id();
+        // Two polls of one world. `Arc::ptr_eq` here means ONE build: a second
+        // build would allocate a distinct map, so sharing pins "built once".
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "an unchanged world is built once and shared across polls"
+        );
+
+        // A catalog publication bumps the generation and moves the content.
+        world.replace(
+            "circuit-parent-cache-test-bump",
+            vec![
+                shaped_device("c1", "parent-b"),
+                shaped_device("c2", "parent-b"),
+            ],
+        );
+        let rebuilt = circuit_parent_node_by_id();
+        assert!(
+            !Arc::ptr_eq(&first, &rebuilt),
+            "a catalog generation bump rebuilds the join"
+        );
+        assert_eq!(rebuilt.get("c1").map(String::as_str), Some("parent-b"));
+        assert_eq!(rebuilt.get("c2").map(String::as_str), Some("parent-b"));
+
+        // REV-T2 on the production path: the rebuild adopted the key of the world
+        // it built, so the next poll is a hit again — a cache that rebuilds every
+        // poll (keeping the superseded key) fails here.
+        let reused = circuit_parent_node_by_id();
+        assert!(
+            Arc::ptr_eq(&rebuilt, &reused),
+            "the post-bump world is reused, not rebuilt again"
+        );
+    }
+
+    /// W3 (REV-T3): the input-source swap (`iter_all_devices()` → the shaped
+    /// catalog chained with the dynamic overlay) is the semantic part of the
+    /// diff, so it is pinned against the old semantic oracle and against the
+    /// production entry point.
+    #[test]
+    fn circuit_parent_derivation_matches_the_combined_catalog_semantics() {
+        let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+
+        // (1) Pinned semantics, pure: static rows come FIRST, `or_insert` keeps
+        // the first, and an empty id/parent is skipped.
+        let static_rows = [
+            shaped_device("dup", "static-parent"),
+            shaped_device("dup", "shadowed-static-row"),
+            shaped_device("shared", "static-shared"),
+            shaped_device("", "empty-id"),
+            shaped_device("empty-parent", ""),
+        ];
+        let dynamic_rows = [
+            lqos_network_devices::DynamicCircuit {
+                shaped: shaped_device("shared", "dynamic-shadowed"),
+                last_seen_unix: 1,
+            },
+            lqos_network_devices::DynamicCircuit {
+                shaped: shaped_device("dyn-only", "dynamic-parent"),
+                last_seen_unix: 2,
+            },
+        ];
+        let semantics = circuit_parent_node_by_id_from(
+            static_rows
+                .iter()
+                .chain(dynamic_rows.iter().map(|circuit| &circuit.shaped))
+                .map(|device| (device.circuit_id.clone(), device.parent_node.clone())),
+            |_| None,
+        );
+        assert_eq!(
+            semantics.get("dup").map(String::as_str),
+            Some("static-parent"),
+            "the first row for an id wins"
+        );
+        assert_eq!(
+            semantics.get("shared").map(String::as_str),
+            Some("static-shared"),
+            "a static row precedes the dynamic overlay for the same id"
+        );
+        assert_eq!(
+            semantics.get("dyn-only").map(String::as_str),
+            Some("dynamic-parent")
+        );
+        assert!(
+            !semantics.contains_key(""),
+            "an empty circuit id is skipped"
+        );
+        assert!(
+            !semantics.contains_key("empty-parent"),
+            "an empty parent is skipped"
+        );
+
+        // (2) The production path over an installed world equals the OLD oracle
+        // (`NetworkDevicesCatalog::iter_all_devices()`), which is the definition
+        // the rewrite replaced.
+        let _world = CircuitParentTestWorld::install(
+            "circuit-parent-derivation-test",
+            vec![
+                shaped_device("c1", "ap-a"),
+                shaped_device("c2", "ap-a"),
+                shaped_device("c1", "ap-shadowed"),
+            ],
+        );
+        let shaped = lqos_network_devices::shaped_devices_catalog();
+        let dynamic = lqos_network_devices::dynamic_circuits_snapshot();
+        let combined = lqos_network_devices::NetworkDevicesCatalog::from_snapshots(
+            shaped,
+            Arc::clone(&dynamic),
+        );
+        let oracle = circuit_parent_node_by_id_from(
+            combined
+                .iter_all_devices()
+                .map(|device| (device.circuit_id.clone(), device.parent_node.clone())),
+            |_| None,
+        );
+        assert_eq!(
+            oracle.get("c1").map(String::as_str),
+            Some("ap-a"),
+            "the oracle keeps the first row, as the rewrite must"
+        );
+        assert_eq!(circuit_parent_node_by_id(), Arc::new(oracle));
+    }
+
     /// §lqos-74t.8 A1: the bulk read maps slot → product circuit → `circuit_hash`,
     /// folds each direction's cumulative drops/marks, and counts CAKE leaves from
     /// `tins` presence. An unknown slot is skipped (never mis-attributed).
@@ -4512,6 +5020,7 @@ mod tree_live_tests {
     #[test]
     fn circuit_ancestors_drop_an_umbrella_attributed_circuit() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         const ORPHANS: &str = lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID;
         lqos_network_devices::with_network_json_write(|net_json| {
             net_json.nodes.clear();
@@ -4552,6 +5061,7 @@ mod tree_live_tests {
             CircuitHeatmapSnapshot, CircuitRttSamples, HeatmapMinute,
         };
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        let _network = hold_network_json_lock();
         const ORPHANS: &str = lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID;
         lqos_network_devices::with_network_json_write(|net_json| {
             net_json.nodes.clear();

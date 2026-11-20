@@ -733,7 +733,13 @@ mod tests {
         ];
         const EN_CATALOG: &str = include_str!("static2/i18n/en.json");
         const ES_CATALOG: &str = include_str!("static2/i18n/es.json");
-        let catalogs = [("en.json", EN_CATALOG), ("es.json", ES_CATALOG)].map(|(name, json)| {
+        const PT_BR_CATALOG: &str = include_str!("static2/i18n/pt-BR.json");
+        let catalogs = [
+            ("en.json", EN_CATALOG),
+            ("es.json", ES_CATALOG),
+            ("pt-BR.json", PT_BR_CATALOG),
+        ]
+        .map(|(name, json)| {
             let catalog: serde_json::Value =
                 serde_json::from_str(json).expect("the shipped catalog is valid JSON");
             (name, catalog)

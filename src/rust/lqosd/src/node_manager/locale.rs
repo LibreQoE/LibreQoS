@@ -415,6 +415,16 @@ mod tests {
         assert_eq!(accept_language_header(&HeaderMap::new()), None);
     }
 
+    /// The third shipped catalog resolves to its own tag rather than to English
+    /// or a regionless primary.
+    #[test]
+    fn brazilian_portuguese_is_a_served_catalog() {
+        // `dir` for pt-BR is pinned from locales.json in
+        // `js_build/src/i18n/pt_br_catalog_pin.test.mjs`; this test covers locale
+        // resolution only.
+        assert_eq!(resolve_ui_locale(Some("pt-BR"), None, None), "pt-BR");
+    }
+
     #[test]
     fn tags_without_a_catalog_fall_back_to_english() {
         for tag in ["de", "zz", "en-XA", "fr-CA"] {

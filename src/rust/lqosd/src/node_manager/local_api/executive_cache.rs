@@ -20,6 +20,7 @@ use lqos_utils::{
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,6 +33,8 @@ const COUNT_WEIGHT: f32 = 100.0;
 const MIN_HEATMAP_SAMPLES: usize = 3;
 const HEATMAP_BLOCK_SECONDS: u64 = 60;
 const BITS_PER_MEGABIT: f32 = 1_000_000.0;
+/// Head-room for the id half of a cached `row_key` (see `prefixed_row_key`).
+const ROW_KEY_ID_HINT: usize = 16;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutiveEntitySnapshot {
@@ -653,69 +656,140 @@ fn node_locator_map() -> FxHashMap<String, ExecutiveTreeLocator> {
     })
 }
 
+/// The client-visible identity of one cached row, in ONE buffer: `format!` writes
+/// through a growable formatter and billed a second allocation for keys of this
+/// shape (measured in `entity_snapshots_bills_one_key_buffer_per_entity`), and the
+/// once-per-second rebuild pays that per entity. An id longer than the hint costs
+/// one growth reallocation — still one buffer, no clone.
+fn prefixed_row_key(prefix: &str, id: impl std::fmt::Display) -> String {
+    let mut key = String::with_capacity(prefix.len() + ROW_KEY_ID_HINT);
+    key.push_str(prefix);
+    let _ = write!(key, "{id}"); // Writing into a `String` cannot fail.
+    key
+}
+
+/// One site row's client-visible key, computed from a BORROW of the locator map.
+///
+/// Non-unique node names are a SUPPORTED runtime case (`NetworkJson` explicitly
+/// counts names unique in both trees, `network.json`'s `id` is optional), and the
+/// dashboard collapses rows that share a key. Computing the key before any
+/// locator is moved out keeps the pre-W4 key form for EVERY duplicate row, so a
+/// duplicated site still collapses instead of surfacing a second entry.
+fn site_row_key(locator: Option<&ExecutiveTreeLocator>, site_name: &str) -> String {
+    locator
+        .and_then(|locator| {
+            locator
+                .node_id
+                .as_ref()
+                .map(|node_id| prefixed_row_key("site:", node_id))
+                .or_else(|| {
+                    // The Debug form of a path is the one key that cannot be
+                    // sized up front; it stays a `format!`.
+                    locator
+                        .node_path
+                        .as_ref()
+                        .map(|path| format!("site:{:?}", path))
+                })
+        })
+        .unwrap_or_else(|| prefixed_row_key("site:", site_name))
+}
+
+/// Builds the cached per-entity rows, CONSUMING the heatmap rows and the locator
+/// map: the caller hands over ownership, so every name and tree that lands in a
+/// cached row is moved, never cloned.
 fn entity_snapshots(
     circuits: Vec<CircuitHeatmapData>,
     sites: Vec<SiteHeatmapData>,
     asns: Vec<AsnHeatmapData>,
 ) -> Vec<ExecutiveEntitySnapshot> {
-    let locators = node_locator_map();
-    let mut rows = Vec::new();
-    for site in sites {
-        let row_key = locators
-            .get(&site.site_name)
-            .and_then(|locator| {
-                locator
-                    .node_id
-                    .as_ref()
-                    .map(|node_id| format!("site:{node_id}"))
-                    .or_else(|| {
-                        locator
-                            .node_path
-                            .as_ref()
-                            .map(|path| format!("site:{:?}", path))
-                    })
-            })
-            .unwrap_or_else(|| format!("site:{}", site.site_name));
+    entity_snapshots_with_locators(circuits, sites, asns, node_locator_map())
+}
+
+/// Pure core of [`entity_snapshots`]: one `String` per row for the client-visible
+/// `row_key`, and no copies of the names or locators the caller already owns.
+///
+/// Two declared edges of the move rather than clone:
+/// - an empty circuit name still needs the id twice (`label` + `circuit_id`), so
+///   that one row keeps a single copy;
+/// - the locator itself moves out once, so only the first row of a repeated site
+///   name carries the tree. Its KEY does not follow the locator: keys are
+///   computed from a borrow first (see [`site_row_key`]), so every duplicate row
+///   keeps the shared key the pre-W4 pass gave it and the dashboard collapses
+///   them, as before.
+fn entity_snapshots_with_locators(
+    circuits: Vec<CircuitHeatmapData>,
+    sites: Vec<SiteHeatmapData>,
+    asns: Vec<AsnHeatmapData>,
+    mut locators: FxHashMap<String, ExecutiveTreeLocator>,
+) -> Vec<ExecutiveEntitySnapshot> {
+    let mut rows = Vec::with_capacity(sites.len() + circuits.len() + asns.len());
+    // Pass 1: keys, borrowing the locator map (one key buffer per site, exactly
+    // the buffer its row ends up owning).
+    let mut site_keys = Vec::with_capacity(sites.len());
+    for site in &sites {
+        site_keys.push(site_row_key(locators.get(&site.site_name), &site.site_name));
+    }
+    // Pass 2: row bodies, moving the locators and names out.
+    for (site, row_key) in sites.into_iter().zip(site_keys) {
+        let SiteHeatmapData {
+            site_name,
+            blocks: heatmap,
+            qoq_blocks,
+            ..
+        } = site;
+        let tree = locators.remove(&site_name);
         rows.push(ExecutiveEntitySnapshot {
             row_key,
             entity_kind: ExecutiveEntityKind::Site,
-            label: site.site_name.clone(),
+            label: site_name,
             circuit_id: None,
             asn: None,
-            tree: locators.get(&site.site_name).cloned(),
-            heatmap: site.blocks,
-            qoq_blocks: site.qoq_blocks,
+            tree,
+            heatmap,
+            qoq_blocks,
         });
     }
     for circuit in circuits {
-        let label = if circuit.circuit_name.trim().is_empty() {
-            circuit.circuit_id.clone()
+        let CircuitHeatmapData {
+            circuit_id,
+            circuit_name,
+            blocks: heatmap,
+            qoq_blocks,
+            ..
+        } = circuit;
+        let row_key = prefixed_row_key("circuit:", &circuit_id);
+        let label = if circuit_name.trim().is_empty() {
+            circuit_id.clone()
         } else {
-            circuit.circuit_name.clone()
+            circuit_name
         };
         rows.push(ExecutiveEntitySnapshot {
-            row_key: format!("circuit:{}", circuit.circuit_id),
+            row_key,
             entity_kind: ExecutiveEntityKind::Circuit,
             label,
-            circuit_id: Some(circuit.circuit_id),
+            circuit_id: Some(circuit_id),
             asn: None,
             tree: None,
-            heatmap: circuit.blocks,
-            qoq_blocks: circuit.qoq_blocks,
+            heatmap,
+            qoq_blocks,
         });
     }
     for asn in asns {
+        let AsnHeatmapData {
+            asn: asn_number,
+            asn_name,
+            blocks: heatmap,
+        } = asn;
         rows.push(ExecutiveEntitySnapshot {
-            row_key: format!("asn:{}", asn.asn),
+            row_key: prefixed_row_key("asn:", asn_number),
             entity_kind: ExecutiveEntityKind::Asn,
-            label: asn
-                .asn_name
-                .clone()
-                .unwrap_or_else(|| format!("ASN {}", asn.asn)),
+            // Same one-buffer rule as the keys: an unnamed ASN's label is built
+            // with the prefix helper instead of a `format!` that re-bills.
+            label: asn_name.unwrap_or_else(|| prefixed_row_key("ASN ", asn_number)),
             circuit_id: None,
-            asn: Some(asn.asn),
+            asn: Some(asn_number),
             tree: None,
-            heatmap: asn.blocks,
+            heatmap,
             qoq_blocks: None,
         });
     }
@@ -932,10 +1006,94 @@ pub(crate) fn fresh_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> {
     rebuild_executive_cache_snapshot()
 }
 
+/// TEST-ONLY allocation counter for the W4 pin. It counts allocations made by
+/// the CALLING THREAD inside an armed window, so tests that run in parallel on
+/// other threads cannot inflate a measurement (a global counter plus `min` over
+/// repetitions, the W1+W2 shape, would only approximate that). Disarmed, it
+/// costs one thread-local flag check per allocation and forwards everything to
+/// `System`.
+///
+/// The ARMED flag is THREAD-LOCAL for the same reason the counter is: a second
+/// test arming a global flag while this one measures would disarm this window
+/// mid-run, and the measurement would silently come in low.
+// One `#[global_allocator]` per crate, so the harness is crate-visible: W4's
+// pins and W5's `bridge_ranking_tests` share this counter.
+#[cfg(test)]
+pub(crate) mod allocation_counter {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    thread_local! {
+        static ARMED: Cell<bool> = const { Cell::new(false) };
+        static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Counts the allocations `op` makes on this thread. Disarms even if `op`
+    /// panics, so a failing test cannot leave the counter running.
+    pub fn count_allocations(op: impl FnOnce()) -> usize {
+        struct Disarm;
+
+        impl Drop for Disarm {
+            fn drop(&mut self) {
+                let _ = ARMED.try_with(|armed| armed.set(false));
+            }
+        }
+
+        ALLOCATIONS.with(|count| count.set(0));
+        ARMED.with(|armed| armed.set(true));
+        let disarm = Disarm;
+        op();
+        drop(disarm);
+        ALLOCATIONS.with(Cell::get)
+    }
+
+    #[inline]
+    fn record() {
+        let _ = ARMED.try_with(|armed| {
+            if armed.get() {
+                let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
+            }
+        });
+    }
+
+    struct CountingAllocator;
+
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            record();
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            record();
+            unsafe { System.alloc_zeroed(layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            record();
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+
+    #[global_allocator]
+    static GLOBAL: CountingAllocator = CountingAllocator;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ExecutiveEntitySnapshot, MetricScope, top_metric_rows};
-    use crate::node_manager::local_api::executive::{ExecutiveEntityKind, ExecutiveMetric};
+    use super::{
+        ExecutiveEntitySnapshot, MetricScope, entity_snapshots, entity_snapshots_with_locators,
+        top_metric_rows,
+    };
+    use crate::node_manager::local_api::executive::{
+        ExecutiveEntityKind, ExecutiveMetric, ExecutiveTreeLocator,
+    };
+    use fxhash::FxHashMap;
+    use lqos_bus::{AsnHeatmapData, CircuitHeatmapData, SiteHeatmapData};
     use lqos_utils::temporal_heatmap::TemporalHeatmap;
 
     fn rtt_entity(label: &str, rtt_blocks: &[(usize, f32)]) -> ExecutiveEntitySnapshot {
@@ -1064,5 +1222,376 @@ mod tests {
         assert_eq!(sites.len(), 2);
         assert_eq!(sites[0].label, "Site B"); // highest download ranks first
         assert_eq!(sites[1].label, "Site A");
+    }
+
+    fn site_heatmap_row(site_name: &str) -> SiteHeatmapData {
+        SiteHeatmapData {
+            site_name: site_name.to_string(),
+            node_type: None,
+            depth: 0,
+            blocks: TemporalHeatmap::new().blocks(),
+            qoq_blocks: None,
+        }
+    }
+
+    fn circuit_heatmap_row(circuit_id: &str, circuit_name: &str) -> CircuitHeatmapData {
+        CircuitHeatmapData {
+            circuit_hash: 0,
+            circuit_id: circuit_id.to_string(),
+            circuit_name: circuit_name.to_string(),
+            blocks: TemporalHeatmap::new().blocks(),
+            qoq_blocks: None,
+        }
+    }
+
+    fn asn_heatmap_row(asn: u32, asn_name: Option<&str>) -> AsnHeatmapData {
+        AsnHeatmapData {
+            asn,
+            asn_name: asn_name.map(str::to_string),
+            blocks: TemporalHeatmap::new().blocks(),
+        }
+    }
+
+    fn tree_locator(node_id: Option<&str>, node_path: Option<&[&str]>) -> ExecutiveTreeLocator {
+        ExecutiveTreeLocator {
+            node_id: node_id.map(str::to_string),
+            node_path: node_path.map(|path| path.iter().map(|name| name.to_string()).collect()),
+            parent_index: None,
+        }
+    }
+
+    #[test]
+    fn entity_snapshots_keeps_the_client_row_key_contract() {
+        // `row_key` is the identity the executive heatmap panels de-duplicate on
+        // (`js_build/src/dashlets/executive_heatmap_panels.js`), so consuming the
+        // heatmap rows must not change one key or label: node-id site, path-only
+        // site, locator-with-neither-field site, unmatched site, circuit (named
+        // and blank-named), and ASN with and without a name.
+        let mut locators = FxHashMap::default();
+        locators.insert(
+            "Alpha".to_string(),
+            tree_locator(Some("node-1"), Some(&["Root", "Alpha"])),
+        );
+        locators.insert("Beta".to_string(), tree_locator(None, Some(&["Root", "Beta"])));
+        // A locator that carries neither a node id nor a path (REV-T4): the row
+        // must fall back to its name key and still keep the tree.
+        locators.insert("Delta".to_string(), tree_locator(None, None));
+
+        let rows = entity_snapshots_with_locators(
+            vec![
+                circuit_heatmap_row("c-1", "Circuit One"),
+                circuit_heatmap_row("c-2", ""),
+            ],
+            vec![
+                site_heatmap_row("Alpha"),
+                site_heatmap_row("Beta"),
+                site_heatmap_row("Gamma"),
+                site_heatmap_row("Delta"),
+            ],
+            vec![asn_heatmap_row(64500, Some("Example")), asn_heatmap_row(64501, None)],
+            locators,
+        );
+
+        let keys: Vec<&str> = rows.iter().map(|row| row.row_key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "site:node-1",
+                "site:[\"Root\", \"Beta\"]",
+                "site:Gamma",
+                "site:Delta",
+                "circuit:c-1",
+                "circuit:c-2",
+                "asn:64500",
+                "asn:64501",
+            ]
+        );
+        let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Alpha",
+                "Beta",
+                "Gamma",
+                "Delta",
+                "Circuit One",
+                "c-2",
+                "Example",
+                "ASN 64501",
+            ]
+        );
+        assert_eq!(
+            rows[0].tree.as_ref().and_then(|tree| tree.node_id.as_deref()),
+            Some("node-1")
+        );
+        // REV-T4: neither `node_id` nor `node_path` set => name key, tree kept.
+        assert!(
+            rows[3].tree.is_some(),
+            "a locator with no id and no path must still travel into the row"
+        );
+        assert_eq!(rows[4].circuit_id.as_deref(), Some("c-1"));
+        assert_eq!(rows[6].asn, Some(64500));
+    }
+
+    #[test]
+    fn entity_snapshots_moves_names_and_locators_instead_of_cloning() {
+        // W4's PRIMARY effect, proven without an allocator: a moved `String`
+        // keeps its heap buffer, so buffer identity distinguishes a move from a
+        // clone. Every field below is charged to the row the tracker handed over.
+        let mut locators = FxHashMap::default();
+        let site_locator = tree_locator(Some("node-1"), Some(&["Root", "Alpha"]));
+        let node_id_buffer = site_locator.node_id.as_ref().expect("node id").as_ptr();
+        let node_path_buffer = site_locator.node_path.as_ref().expect("path").as_ptr();
+        locators.insert("Alpha".to_string(), site_locator);
+
+        let site = site_heatmap_row("Alpha");
+        let site_label_buffer = site.site_name.as_ptr();
+        let circuit = circuit_heatmap_row("c-1", "Circuit One");
+        let circuit_label_buffer = circuit.circuit_name.as_ptr();
+        let circuit_id_buffer = circuit.circuit_id.as_ptr();
+        let asn = asn_heatmap_row(64500, Some("Example"));
+        let asn_label_buffer = asn.asn_name.as_ref().expect("asn name").as_ptr();
+
+        let rows = entity_snapshots_with_locators(vec![circuit], vec![site], vec![asn], locators);
+
+        assert_eq!(
+            rows[0].label.as_ptr(),
+            site_label_buffer,
+            "the site name must be moved into the row, not cloned"
+        );
+        let tree = rows[0].tree.as_ref().expect("site tree");
+        assert_eq!(
+            tree.node_id.as_ref().expect("node id").as_ptr(),
+            node_id_buffer,
+            "the locator's node id must be moved out of the locator map"
+        );
+        assert_eq!(
+            tree.node_path.as_ref().expect("node path").as_ptr(),
+            node_path_buffer,
+            "the locator's node path must be moved out of the locator map"
+        );
+        assert_eq!(
+            rows[1].label.as_ptr(),
+            circuit_label_buffer,
+            "the circuit name must be moved into the row, not cloned"
+        );
+        assert_eq!(
+            rows[1].circuit_id.as_deref().map(str::as_ptr),
+            Some(circuit_id_buffer),
+            "the circuit id must be moved into the row, not cloned"
+        );
+        assert_eq!(
+            rows[2].label.as_ptr(),
+            asn_label_buffer,
+            "the ASN name must be moved into the row, not cloned"
+        );
+    }
+
+    #[test]
+    fn entity_snapshots_bills_one_key_buffer_per_entity() {
+        // W4 PIN: the once-per-second snapshot pass allocates one buffer per
+        // entity (its `row_key`), plus the one declared blank-name copy and the
+        // one `format!`-built path key; labels, ids, locators and heatmaps are
+        // moved out of the heatmap rows the tracker already built.
+        //
+        // The world below is 13 entities and exercises every allocating branch:
+        // 3 node-id sites + 1 path-only site (its key is still a `format!`) + 1
+        // unmatched site; 4 named circuits + 1 blank-named circuit (the declared
+        // single copy); 2 named ASNs + 1 unnamed ASN (its label is one buffer).
+        // A reintroduced `label.clone()`, `locators.get(..).cloned()`, or a second
+        // per-entity `format!` bills at least one more per entity and turns this
+        // red.
+        let world = || {
+            let mut locators = FxHashMap::default();
+            for index in 0..3 {
+                locators.insert(
+                    format!("Site {index}"),
+                    tree_locator(Some(&format!("node-{index}")), None),
+                );
+            }
+            locators.insert("Path Only".to_string(), tree_locator(None, Some(&["Root"])));
+            let mut circuits = (0..4)
+                .map(|index| circuit_heatmap_row(&format!("c-{index}"), &format!("Circuit {index}")))
+                .collect::<Vec<_>>();
+            circuits.push(circuit_heatmap_row("c-blank", ""));
+            let mut sites = (0..4).map(|index| site_heatmap_row(&format!("Site {index}"))).collect::<Vec<_>>();
+            sites.push(site_heatmap_row("Path Only"));
+            sites.push(site_heatmap_row("Unmatched"));
+            let mut asns = (0..2u32)
+                .map(|index| asn_heatmap_row(64_500 + index, Some("Example")))
+                .collect::<Vec<_>>();
+            asns.push(asn_heatmap_row(64_502, None));
+            (circuits, sites, asns, locators)
+        };
+        // Worlds are built OUTSIDE every counted window; `pop` allocates nothing.
+        let mut worlds = (0..3).map(|_| world()).collect::<Vec<_>>();
+        let mut measured = Vec::new();
+        while let Some((circuits, sites, asns, locators)) = worlds.pop() {
+            let entities = circuits.len() + sites.len() + asns.len();
+            measured.push((
+                entities,
+                super::allocation_counter::count_allocations(|| {
+                    std::hint::black_box(entity_snapshots_with_locators(
+                        circuits, sites, asns, locators,
+                    ));
+                }),
+            ));
+        }
+        for (entities, allocations) in measured {
+            // Term-by-term budget: one key buffer per entity, plus the rows `Vec`,
+            // the sites' key pass `Vec`, the blank-named circuit's second buffer,
+            // and one extra buffer for each `format!` still in the pass (the
+            // path-only site's key, the unnamed ASN's label).
+            let expected = entities
+                + 1 // rows `Vec::with_capacity`
+                + 1 // the sites' key pass `Vec::with_capacity`
+                + 1 // blank-named circuit: `label` copies `circuit_id`
+                + 1 // path-only site key: `format!("site:{:?}", path)`
+                + 1; // unnamed ASN label: its own buffer beside the row key
+            assert_eq!(
+                allocations, expected,
+                "the snapshot pass must bill one key buffer per entity plus its declared \
+                 extras: {entities} entities => {expected} allocations, measured {allocations}. \
+                 A per-entity name/tree clone or a second formatted key is back."
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_site_names_keep_the_shared_key_and_move_the_locator_once() {
+        // Duplicate node names are a SUPPORTED runtime case (`network.json` counts
+        // names unique in both trees; `node_locator_map` is first-wins) and the
+        // dashboard collapses rows that share a key. Both rows must therefore keep
+        // the pre-W4 shared key form — REV-C1 — while the locator itself still
+        // moves out to the first row only.
+        let mut locators = FxHashMap::default();
+        locators.insert("Alpha".to_string(), tree_locator(Some("node-1"), None));
+
+        let rows = entity_snapshots_with_locators(
+            Vec::new(),
+            vec![site_heatmap_row("Alpha"), site_heatmap_row("Alpha")],
+            Vec::new(),
+            locators,
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].row_key, "site:node-1",
+            "the first duplicate keeps the locator's key"
+        );
+        assert_eq!(
+            rows[1].row_key, "site:node-1",
+            "the second duplicate shares the SAME key, so the dashboard collapses \
+             the pair instead of showing the site twice"
+        );
+        assert!(
+            rows[0].tree.is_some(),
+            "the locator moves out to the first row"
+        );
+        assert!(
+            rows[1].tree.is_none(),
+            "and is not cloned for the duplicate"
+        );
+        assert_eq!(rows[0].label, "Alpha");
+        assert_eq!(rows[1].label, "Alpha");
+    }
+
+    /// Smallest possible network tree for the entry-point wiring test: `Root`
+    /// plus one named, id-bearing site.
+    fn network_json_node(
+        name: &str,
+        id: Option<&str>,
+        parents: Vec<usize>,
+        immediate_parent: Option<usize>,
+    ) -> lqos_config::NetworkJsonNode {
+        lqos_config::NetworkJsonNode {
+            name: name.to_string(),
+            id: id.map(str::to_string),
+            max_throughput: (0.0, 0.0),
+            current_throughput: lqos_utils::units::DownUpOrder::zeroed(),
+            current_packets: lqos_utils::units::DownUpOrder::zeroed(),
+            current_tcp_packets: lqos_utils::units::DownUpOrder::zeroed(),
+            current_udp_packets: lqos_utils::units::DownUpOrder::zeroed(),
+            current_icmp_packets: lqos_utils::units::DownUpOrder::zeroed(),
+            current_tcp_retransmits: lqos_utils::units::DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: lqos_utils::units::DownUpOrder::zeroed(),
+            current_rtt_flows: lqos_utils::units::DownUpOrder::zeroed(),
+            current_marks: lqos_utils::units::DownUpOrder::zeroed(),
+            current_drops: lqos_utils::units::DownUpOrder::zeroed(),
+            rtt_buffer: Default::default(),
+            parents,
+            immediate_parent,
+            node_type: None,
+            latitude: None,
+            longitude: None,
+            active_attachment_name: None,
+            heatmap: None,
+        }
+    }
+
+    /// Installs a published network tree for the duration of a test and restores
+    /// the previous nodes on drop. Holds the crate-wide `network.json` lock for the
+    /// same lifetime: `bridge_analytics` publishes trees in its own tests, and its
+    /// module lock does not exclude this one, so the tree is pinned here.
+    struct InstalledTree {
+        _network_guard: std::sync::MutexGuard<'static, ()>,
+        previous: Vec<lqos_config::NetworkJsonNode>,
+    }
+
+    impl Drop for InstalledTree {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.previous);
+            lqos_network_devices::with_network_json_write(|net_json| {
+                net_json.nodes = previous;
+            });
+        }
+    }
+
+    fn install_tree(nodes: Vec<lqos_config::NetworkJsonNode>) -> InstalledTree {
+        let network_guard = crate::test_support::network_json_test_lock()
+            .lock()
+            .expect("network.json test lock should not be poisoned");
+        let previous = lqos_network_devices::with_network_json_write(|net_json| {
+            std::mem::replace(&mut net_json.nodes, nodes)
+        });
+        InstalledTree {
+            _network_guard: network_guard,
+            previous,
+        }
+    }
+
+    #[test]
+    fn entity_snapshots_locates_site_rows_at_the_production_entry_point() {
+        // REV-C2: every other test calls `entity_snapshots_with_locators`, so
+        // replacing `node_locator_map()` with an empty map inside the production
+        // `entity_snapshots` would keep the suite green while every site row lost
+        // its tree and its node-id key. This goes through the real entry point
+        // with a real tree, so that regression turns red.
+        let _runtime = crate::test_support::runtime_config_test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _tree = install_tree(vec![
+            network_json_node("Root", Some("root"), Vec::new(), None),
+            network_json_node("Entry Site", Some("node-entry"), vec![0], Some(0)),
+        ]);
+
+        let rows = entity_snapshots(Vec::new(), vec![site_heatmap_row("Entry Site")], Vec::new());
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].row_key, "site:node-entry",
+            "the entry point must key the row off the tree node id, not the site name"
+        );
+        let tree = rows[0]
+            .tree
+            .as_ref()
+            .expect("the production entry point must locate the site row");
+        assert_eq!(tree.node_id.as_deref(), Some("node-entry"));
+        assert_eq!(tree.parent_index, Some(1));
+        assert_eq!(
+            tree.node_path.as_deref(),
+            Some(&["Root".to_string(), "Entry Site".to_string()][..]),
+            "the tree path comes from the published network tree"
+        );
     }
 }

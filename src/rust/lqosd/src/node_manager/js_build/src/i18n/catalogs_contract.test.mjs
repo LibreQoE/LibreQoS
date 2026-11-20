@@ -5,10 +5,12 @@
 // shell and the standalone pages check "differs from English" for the keys their
 // screens render. That leaves every other message: a copy-paste that lands an
 // English string in `es.json` is invisible to all of them. This file checks the
-// whole catalog, variant by variant, so a new key cannot ship untranslated.
+// whole catalog, variant by variant, so a new key cannot ship untranslated, and
+// bans a retired page label in all three shipped catalogs and in the inline
+// fallbacks that mirror them.
 
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync, readdirSync} from "node:fs";
 import {dirname, resolve} from "node:path";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
@@ -17,9 +19,12 @@ import {t} from "./index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CATALOG_DIR = resolve(HERE, "../../../static2/i18n");
+const STATIC_DIR = resolve(HERE, "../../../static2");
+const STATIC_PAGES = readdirSync(STATIC_DIR).filter((name) => name.endsWith(".html")).sort();
 
 const EN = JSON.parse(readFileSync(resolve(CATALOG_DIR, "en.json"), "utf8"));
 const ES = JSON.parse(readFileSync(resolve(CATALOG_DIR, "es.json"), "utf8"));
+const PT = JSON.parse(readFileSync(resolve(CATALOG_DIR, "pt-BR.json"), "utf8"));
 
 /**
  * The minimum `index.js` and `locale.mjs` need: the catalog globals, the
@@ -142,7 +147,7 @@ test("every Spanish plural message defines the categories Spanish selects", () =
 // Interpolated sentences are the catalog's riskiest text: the fixed words are
 // translated once, but a count or a field label arrives at render time. These
 // guards pin the two properties the S3 review established, so an edit that
-// restores a bare `{field}` or puts a count in front of a Spanish plural noun
+// restores a bare `{field}` or puts a count in front of a translated plural noun
 // fails here rather than in an alert nobody reads. The sentences are rendered
 // by the shipped `t()`, so the digits are Intl's: a local `String(params[name])`
 // mirror (what this file used to keep) could not observe grouping or a plural.
@@ -160,7 +165,6 @@ const FIELD_MESSAGES = [
 ];
 
 test("count summaries read for zero, one and several", () => {
-    installBrowser(ES, "es");
     const cases = [
         {start: 0, end: 0, total: 0, circuits: 0},
         {start: 1, end: 1, total: 1, circuits: 1},
@@ -169,24 +173,34 @@ test("count summaries read for zero, one and several", () => {
         // and no hand-built string can stand in for it.
         {start: 1, end: 20, total: 12_345, circuits: 3},
     ];
-    for (const key of COUNT_MESSAGES) {
-        for (const params of cases) {
-            const text = t(key, params);
-            assert.doesNotMatch(text, /\{[a-z_]+\}/, `es.json "${key}" left a placeholder unfilled`);
-            // Labelling the count first is what keeps `1` away from a plural
-            // noun ("1 dispositivos"): the number must not lead one.
-            assert.doesNotMatch(
-                text,
-                /\b1\s+(?:dispositivos|circuitos)\b/,
-                `es.json "${key}" puts a bare singular count in front of a plural noun`,
+    // Both translated catalogs take the same guard, so a count that leads a
+    // plural noun fails in either language.
+    for (const [lang, catalog] of [["es", ES], ["pt-BR", PT]]) {
+        installBrowser(catalog, lang);
+        for (const key of COUNT_MESSAGES) {
+            for (const params of cases) {
+                const text = t(key, params);
+                assert.doesNotMatch(text, /\{[a-z_]+\}/, `${lang}.json "${key}" left a placeholder unfilled`);
+                // Labelling the count first is what keeps `1` away from a plural
+                // noun ("1 dispositivos"): the number must not lead one.
+                assert.doesNotMatch(
+                    text,
+                    /\b1\s+(?:dispositivos|circuitos)\b/,
+                    `${lang}.json "${key}" puts a bare singular count in front of a plural noun`,
+                );
+            }
+            const summary = t(key, {start: 1, end: 20, total: 12_345, circuits: 3});
+            assert.match(summary, /12\.345/, `${lang}.json "${key}" must group the count by the active locale`);
+            // The branch really rendered its own catalog: each locale has its
+            // own verb for these sentences, so a branch that silently kept the
+            // other catalog fails here instead of passing on the shared words.
+            assert.match(
+                summary,
+                lang === "pt-BR" ? /Exibindo/ : /Mostrando/,
+                `${lang}.json "${key}" must render its own sentence`,
             );
         }
     }
-    assert.match(
-        t("config.devices.showing_all", {start: 1, end: 20, total: 12_345, circuits: 3}),
-        /12\.345/,
-        "the count must be grouped by the active locale",
-    );
 });
 
 test("validation sentences keep the field label inside a quoted frame", () => {
@@ -218,5 +232,73 @@ test("validation sentences keep the field label inside a quoted frame", () => {
                 `es.json "${key}" repeats "${label}" outside its quotes`,
             );
         }
+    }
+});
+
+// Commit 8942830e2 renamed the page to "Data Sources". The catalog is what the
+// page renders, and the static2 pages that carry an inline fallback for these
+// keys mirror `en.json` word for word, so the retired label is banned in the
+// catalogs and in every static2 page, and the fallbacks are compared: a
+// fallback that drifted back would otherwise stay invisible until the catalog
+// failed to load.
+const RETIRED_PAGE_LABEL_DASHED = /integra(?:tion|ci[oó]n|[cç][aã]o)\s*[-–—]\s*com(?:mon|[uú]n|um)/i;
+const RETIRED_PAGE_LABEL_SPACED = /integra(?:tion|ci[oó]n|[cç][aã]o)\s+(com(?:mon|un|ún|um))/i;
+// The only lexemes the space form may carry: the label is a name, so it is
+// capitalised, while ordinary prose ("uma integração comum a todos") is not.
+const RETIRED_LEXEMES = new Set(["Common", "Comun", "Común", "Comum"]);
+
+/**
+ * Whether `text` carries the retired page label in either shape it shipped in:
+ * the dash form in any case ("Integration - Common", "Integração-Comum",
+ * "Integración – común"), or the space form with the label's own capitalised
+ * lexeme. "Integration (Common)" would slip through; no catalog or page ever
+ * wrote that shape, and the dash form covers every variant the rename produced.
+ */
+function retiredPageName(text) {
+    if (RETIRED_PAGE_LABEL_DASHED.test(text)) return true;
+    const spaced = text.match(RETIRED_PAGE_LABEL_SPACED);
+    return Boolean(spaced) && RETIRED_LEXEMES.has(spaced[1]);
+}
+
+// [page, key, tag] for every inline fallback that names the page. These four
+// are the complete set for this class: every static2 element whose fallback
+// text carries the page name. The two compile_mode_help paragraphs are empty in
+// their pages (their bundles render them from the catalog), so they have no
+// fallback to compare.
+const PAGE_NAME_FALLBACKS = [
+    ["config_uisp.html", "config.uisp.subtitle", "div"],
+    ["config_splynx.html", "config.splynx.subtitle", "div"],
+    ["setup_runtime.html", "setup_runtime.custom.step_integration", "li"],
+    ["setup_runtime.html", "config.common.menu.integration", "a"],
+];
+
+test("no shipped catalog names the retired page, and its inline fallbacks mirror en.json", () => {
+    for (const [tag, catalog] of [["en", EN], ["es", ES], ["pt-BR", PT]]) {
+        for (const [key, message] of Object.entries(catalog.messages)) {
+            for (const [category, text] of variants(message)) {
+                const label = category === "" ? key : `${key}.${category}`;
+                assert.ok(
+                    !retiredPageName(text),
+                    `${tag}.json "${label}" still names the retired page`,
+                );
+            }
+        }
+    }
+    for (const page of STATIC_PAGES) {
+        assert.ok(
+            !retiredPageName(readFileSync(resolve(STATIC_DIR, page), "utf8")),
+            `static2/${page} still names the retired page`,
+        );
+    }
+    for (const [page, key, tag] of PAGE_NAME_FALLBACKS) {
+        const html = readFileSync(resolve(STATIC_DIR, page), "utf8");
+        const element = new RegExp(
+            `<${tag}\\b[^>]*data-i18n="${key.replaceAll(".", "\\.")}"[^>]*>([\\s\\S]*?)</${tag}>`,
+        );
+        const found = html.match(element);
+        assert.ok(found, `static2/${page} must carry a <${tag}> fallback for ${key}`);
+        const text = found[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        assert.ok(text, `static2/${page} "${key}" must carry the inline fallback text`);
+        assert.equal(text, EN.messages[key], `static2/${page} "${key}" must mirror en.json`);
     }
 });

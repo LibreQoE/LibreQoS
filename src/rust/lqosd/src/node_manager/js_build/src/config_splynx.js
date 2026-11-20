@@ -49,7 +49,7 @@ function updateConfig() {
 
 // Render the configuration menu
 renderConfigMenu('splynx');
-// The compile-mode hint wraps `Integration - Common` in `<code>`, which the DOM
+// The compile-mode hint wraps `Data Sources` in `<code>`, which the DOM
 // applier cannot keep: the paragraph is empty in the page and rendered here.
 renderMarkupText({splynxCompileModeHelp: tHtml("config.splynx.compile_mode_help")});
 
