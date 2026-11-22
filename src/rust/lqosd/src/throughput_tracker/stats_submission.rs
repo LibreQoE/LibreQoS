@@ -1200,7 +1200,10 @@ fn submit_topology_to_lts_if_changed(now: u64) -> bool {
                 && let Err(err) =
                     write_insight_topology_debug_snapshot(config.as_ref(), &raw_string)
             {
-                warn!("Unable to write Insight topology debug snapshot. {err:?}");
+                warn!(
+                    "Unable to write Insight topology debug snapshot {}: {err:?}",
+                    insight_topology_debug_path(config.as_ref()).display()
+                );
             }
             match serde_json::from_str::<RawNetJs>(&raw_string) {
                 Err(e) => warn!("Unable to parse Insight logical topology JSON. {e:?}"),

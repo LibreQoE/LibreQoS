@@ -10,7 +10,7 @@ use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
-use tracing::info;
+use tracing::{debug, warn};
 
 fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
     let circuit_hash = circuit_hash_for_id(circuit)?;
@@ -231,11 +231,11 @@ pub(super) async fn circuit_watcher(
 
         if let Ok(payload) = encode_ws_message(&response) {
             if !try_send_private_payload(&tx, payload, "CircuitWatcher") {
-                info!("CircuitWatcher channel is gone");
+                debug!("CircuitWatcher channel is gone");
                 break;
             }
         } else {
-            info!("CircuitWatcher encode failed");
+            warn!("CircuitWatcher encode failed");
             break;
         }
     }

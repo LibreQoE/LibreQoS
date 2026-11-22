@@ -20,7 +20,7 @@ use tokio::{
     task::spawn_blocking,
     time::timeout,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use super::BUS_SOCKET_DIRECTORY;
 use super::protocol::{decode_session_cbor, encode_reply_cbor, read_frame, write_frame};
@@ -285,7 +285,10 @@ impl UnixSocketServer {
         let unix_path = CString::new(BUS_SOCKET_DIRECTORY);
         let Ok(unix_path) = unix_path else {
             if unix_path.is_err() {
-                error!("Unable to create C-compatible path string. This should never happen.");
+                error!(
+                    "Unable to create a C-compatible path string for \
+                     {BUS_SOCKET_DIRECTORY}. This should never happen."
+                );
             }
             return Err(UnixSocketServerError::CString);
         };
@@ -332,7 +335,7 @@ impl UnixSocketServer {
             return Err(UnixSocketServerError::BindFail);
         };
         Self::make_socket_public()?;
-        info!("Listening on: {}", BUS_SOCKET_PATH);
+        warn!("Listening on: {}", BUS_SOCKET_PATH);
         loop {
             tokio::select!(
               ret = bus_rx.recv() => {

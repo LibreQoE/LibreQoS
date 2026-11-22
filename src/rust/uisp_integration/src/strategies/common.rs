@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uisp::{DataLink, Device, Site};
 
 pub(crate) struct UispData {
@@ -634,7 +634,7 @@ impl UispData {
                 (ap, sites_vec)
             })
             .collect::<HashMap<_, _>>();
-        info!(
+        debug!(
             client_sites = client_site_count,
             mapped_parents = mappings.len(),
             elapsed_ms = started.elapsed().as_millis(),

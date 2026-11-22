@@ -15,7 +15,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize},
     time::Duration,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use zerocopy::IntoBytes;
 
 impl HeimdallEvent {
@@ -264,29 +264,29 @@ pub fn n_second_pcap(session_id: usize) -> Option<String> {
         let mut out = match File::create(path) {
             Ok(out) => out,
             Err(err) => {
-                info!("Unable to create {filename}: {err:?}");
+                warn!("Unable to create {filename}: {err:?}");
                 session.dump_filename = None;
                 return None;
             }
         };
         if let Err(err) = out.write_all(PcapFileHeader::new().as_bytes()) {
-            info!("Unable to write to {filename}: {err:?}");
+            warn!("Unable to write to {filename}: {err:?}");
             return None;
         }
 
         for e in session.data.iter() {
             let p = PcapPacketHeader::from_heimdall(&e);
             if let Err(err) = out.write_all(p.as_bytes()) {
-                info!("Unable to write to {filename}: {:?}", err);
+                warn!("Unable to write to {filename}: {:?}", err);
                 return None;
             }
             if e.size < PACKET_OCTET_SIZE as u32 {
                 if let Err(err) = out.write_all(&e.packet_data[0..e.size as usize]) {
-                    info!("Unable to write to {filename}: {:?}", err);
+                    warn!("Unable to write to {filename}: {:?}", err);
                     return None;
                 }
             } else if let Err(err) = out.write_all(&e.packet_data) {
-                info!("Unable to write to {filename}: {:?}", err);
+                warn!("Unable to write to {filename}: {:?}", err);
                 return None;
             }
         }

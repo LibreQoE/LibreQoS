@@ -235,6 +235,24 @@ test("validation sentences keep the field label inside a quoted frame", () => {
     }
 });
 
+// The unlicensed cap notice is the licence funnel's own sentence: the limit
+// and the Buy-a-license anchor travel inside one message, and `{url}` is the
+// anchor's href, so a locale that drops the anchor or hardcodes a
+// destination breaks the funnel in that language only. The extractor checks
+// placeholder parity, never markup, so each locale's anchor shape is pinned
+// here; `.+` requires link text between the tags, not visible text.
+test("every locale's unlicensed cap notice carries the Buy-a-license anchor", () => {
+    for (const [tag, catalog] of [["en", EN], ["es", ES], ["pt-BR", PT]]) {
+        const message = catalog.messages["config.lts.alert.unlicensed_cap"];
+        assert.equal(typeof message, "string", `${tag}.json must define "config.lts.alert.unlicensed_cap"`);
+        assert.match(
+            message,
+            /<a href="\{url\}">.+<\/a>/,
+            `${tag}.json "config.lts.alert.unlicensed_cap" must keep the anchor on the {url} placeholder`,
+        );
+    }
+});
+
 // Commit 8942830e2 renamed the page to "Data Sources". The catalog is what the
 // page renders, and the static2 pages that carry an inline fallback for these
 // keys mirror `en.json` word for word, so the retired label is banned in the

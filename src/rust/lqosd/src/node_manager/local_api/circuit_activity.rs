@@ -370,7 +370,10 @@ fn bridge_flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
 ///   Each direction is ×8 to bits/s (the row fields saturate at `u32::MAX`);
 ///   `sort_rate_bps` is the exact `(down+up)*8`;
 /// - `tcp_retransmits` and the merged RTT p50 fill the DOWN slot only;
-/// - the retransmit % uses the scope-matched `tcp_sent_packets` denominator;
+/// - the retransmit rate uses the scope-matched `tcp_sent_packets` denominator
+///   and is a FRACTION (0.03 = 3 %), the same unit as the live-flow producer
+///   and what circuit.js `formatRetransmitFraction` expects (lqos-fh3: a ×100
+///   percent here rendered 12 % as 1,224 %);
 /// - the PACKETS columns and QoO stay honest-empty (no wire source at this rev).
 ///
 /// Asymmetry preserved (pre-existing; do not "fix" here): the interval-delta
@@ -409,12 +412,12 @@ fn bridge_row_from_flow(
     let rtt_up_nanos =
         crate::bridge_analytics::translate::percentile_nanos(&flow.rtt_samples_up_us).unwrap_or(0);
     let retransmit_down_pct = if flow.tcp_sent_packets_down > 0 {
-        (flow.tcp_retransmits_down as f64 / flow.tcp_sent_packets_down as f64) * 100.0
+        flow.tcp_retransmits_down as f64 / flow.tcp_sent_packets_down as f64
     } else {
         0.0
     };
     let retransmit_up_pct = if flow.tcp_sent_packets_up > 0 {
-        (flow.tcp_retransmits_up as f64 / flow.tcp_sent_packets_up as f64) * 100.0
+        flow.tcp_retransmits_up as f64 / flow.tcp_sent_packets_up as f64
     } else {
         0.0
     };
@@ -1080,6 +1083,17 @@ mod tests {
         assert_eq!(row.packets_sent_up, 200);
         assert_eq!(row.tcp_retransmits_down, 5);
         assert_eq!(row.tcp_retransmits_up, 4);
+        // lqos-fh3: both producers emit a FRACTION (the bridge path pins the same).
+        assert!(
+            (row.retransmit_down_pct - 0.05).abs() < 1e-12,
+            "{}",
+            row.retransmit_down_pct
+        );
+        assert!(
+            (row.retransmit_up_pct - 0.02).abs() < 1e-12,
+            "{}",
+            row.retransmit_up_pct
+        );
         assert_eq!(row.rtt_down_nanos, 12_000_000);
         assert_eq!(row.rtt_up_nanos, 34_000_000);
         assert_eq!(row.qoo_down, Some(77.0));
@@ -1198,7 +1212,12 @@ mod bridge_active_flow_tests {
         assert_eq!(row.packets_sent_up, 50);
         assert_eq!(row.tcp_retransmits_down, 3);
         assert_eq!(row.tcp_retransmits_up, 0);
-        assert_eq!(row.retransmit_down_pct, 3.0);
+        // A fraction, not a percent (lqos-fh3): 3 / 100 TCP packets = 0.03.
+        assert!(
+            (row.retransmit_down_pct - 0.03).abs() < 1e-12,
+            "{}",
+            row.retransmit_down_pct
+        );
         assert_eq!(row.retransmit_up_pct, 0.0);
         assert_eq!(row.rtt_down_nanos, 20_000_000, "down-direction median");
         assert_eq!(row.rtt_up_nanos, 40_000_000, "up-direction median");

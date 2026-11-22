@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
 
@@ -73,25 +73,25 @@ impl Caches {
     }
 
     pub async fn store(&self, tag: String, seconds: i32, data: Vec<u8>) {
-        info!("Storing cache for {} seconds: {:?}", seconds, tag);
+        debug!("Storing cache for {} seconds: {:?}", seconds, tag);
         let mut cache = self.cache.lock().await;
         let tag = CacheType::from_str(&tag);
         cache.insert((tag, seconds), (Instant::now(), data));
         drop(cache);
         let _ = self.on_update.send(tag);
-        info!("Cache stored for {} seconds: {:?}", seconds, tag);
+        debug!("Cache stored for {} seconds: {:?}", seconds, tag);
     }
 
     pub async fn get<T: Cacheable + DeserializeOwned>(&self, seconds: i32) -> Option<Vec<T>> {
-        info!("Checking cache for {} seconds: {:?}", seconds, T::tag());
+        debug!("Checking cache for {} seconds: {:?}", seconds, T::tag());
         let cache = self.cache.lock().await;
         let tag = T::tag();
         let Some((_, data)) = cache.get(&(tag, seconds)) else {
             drop(cache);
-            info!("Cache miss for {} seconds: {:?}", seconds, tag);
+            debug!("Cache miss for {} seconds: {:?}", seconds, tag);
             return None;
         };
-        info!(
+        debug!(
             "Cache hit for {} seconds {:?}. Length: {}",
             seconds,
             tag,
@@ -103,7 +103,7 @@ impl Caches {
             warn!("Failed to deserialize cache {tag:?}");
             return None;
         };
-        info!("Cache deserialized for {} seconds: {:?}", seconds, tag);
+        debug!("Cache deserialized for {} seconds: {:?}", seconds, tag);
         Some(deserialized)
     }
 }

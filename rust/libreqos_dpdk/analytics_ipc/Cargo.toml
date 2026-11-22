@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_cbor = "0.11"
 shmem-ipc = "0.3"
 thiserror = "2"
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

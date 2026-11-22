@@ -322,7 +322,7 @@ set_libreqos_operator_permissions
 
 # lqos-u5b: transition the apt sources v2 (repo.libreqos.com) -> v3
 # (packages.libreqos.com), deriving the suite from an existing v3 source (or
-# LQOS_REPO_SUITE, default beta for a v2->v3 box). No apt-get update here.
+# LQOS_REPO_SUITE, default stable for a v2->v3 box). No apt-get update here.
 if [ -x /opt/libreqos/src/libreqos-apt-source.sh ]; then
   /opt/libreqos/src/libreqos-apt-source.sh activate || true
 fi

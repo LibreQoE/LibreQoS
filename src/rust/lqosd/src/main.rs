@@ -190,8 +190,9 @@ fn main() -> Result<()> {
 
     // WP5 (`docs/wp5_seam_state_surface.md`): the reconciliation-state
     // probe — print the PERSISTED `SEAM_STATE` snapshot and exit. LEVEL-INDEPENDENT:
-    // lqosd defaults to WARN, so the `info!` emit never reaches the journal at the
-    // default; this reads the file the broker's tick writes. Diffable + one-command.
+    // the emit is `debug!` (below WARN, and compiled out of release), so it never
+    // reaches the journal at the default; this reads the file the broker's tick
+    // writes. Diffable + one-command.
     if std::env::args().any(|arg| arg == "--print-seam-state") {
         match std::fs::read_to_string("/run/libreqos/seam_state.json") {
             Ok(json) => print!("{json}"),
@@ -518,10 +519,13 @@ fn memory_debug() {
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
             let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
-                error!("Unable to write flamegraph.");
+                error!("Unable to write flamegraph to /tmp/lqosd-mem.svg");
                 continue;
             };
-            let _ = file.write_all(flamegraph_src.write().as_bytes());
+            if let Err(err) = file.write_all(flamegraph_src.write().as_bytes()) {
+                error!("Unable to write flamegraph to /tmp/lqosd-mem.svg: {err}");
+                continue;
+            }
             info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
         }
     });
@@ -1418,5 +1422,639 @@ mod tests {
         assert_eq!(mq.matches(T).count(), 4, "message_queue.rs");
         assert_eq!(ing.matches(T).count(), 1, "ingestor.rs");
         assert_eq!(ba.matches(T).count(), 1, "bridge_analytics/mod.rs");
+    }
+
+    /// log-4 repair round 1 (REV-T1), hardened in round 2: the daemon level
+    /// policy is a policy, not a local choice — a one-token revert passes every
+    /// behavioural test, so the release-visible refusals/announcements and the
+    /// expected-client lines are pinned at the source (`lts_volume_instruments_…`
+    /// style). Round 2 replaced the raw-text window heuristic with the bridge's
+    /// invocation scan (`LEVEL_PINS`): a commented-out emitter is not an
+    /// invocation, so it reds as "no emitter left" instead of passing on the
+    /// comment text, and an unrelated log call next to a pinned one no longer
+    /// false-fails.
+    #[test]
+    fn daemon_level_policy_pins_emitter_levels() {
+        let ws = include_str!("node_manager/ws.rs");
+        let auth = include_str!("node_manager/auth.rs");
+        let circuit = include_str!("node_manager/ws/single_user_channels/circuit.rs");
+        let mut failures = Vec::new();
+        let mut repeated = Vec::new();
+        for (label, src, fragment, expected) in [
+            (
+                "node_manager/ws.rs",
+                ws,
+                "Rejected websocket upgrade with cross-origin Origin header",
+                "warn!",
+            ),
+            ("node_manager/ws.rs", ws, "Websocket connected", "debug!"),
+            ("node_manager/ws.rs", ws, "Websocket handshake timed out", "debug!"),
+            ("node_manager/ws.rs", ws, "Websocket handshake ack mismatch", "warn!"),
+            ("node_manager/ws.rs", ws, "Websocket handshake completed", "debug!"),
+            (
+                "node_manager/ws.rs",
+                ws,
+                "Websocket message received before handshake complete",
+                "warn!",
+            ),
+            (
+                "node_manager/auth.rs",
+                auth,
+                "Unable to load session key for websocket auth",
+                "warn!",
+            ),
+            (
+                "node_manager/auth.rs",
+                auth,
+                "Unable to verify websocket session token",
+                "warn!",
+            ),
+            (
+                "node_manager/ws/single_user_channels/circuit.rs",
+                circuit,
+                "CircuitWatcher channel is gone",
+                "debug!",
+            ),
+            (
+                "node_manager/ws/single_user_channels/circuit.rs",
+                circuit,
+                "CircuitWatcher encode failed",
+                "warn!",
+            ),
+            (
+                "node_manager/run.rs",
+                include_str!("node_manager/run.rs"),
+                "Webserver listening on: [",
+                "warn!",
+            ),
+            (
+                "lqos_bus/src/bus/unix_socket_server.rs",
+                include_str!("../../lqos_bus/src/bus/unix_socket_server.rs"),
+                "Listening on: {}",
+                "warn!",
+            ),
+            (
+                "radius_accounting.rs",
+                include_str!("radius_accounting.rs"),
+                "RADIUS accounting listener started on",
+                "warn!",
+            ),
+            (
+                "netflow.rs",
+                include_str!("netflow.rs"),
+                "NetFlow version {version} exporter started",
+                "warn!",
+            ),
+            // log-5 repair (REV-T1): the failure the repair exists to surface. A
+            // failed stale-grant removal must stay WARN (release-visible), so a
+            // one-token demotion — which no behavioural test can see — is red.
+            // The context pin in `swept_failures_still_name_their_resource`
+            // asserts the same invocation still interpolates the path and error.
+            (
+                "lts2_sys/license_grant.rs",
+                include_str!("lts2_sys/license_grant.rs"),
+                "Unable to delete the stale Insight license grant file",
+                "warn!",
+            ),
+        ] {
+            let (mut found, duplicate) = check_level_pin(label, src, fragment, expected);
+            failures.append(&mut found);
+            repeated.extend(duplicate);
+        }
+        // Uniqueness is not a policy requirement — two arms may legitimately
+        // emit the same message — but a duplicate changes what the pin
+        // attests, so it is reported (`cargo test -- --nocapture`) rather than
+        // silently accepted or turned into a second precondition.
+        for note in &repeated {
+            println!("level-pin note: {note}");
+        }
+        assert!(
+            failures.is_empty(),
+            "a pinned daemon log line changed level or disappeared:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// One pin entry's verdict: a failure when no invocation carries `fragment`
+    /// (deleted, reworded, or commented out) and one per invocation whose level
+    /// is not `expected`; plus a note when the fragment occurs more than once.
+    fn check_level_pin(
+        label: &str,
+        src: &str,
+        fragment: &str,
+        expected: &str,
+    ) -> (Vec<String>, Option<String>) {
+        let matches = literal_levels(src, fragment);
+        if matches.is_empty() {
+            return (vec![format!("{label}: no emitter left for {fragment:?}")], None);
+        }
+        let duplicate = (matches.len() > 1).then(|| {
+            format!(
+                "{label}: {} invocations carry {fragment:?} at {matches:?}",
+                matches.len()
+            )
+        });
+        let failures = matches
+            .iter()
+            .filter(|(_, level)| *level != expected)
+            .map(|(line, level)| {
+                format!("{label}:{line}: {fragment:?} is {level}, expected {expected}")
+            })
+            .collect();
+        (failures, duplicate)
+    }
+
+    /// REV-T1's negative control: the scan (and the pin verdict built on it)
+    /// covers the four cases the raw-text window either missed or misjudged —
+    /// a promotion, a demotion, a commented-out emitter, and a duplicated
+    /// fragment. Synthetic source only; no file is touched.
+    #[test]
+    fn level_pin_scan_sees_promotions_demotions_and_comments() {
+        const FIXTURE: &str = "\
+fn f() {
+    warn!(\"promoted arm {}\", x);
+    tracing::warn!(
+        event = \"E\",
+        \"multiline arm\"
+    );
+    debug!(\"demoted arm\");
+    // warn!(\"commented arm\");
+    /* trace!(\"block-commented arm\"); */
+    warn!(\"duplicated arm\");
+    warn!(\"duplicated arm\");
+    warn!(\"mixed arm\");
+    debug!(\"mixed arm\");
+    let _ = \"promoted arm decoy\";
+}
+";
+        assert_eq!(literal_levels(FIXTURE, "promoted arm"), vec![(2, "warn!")]);
+        // The line is where the invocation opens, not where its message sits: a
+        // multi-line macro is attributed to its `warn!(` line.
+        assert_eq!(literal_levels(FIXTURE, "multiline arm"), vec![(3, "warn!")]);
+        assert!(literal_levels(FIXTURE, "commented arm").is_empty());
+        assert!(literal_levels(FIXTURE, "block-commented arm").is_empty());
+        assert_eq!(
+            literal_levels(FIXTURE, "duplicated arm"),
+            vec![(10, "warn!"), (11, "warn!")]
+        );
+        assert_eq!(
+            literal_levels(FIXTURE, "mixed arm"),
+            vec![(12, "warn!"), (13, "debug!")]
+        );
+
+        assert_eq!(
+            check_level_pin("fixture", FIXTURE, "promoted arm", "warn!"),
+            (Vec::new(), None)
+        );
+        let (failures, duplicate) = check_level_pin("fixture", FIXTURE, "demoted arm", "warn!");
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].contains("is debug!, expected warn!"), "{failures:?}");
+        assert!(duplicate.is_none());
+        assert_eq!(
+            check_level_pin("fixture", FIXTURE, "commented arm", "warn!"),
+            (
+                vec!["fixture: no emitter left for \"commented arm\"".to_string()],
+                None
+            )
+        );
+        // A duplicate at the expected level passes and is reported; a duplicate
+        // that diverges fails only on the invocation that moved.
+        let (failures, duplicate) = check_level_pin("fixture", FIXTURE, "duplicated arm", "warn!");
+        assert!(failures.is_empty(), "{failures:?}");
+        assert!(
+            duplicate.as_deref().is_some_and(|note| note.contains("2 invocations")),
+            "{duplicate:?}"
+        );
+        let (failures, duplicate) = check_level_pin("fixture", FIXTURE, "mixed arm", "warn!");
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].contains("is debug!"), "{failures:?}");
+        assert!(duplicate.as_deref().is_some_and(|note| note.contains("2 invocations")));
+    }
+
+    /// log-5 repair round 1 (REV-T1): the error-context sweep is a deliverable,
+    /// not a one-time edit. Each row is (module, source, message fragment as it
+    /// appears at the macro site, placeholders the invocation must still
+    /// interpolate); a dropped placeholder or a removed emitter is red. Levels
+    /// are not asserted here — `daemon_level_policy_pins_emitter_levels` owns
+    /// those; the bridge workspace's half of the list lives beside `LEVEL_PINS`
+    /// in `logging_policy_check::CONTEXT_PINS`.
+    #[test]
+    fn swept_failures_still_name_their_resource() {
+        let context_pins: [(&str, &str, &str, &[&str]); 23] = [
+            (
+                "lqos_config/src/etc/mod.rs",
+                include_str!("../../lqos_config/src/etc/mod.rs"),
+                "Unable to migrate configuration at",
+                &["{config_location}"],
+            ),
+            (
+                "lqos_config/src/etc/mod.rs",
+                include_str!("../../lqos_config/src/etc/mod.rs"),
+                "Unable to create backup configuration",
+                &["backup_path.display()", "config_path.display()"],
+            ),
+            (
+                "lqos_config/src/etc/mod.rs",
+                include_str!("../../lqos_config/src/etc/mod.rs"),
+                "Unable to write new configuration to",
+                &["config_path.display()"],
+            ),
+            (
+                "lqos_config/src/shaped_devices/mod.rs",
+                include_str!("../../lqos_config/src/shaped_devices/mod.rs"),
+                "Error reading Device line in",
+                &["final_path.display()"],
+            ),
+            (
+                "lqos_config/src/shaped_devices/mod.rs",
+                include_str!("../../lqos_config/src/shaped_devices/mod.rs"),
+                "Error reading CSV record in",
+                &["final_path.display()"],
+            ),
+            (
+                "uisp_integration/src/strategies/legacy_uisp_fetch.rs",
+                include_str!("../../uisp_integration/src/strategies/legacy_uisp_fetch.rs"),
+                "Error downloading devices list from UISP at",
+                &["config.uisp_integration.url"],
+            ),
+            (
+                "uisp_integration/src/strategies/legacy_uisp_fetch.rs",
+                include_str!("../../uisp_integration/src/strategies/legacy_uisp_fetch.rs"),
+                "Error downloading sites list from UISP at",
+                &["config.uisp_integration.url"],
+            ),
+            (
+                "uisp_integration/src/strategies/legacy_uisp_fetch.rs",
+                include_str!("../../uisp_integration/src/strategies/legacy_uisp_fetch.rs"),
+                "Error downloading data_links list from UISP at",
+                &["config.uisp_integration.url"],
+            ),
+            (
+                "uisp_integration/src/ethernet_advisory.rs",
+                include_str!("../../uisp_integration/src/ethernet_advisory.rs"),
+                "Unable to create circuit Ethernet metadata directory",
+                &["parent.display()"],
+            ),
+            (
+                "uisp_integration/src/ethernet_advisory.rs",
+                include_str!("../../uisp_integration/src/ethernet_advisory.rs"),
+                "Unable to write circuit Ethernet metadata to",
+                &["path.display()"],
+            ),
+            (
+                "uisp_integration/src/strategies/legacy_mikrotik.rs",
+                include_str!("../../uisp_integration/src/strategies/legacy_mikrotik.rs"),
+                "Python error running Mikrotik helper",
+                &["{code}"],
+            ),
+            (
+                "uisp_integration/src/strategies/legacy_mikrotik.rs",
+                include_str!("../../uisp_integration/src/strategies/legacy_mikrotik.rs"),
+                "Mikrotik helper",
+                &["{code}"],
+            ),
+            (
+                "lqos_bus/src/bus/unix_socket_server.rs",
+                include_str!("../../lqos_bus/src/bus/unix_socket_server.rs"),
+                "Unable to create a C-compatible path string for",
+                &["{BUS_SOCKET_DIRECTORY}"],
+            ),
+            (
+                "lqosd/src/netflow.rs",
+                include_str!("netflow.rs"),
+                "NetFlow exporter (v",
+                &["{version}", "{target}"],
+            ),
+            (
+                "lqosd/src/dynamic_circuits.rs",
+                include_str!("dynamic_circuits.rs"),
+                "Dynamic circuit persist failed for circuit",
+                &["{circuit_id}"],
+            ),
+            (
+                "lqosd/src/dynamic_circuits.rs",
+                include_str!("dynamic_circuits.rs"),
+                "Dynamic circuit removal persist failed for circuit",
+                &["{circuit_id}"],
+            ),
+            (
+                "lqosd/src/bridge_broker/mod.rs",
+                include_str!("bridge_broker/mod.rs"),
+                "bridge-broker: startup boot-manifest publish failed",
+                &["artifact_path.display()"],
+            ),
+            (
+                "lqosd/src/lts2_sys/control_channel.rs",
+                include_str!("lts2_sys/control_channel.rs"),
+                // The fragment carries `{target}` because the sibling arm on
+                // this file (`:1196`) shares the prefix and names `{remote_host}`.
+                "Failed to connect to shaper gateway server {target}",
+                &["{target}"],
+            ),
+            (
+                "lqosd/src/throughput_tracker/stats_submission.rs",
+                include_str!("throughput_tracker/stats_submission.rs"),
+                "Unable to write Insight topology debug snapshot",
+                &["insight_topology_debug_path(config.as_ref()).display()"],
+            ),
+            // Two rows for the two arms of the flamegraph write (REV-T4): the
+            // path-only fragment binds both arms, and the narrower fragment that
+            // carries `: {err}` binds the `write_all` arm alone — so dropping
+            // its cause field turns that row into "no emitter left" instead of
+            // passing on the `File::create` arm's identical prefix.
+            (
+                "lqosd/src/main.rs",
+                include_str!("main.rs"),
+                "Unable to write flamegraph to /tmp/lqosd-mem.svg",
+                &["/tmp/lqosd-mem.svg"],
+            ),
+            (
+                "lqosd/src/main.rs",
+                include_str!("main.rs"),
+                "Unable to write flamegraph to /tmp/lqosd-mem.svg: {err}",
+                &["/tmp/lqosd-mem.svg", "{err}"],
+            ),
+            (
+                "lqosd/src/lts2_sys/license_grant.rs",
+                include_str!("lts2_sys/license_grant.rs"),
+                "Failed to delete the Insight license grant file",
+                &["grant_path.display()", "{err}"],
+            ),
+            (
+                "lqosd/src/lts2_sys/license_grant.rs",
+                include_str!("lts2_sys/license_grant.rs"),
+                "Unable to delete the stale Insight license grant file",
+                &["grant_path.display()", "{err}"],
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (module, source, fragment, required) in context_pins {
+            failures.extend(context_pin_failures(module, source, fragment, required));
+        }
+        assert!(
+            failures.is_empty(),
+            "a swept failure log lost the resource it names:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// One context-pin row's verdict: "no emitter left" when the fragment is no
+    /// longer inside any live invocation, plus one entry per invocation that
+    /// dropped a required placeholder. The daemon half of
+    /// `bridge_rs::dpdk_core::logging_policy_check::context_pin_failures`,
+    /// duplicated for the same no-Cargo-edge reason as the scan itself; it is
+    /// exercised by `context_scan_reds_on_a_dropped_placeholder` so an edit that
+    /// degrades it to a presence-only check cannot pass silently (REV-T2).
+    fn context_pin_failures(
+        module: &str,
+        source: &str,
+        fragment: &str,
+        required: &[&str],
+    ) -> Vec<String> {
+        let invocations = fragment_invocations(source, fragment);
+        if invocations.is_empty() {
+            return vec![format!("{module}: no emitter left for {fragment:?}")];
+        }
+        let mut failures = Vec::new();
+        for (line, level, arguments) in invocations {
+            for token in required {
+                if !arguments.contains(token) {
+                    failures.push(format!(
+                        "{module}:{line}: {fragment:?} ({level}) no longer interpolates {token}"
+                    ));
+                }
+            }
+        }
+        failures
+    }
+
+    /// Non-vacuity control for the daemon copy of the context-pin verdict
+    /// (REV-T2): a dropped placeholder reds with the missing token, a
+    /// commented-out emitter reds as "no emitter left", and a bare-string decoy
+    /// is not an invocation. Mirrors the bridge workspace's
+    /// `context_scan_reds_on_a_dropped_placeholder`.
+    #[test]
+    fn context_scan_reds_on_a_dropped_placeholder() {
+        let fixture = "fn f() {\n    warn!(\"kept {path}\", p);\n    warn!(\"dropped\", p);\n    // warn!(\"commented {path}\", p);\n    let _ = \"decoy {path}\";\n}\n";
+        assert!(context_pin_failures("fixture", fixture, "kept", &["{path}"]).is_empty());
+        let failures = context_pin_failures("fixture", fixture, "dropped", &["{path}"]);
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(
+            failures[0].contains("no longer interpolates {path}"),
+            "{failures:?}"
+        );
+        assert_eq!(
+            context_pin_failures("fixture", fixture, "commented", &["{path}"]),
+            vec!["fixture: no emitter left for \"commented\"".to_string()]
+        );
+        assert_eq!(
+            context_pin_failures("fixture", fixture, "decoy", &["{path}"]),
+            vec!["fixture: no emitter left for \"decoy\"".to_string()]
+        );
+    }
+
+    /// Level-macro invocations (`warn!`, `tracing::debug!`, …) in `text`, as
+    /// byte offsets and macro names. Comments and literals are skipped, so a
+    /// commented-out emitter is not an invocation. Ported from
+    /// `bridge_rs::dpdk_core::logging_policy_check` (the daemon half of the
+    /// `LEVEL_PINS` scan); duplicated rather than imported because the bridge
+    /// and daemon workspaces share no dependency edge and this is test-only.
+    fn level_macro_offsets(text: &str) -> Vec<(usize, &'static str)> {
+        const LEVELS: [&str; 5] = ["error!", "warn!", "info!", "debug!", "trace!"];
+        let mut offsets = Vec::new();
+        let mut i = 0;
+        while i < text.len() {
+            if let Some(next) = skip_literal_or_comment(text, i) {
+                i = next;
+                continue;
+            }
+            let preceded_by_identifier = i > 0
+                && matches!(
+                    text.as_bytes()[i - 1],
+                    byte if byte.is_ascii_alphanumeric() || byte == b'_'
+                );
+            if !preceded_by_identifier
+                && let Some(level) = LEVELS
+                    .iter()
+                    .find(|level| text[i..].starts_with(**level))
+                    .copied()
+            {
+                // `macro_rules!` allows whitespace between `!` and `(`.
+                let after = skip_whitespace(text, i + level.len());
+                if text.as_bytes().get(after) == Some(&b'(') {
+                    offsets.push((i, level));
+                    i = after + 1;
+                    continue;
+                }
+            }
+            i = next_char_boundary(text, i);
+        }
+        offsets
+    }
+
+    /// The line and macro name of every level-macro invocation whose argument
+    /// text contains the quoted `fragment`. Empty means the emitter is gone —
+    /// deleted, reworded, or commented out — which [`check_level_pin`] reports
+    /// as a failure.
+    fn literal_levels(text: &str, fragment: &str) -> Vec<(usize, &'static str)> {
+        fragment_invocations(text, fragment)
+            .into_iter()
+            .map(|(line, level, _)| (line, level))
+            .collect()
+    }
+
+    /// Line, macro level and argument text of every level-macro invocation whose
+    /// argument text contains the quoted `fragment`. The argument text is what
+    /// [`swept_failures_still_name_their_resource`]'s placeholder assertions
+    /// read.
+    fn fragment_invocations<'a>(
+        text: &'a str,
+        fragment: &str,
+    ) -> Vec<(usize, &'static str, &'a str)> {
+        let needle = format!("\"{fragment}");
+        let mut matches = Vec::new();
+        for (offset, level) in level_macro_offsets(text) {
+            let Some(arguments) = macro_arguments(text, offset + level.len()) else {
+                continue;
+            };
+            if arguments.contains(&needle) {
+                let line = text[..offset].matches('\n').count() + 1;
+                matches.push((line, level, arguments));
+            }
+        }
+        matches
+    }
+
+    /// The parenthesised argument text of the invocation whose `!` ends at
+    /// `from`.
+    fn macro_arguments(text: &str, from: usize) -> Option<&str> {
+        let open = skip_whitespace(text, from);
+        if text.as_bytes().get(open) != Some(&b'(') {
+            return None;
+        }
+        let mut depth = 1usize;
+        let mut i = open + 1;
+        while i < text.len() {
+            if let Some(next) = skip_literal_or_comment(text, i) {
+                i = next;
+                continue;
+            }
+            match text.as_bytes()[i] {
+                b'(' => {
+                    depth += 1;
+                    i += 1;
+                }
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&text[open + 1..i]);
+                    }
+                    i += 1;
+                }
+                _ => i = next_char_boundary(text, i),
+            }
+        }
+        None
+    }
+
+    /// The index past any ASCII whitespace at `i`.
+    fn skip_whitespace(text: &str, mut i: usize) -> usize {
+        while text.as_bytes().get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
+        }
+        i
+    }
+
+    fn next_char_boundary(text: &str, i: usize) -> usize {
+        i + text[i..].chars().next().map_or(1, char::len_utf8)
+    }
+
+    /// When a string, char literal, raw string, or comment starts at `i`, the
+    /// index just past it; `None` for ordinary source.
+    fn skip_literal_or_comment(text: &str, i: usize) -> Option<usize> {
+        let bytes = text.as_bytes();
+        match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'/') => Some(
+                text[i..]
+                    .find('\n')
+                    .map_or(text.len(), |offset| i + offset + 1),
+            ),
+            b'/' if bytes.get(i + 1) == Some(&b'*') => Some(skip_block_comment(text, i)),
+            b'"' => Some(skip_quoted(text, i, b'"')),
+            b'\'' => skip_char_literal(text, i),
+            b'r' if raw_string_hashes(text, i).is_some() => Some(skip_raw_string(text, i)),
+            b'b' if bytes.get(i + 1) == Some(&b'"') => Some(skip_quoted(text, i + 1, b'"')),
+            b'b' if bytes.get(i + 1) == Some(&b'\'') => skip_char_literal(text, i + 1),
+            _ => None,
+        }
+    }
+
+    /// Just past the closing `quote` of the literal opening at `open`.
+    fn skip_quoted(text: &str, open: usize, quote: u8) -> usize {
+        let bytes = text.as_bytes();
+        let mut i = open + 1;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'\\' => i += 2,
+                byte if byte == quote => return i + 1,
+                _ => i += 1,
+            }
+        }
+        text.len()
+    }
+
+    /// A char literal (`'x'`, `'\n'`) but not a lifetime (`'a`).
+    fn skip_char_literal(text: &str, open: usize) -> Option<usize> {
+        let bytes = text.as_bytes();
+        let first = *bytes.get(open + 1)?;
+        if first == b'\\' {
+            return Some(skip_quoted(text, open, b'\''));
+        }
+        (*bytes.get(open + 2)? == b'\'').then(|| open + 3)
+    }
+
+    /// The `#` count of the raw-string opener at `i`, when `i` opens one.
+    fn raw_string_hashes(text: &str, i: usize) -> Option<usize> {
+        let bytes = text.as_bytes();
+        let mut hashes = 0;
+        let mut cursor = i + 1;
+        while bytes.get(cursor) == Some(&b'#') {
+            hashes += 1;
+            cursor += 1;
+        }
+        (bytes.get(cursor) == Some(&b'"')).then_some(hashes)
+    }
+
+    fn skip_raw_string(text: &str, open: usize) -> usize {
+        let hashes = raw_string_hashes(text, open).expect("checked by the caller");
+        let quote = open + 1 + hashes;
+        let terminator = format!("\"{}", "#".repeat(hashes));
+        text[quote + 1..]
+            .find(&terminator)
+            .map_or(text.len(), |offset| quote + 1 + offset + terminator.len())
+    }
+
+    /// Nested `/* ... */` comments are legal in Rust.
+    fn skip_block_comment(text: &str, open: usize) -> usize {
+        let bytes = text.as_bytes();
+        let mut depth = 0usize;
+        let mut i = open;
+        while i < bytes.len() {
+            if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                depth += 1;
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                depth -= 1;
+                i += 2;
+                if depth == 0 {
+                    return i;
+                }
+                continue;
+            }
+            i += 1;
+        }
+        text.len()
     }
 }

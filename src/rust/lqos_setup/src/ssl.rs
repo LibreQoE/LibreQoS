@@ -21,9 +21,9 @@ const INTERNAL_CA_CERT_PATH: &str =
     "/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt";
 const INSTALL_CADDY_SCRIPT: &str = "install_caddy.sh";
 const DISABLE_CADDY_SCRIPT: &str = "disable_caddy.sh";
-// Driver ruling 2026-11-12: the BIND is the network control. The direct WebUI
-// listener defaults to loopback, never a wildcard.
-const RUNTIME_DIRECT_LISTEN: &str = "127.0.0.1:9123";
+// With SSL on, lqosd listens on loopback only and Caddy fronts it. With SSL
+// off, an unset `webserver_listen` means lqosd's own default (0.0.0.0:9123,
+// the beta20.8 ruling), so disabling SSL restores "unset", never loopback.
 const RUNTIME_SECURE_LISTEN: &str = "127.0.0.1:9123";
 const WEB_UPSTREAM: &str = "127.0.0.1:9123";
 const DELAYED_SWITCH_SHELL: &str = "/bin/sh";
@@ -256,18 +256,21 @@ fn apply_ssl_to_config(
             .map_err(anyhow::Error::msg)?,
         preferred_host,
     );
-    let previous_webserver_listen = config
-        .webserver_listen
-        .as_ref()
-        .filter(|listen| listen.as_str() != RUNTIME_SECURE_LISTEN)
-        .cloned()
-        .or_else(|| {
-            config
-                .ssl
-                .as_ref()
-                .and_then(|ssl| ssl.previous_webserver_listen.clone())
-        })
-        .or_else(|| Some(RUNTIME_DIRECT_LISTEN.to_string()));
+    let ssl_active = config.ssl.as_ref().is_some_and(|ssl| ssl.enabled);
+    let current_listen = non_blank(config.webserver_listen.as_deref());
+    // Re-enabling over an active SSL setup keeps the listener recorded the
+    // first time; otherwise the current listener (None = lqosd's default) is
+    // what disable must restore.
+    let previous_webserver_listen = if ssl_active
+        && current_listen.as_deref() == Some(RUNTIME_SECURE_LISTEN)
+    {
+        config
+            .ssl
+            .as_ref()
+            .and_then(|ssl| non_blank(ssl.previous_webserver_listen.as_deref()))
+    } else {
+        current_listen
+    };
     config.webserver_listen = Some(RUNTIME_SECURE_LISTEN.to_string());
     config.ssl = Some(SslConfig {
         enabled: true,
@@ -280,16 +283,19 @@ fn apply_ssl_to_config(
 }
 
 fn disable_ssl_in_config(config: &mut Config) {
-    let mut restore_listen = Some(RUNTIME_DIRECT_LISTEN.to_string());
+    let mut restore_listen = None;
     if let Some(ssl) = config.ssl.as_mut() {
         ssl.enabled = false;
-        restore_listen = ssl
-            .previous_webserver_listen
-            .clone()
-            .filter(|listen| !listen.trim().is_empty())
-            .or(restore_listen);
+        restore_listen = non_blank(ssl.previous_webserver_listen.as_deref());
     }
     config.webserver_listen = restore_listen;
+}
+
+fn non_blank(listen: Option<&str>) -> Option<String> {
+    listen
+        .map(str::trim)
+        .filter(|listen| !listen.is_empty())
+        .map(str::to_string)
 }
 
 fn build_runtime_plan(
@@ -625,7 +631,7 @@ fn caddy_binary_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        RUNTIME_DIRECT_LISTEN, RUNTIME_SECURE_LISTEN, WEB_UPSTREAM, apply_ssl_to_config,
+        RUNTIME_SECURE_LISTEN, WEB_UPSTREAM, apply_ssl_to_config,
         build_runtime_plan, disable_ssl_in_config, normalize_preferred_host,
         render_managed_caddyfile,
     };
@@ -721,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn enabling_ssl_captures_default_direct_listener_when_unset() {
+    fn enabling_ssl_records_unset_listener_as_unset() {
         let mut config = Config::default();
 
         apply_ssl_to_config(&mut config, Some("libreqos.example.com".to_string()), None)
@@ -732,8 +738,51 @@ mod tests {
                 .ssl
                 .as_ref()
                 .and_then(|ssl| ssl.previous_webserver_listen.as_deref()),
-            Some(RUNTIME_DIRECT_LISTEN)
+            None
         );
+    }
+
+    #[test]
+    fn disabling_ssl_after_unset_listener_restores_lqosd_default() {
+        let mut config = Config::default();
+        apply_ssl_to_config(&mut config, None, Some("192.0.2.4"))
+            .expect("ssl config should apply");
+        assert_eq!(config.webserver_listen.as_deref(), Some(RUNTIME_SECURE_LISTEN));
+
+        disable_ssl_in_config(&mut config);
+
+        // None = lqosd's 0.0.0.0:9123 default, reachable on the management IP.
+        assert_eq!(config.webserver_listen, None);
+    }
+
+    #[test]
+    fn explicit_loopback_listener_survives_an_ssl_round_trip() {
+        let mut config = Config {
+            webserver_listen: Some(RUNTIME_SECURE_LISTEN.to_string()),
+            ..Config::default()
+        };
+        apply_ssl_to_config(&mut config, Some("libreqos.example.com".to_string()), None)
+            .expect("ssl config should apply");
+
+        disable_ssl_in_config(&mut config);
+
+        assert_eq!(config.webserver_listen.as_deref(), Some(RUNTIME_SECURE_LISTEN));
+    }
+
+    #[test]
+    fn reenabling_active_ssl_keeps_the_first_recorded_listener() {
+        let mut config = Config {
+            webserver_listen: Some("192.0.2.50:9443".to_string()),
+            ..Config::default()
+        };
+        apply_ssl_to_config(&mut config, Some("libreqos.example.com".to_string()), None)
+            .expect("first enable should apply");
+        apply_ssl_to_config(&mut config, Some("libreqos.example.com".to_string()), None)
+            .expect("re-enable should apply");
+
+        disable_ssl_in_config(&mut config);
+
+        assert_eq!(config.webserver_listen.as_deref(), Some("192.0.2.50:9443"));
     }
 
     #[test]

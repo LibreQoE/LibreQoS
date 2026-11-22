@@ -1,6 +1,6 @@
 # Known limitations
 
-**Version: LibreQoS v3 beta.** The operator-visible limits of the current beta.
+**Version: LibreQoS v3.** The operator-visible limits of the current release.
 
 - **Leaf queues: configured SQM, static CAKE, and dynamic allocation are
   separate.**

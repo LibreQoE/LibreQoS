@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::urgent;
 
@@ -109,7 +109,7 @@ pub fn start_tunnel_circuits_watcher() -> anyhow::Result<()> {
             watcher.set_file_changed_callback(ingest_tunnel_circuits);
             loop {
                 let result = watcher.watch();
-                info!("tunnel_circuits.json watcher returned: {result:?}");
+                debug!("tunnel_circuits.json watcher returned: {result:?}");
             }
         })?;
     Ok(())

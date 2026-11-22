@@ -434,7 +434,7 @@ async fn persistent_connection(
                         match command {
                             Some(ConnectionCommand::SubmitChunks { serial, chunks }) => {
                                 if !permitted {
-                                    info!("Not permitted to send chunks yet");
+                                    debug!("Not permitted to send chunks yet");
                                     continue 'message_pump;
                                 }
                                 let Ok(byte_count) =
@@ -1198,7 +1198,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     };
 
     // Native TLS
-    info!("Control channel TCP connected: {remote_host}");
+    debug!("Control channel TCP connected: {remote_host}");
     let Ok(connector) = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
@@ -1225,10 +1225,10 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
         bail!("Failed to connect to shaper gateway server. {result:?}");
     }
     let Ok(Ok((socket, _response))) = result else {
-        warn!("Failed to connect to shaper gateway server {result:?}");
+        warn!("Failed to connect to shaper gateway server {target}: {result:?}");
         bail!("Failed to connect to shaper gateway server. {result:?}");
     };
-    info!("Control channel WSS established: {target}");
+    debug!("Control channel WSS established: {target}");
 
     Ok(socket)
 }

@@ -10,7 +10,7 @@ use crate::node_manager::shaper_queries_actor::caches::Caches;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const HISTORY_QUERY_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -59,7 +59,7 @@ impl HistoryClient {
 
 macro_rules! shaper_query {
     ($type:ty, $caches:expr, $seconds:expr, $reply:expr, $client:expr, $request:expr) => {
-        info!(
+        debug!(
             "SQ Shaper query {} for {} seconds.",
             stringify!($type),
             $seconds
@@ -79,12 +79,12 @@ macro_rules! shaper_query {
         let my_reply = $reply;
         let request_value = $request;
         let seconds_value = $seconds;
-        info!("SQ Spawning");
+        debug!("SQ Spawning");
         tokio::spawn(async move {
             let request = request_value;
             let mut attempts = 0;
             loop {
-                info!("SQ Requesting history (attempt {})", attempts + 1);
+                debug!("SQ Requesting history (attempt {})", attempts + 1);
                 match my_client.request(request.clone()).await {
                     Ok(payload) => {
                         let data = payload.data.unwrap_or_default();
@@ -117,7 +117,7 @@ macro_rules! shaper_query {
                 }
             }
         });
-        info!("SQ Returning");
+        debug!("SQ Returning");
     };
 }
 
@@ -132,9 +132,9 @@ pub async fn shaper_queries(
     let history_client = HistoryClient::new(control_tx);
 
     while let Some(command) = rx.recv().await {
-        info!("SQ: Received a command.");
+        debug!("SQ: Received a command.");
         caches.cleanup().await;
-        info!("SQ: Cleaned up the caches.");
+        debug!("SQ: Cleaned up the caches.");
 
         let client = history_client.clone();
         match command {
@@ -190,7 +190,7 @@ pub async fn shaper_queries(
                 shaper_query!(CakeData, caches, seconds, reply, client, request);
             }
         }
-        info!("SQ Looping");
+        debug!("SQ Looping");
     }
     warn!("Shaper query actor closing.")
 }

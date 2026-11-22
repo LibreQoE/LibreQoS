@@ -44,12 +44,9 @@ detect_suite() {
     esac
     if [ -n "${suite:-}" ]; then printf '%s' "$suite"; return 0; fi
   done
-  printf '%s' "beta"
+  printf '%s' "stable"
 }
 REPO_SUITE="${LQOS_REPO_SUITE:-$(detect_suite)}"
-if [ "$REPO_SUITE" = "stable" ]; then
-  echo "dataplane: WARNING: packages.libreqos.com stable is EMPTY before GA; the fetch will fail. Use LQOS_REPO_SUITE=beta (or point libreqos.list at beta; the .12 lab uses beta). Set stable only at GA." >&2
-fi
 RESTART_SERVICE="${LQOS_DATAPLANE_RESTART_SERVICE:-1}"
 PACKAGE="libreqos-dataplane"
 BRIDGE_BIN="${LQOS_BRIDGE_BIN:-/usr/libexec/libreqos/bridge_rs}"

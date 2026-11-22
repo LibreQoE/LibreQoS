@@ -1,6 +1,6 @@
 # Upgrading from LibreQoS v2.0 to v3
 
-**Version: LibreQoS v3 beta.** Do not upgrade a production v2 host in place
+**Version: LibreQoS v3.** Do not upgrade a production v2 host in place
 without a way back. Snapshot or back up the box first, have console access if
 management traffic crosses the bridge, and avoid doing this over a flaky remote
 link: the path includes a reboot.
@@ -16,7 +16,7 @@ The v2 repository (`repo.libreqos.com`) does not carry v3. Add the v3 repository
 ```bash
 curl -fsSL https://packages.libreqos.com/keys/libreqos-packages-keyring.gpg \
   | sudo tee /usr/share/keyrings/libreqos-packages-keyring.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/libreqos-packages-keyring.gpg] https://packages.libreqos.com beta main" \
+echo "deb [signed-by=/usr/share/keyrings/libreqos-packages-keyring.gpg] https://packages.libreqos.com stable main" \
   | sudo tee /etc/apt/sources.list.d/libreqos.list
 sudo apt-get update
 ```

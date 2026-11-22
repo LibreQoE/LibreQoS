@@ -1,6 +1,6 @@
 # Troubleshooting LibreQoS v3
 
-**Version: LibreQoS v3 beta.** Common v3 failures and where to look. The v2.0
+**Version: LibreQoS v3.** Common v3 failures and where to look. The v2.0
 troubleshooting steps do not apply to v3.
 
 ## First: collect the support bundle

@@ -6,8 +6,8 @@
 #
 # Rules:
 #   - create the v3 source only when absent; derive the suite from an existing
-#     v3 source (or LQOS_REPO_SUITE, default beta for a v2->v3 box) — never
-#     hardcode stable;
+#     v3 source (or LQOS_REPO_SUITE, default stable for a v2->v3 box since
+#     GA) — never rewrite an existing suite;
 #   - disable (do not delete) any v2 source: `.list` -> `.v2-disabled` backup,
 #     deb822 `.sources` -> a backup + `Enabled: no`;
 #   - stable backup suffix, never overwrite an existing backup, never
@@ -19,7 +19,7 @@ set -euo pipefail
 SOURCES_DIR="${LQOS_APT_SOURCES_DIR:-/etc/apt/sources.list.d}"
 KEYRING="${LQOS_APT_KEYRING:-/usr/share/keyrings/libreqos-packages-keyring.gpg}"
 REPO_URL="${LQOS_REPO_URL:-https://packages.libreqos.com}"
-DEFAULT_SUITE="${LQOS_REPO_SUITE:-beta}"
+DEFAULT_SUITE="${LQOS_REPO_SUITE:-stable}"
 MARKER="${LQOS_APT_MARKER:-/var/lib/libreqos/apt-source-v3.owned}"
 V2_HOST="repo.libreqos.com"
 V3_HOST="packages.libreqos.com"

@@ -16,7 +16,7 @@ pub use blackboard::*;
 use lqos_config::Config;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use tokio::time::Instant;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Start the tracing/logging system
 fn init_tracing() {
@@ -49,7 +49,7 @@ async fn main() -> Result<(), UispIntegrationError> {
     info!("UISP Integration 2.0-rust");
 
     // Load the configuration
-    info!("Loading Configuration");
+    debug!("Loading Configuration");
     let config = lqos_config::load_config().map_err(|e| {
         error!("Unable to load configuration");
         error!("{e:?}");

@@ -37,8 +37,9 @@ pub(crate) fn create_dynamic_circuit(shaped_device: ShapedDevice) -> BusResponse
         return BusResponse::Fail("dynamic circuit requires parent_node".to_string());
     }
 
+    let circuit_id = shaped_device.circuit_id.clone();
     if let Err(err) = lqos_network_devices::replace_dynamic_circuit_by_ip(shaped_device) {
-        error!("Dynamic circuit persist failed: {err:?}");
+        error!("Dynamic circuit persist failed for circuit {circuit_id}: {err:?}");
         return BusResponse::Fail(format!("dynamic circuit persist failed: {err}"));
     }
 
@@ -57,7 +58,7 @@ pub(crate) fn remove_dynamic_circuit(circuit_id: &str) -> BusResponse {
     }
 
     if let Err(err) = lqos_network_devices::remove_dynamic_circuit(circuit_id) {
-        error!("Dynamic circuit removal persist failed: {err:?}");
+        error!("Dynamic circuit removal persist failed for circuit {circuit_id}: {err:?}");
         return BusResponse::Fail(format!("dynamic circuit removal persist failed: {err}"));
     }
 

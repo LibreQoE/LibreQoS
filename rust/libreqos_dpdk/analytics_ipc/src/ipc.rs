@@ -14,6 +14,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::time::{Duration, Instant};
+use tracing::{error, warn};
 
 pub const DEFAULT_MAX_ROWS: usize = 10_000;
 const MAX_REQUEST_BYTES: usize = 64;
@@ -421,7 +422,7 @@ impl StateRequester {
                 // NOT remove the request, so it REMAINS in the capacity-1 slot
                 // and the next request reads `Busy` until the collector drains
                 // it. This is the source behind the `Busy` burst.
-                eprintln!(
+                warn!(
                     "analytics State arm STALE SLOT: the request timed out after {:?} and \
                      REMAINS queued (the collector had not drained it); the next request reads \
                      Busy until it does",
@@ -840,10 +841,7 @@ impl SnapshotService {
                         &self.queue_stats_requester,
                         self.completions_requester.as_ref(),
                     ) {
-                        eprintln!(
-                            "analytics serve_one error (path={}): {error} ({error:?})",
-                            self.socket_path.display()
-                        );
+                        log_serve_one_error(&self.socket_path, &error);
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -870,8 +868,8 @@ impl SnapshotService {
             return; // still ours
         }
         if ino.is_some() {
-            eprintln!(
-                "WARN: analytics socket {} was replaced by a foreign inode {:?}; not touching it",
+            warn!(
+                "analytics socket {} was replaced by a foreign inode {:?}; not touching it",
                 self.socket_path.display(),
                 ino
             );
@@ -887,15 +885,15 @@ impl SnapshotService {
                 }
                 self.listener = listener;
                 self.bound_inode = path_inode(&self.socket_path).unwrap_or(0);
-                eprintln!(
-                    "WARN: analytics socket {} vanished; re-bound (inode {})",
+                warn!(
+                    "analytics socket {} vanished; re-bound (inode {})",
                     self.socket_path.display(),
                     self.bound_inode
                 );
             }
             Err(error) => {
-                eprintln!(
-                    "WARN: analytics socket self-heal failed to re-bind {}: {error:?}",
+                warn!(
+                    "analytics socket self-heal failed to re-bind {}: {error:?}",
                     self.socket_path.display()
                 );
             }
@@ -923,6 +921,24 @@ impl Drop for SnapshotService {
         if path_inode(&self.socket_path) == Some(self.bound_inode) {
             let _ = fs::remove_file(&self.socket_path);
         }
+    }
+}
+
+/// The `serve_one` failure line: the socket path (the only routing context a
+/// broker-side reader has) plus the typed error twice — `Display` for the
+/// operator, `Debug` for the variant.
+fn serve_one_error_line(path: &Path, error: &IpcError) -> String {
+    format!(
+        "analytics serve_one error (path={}): {error} ({error:?})",
+        path.display()
+    )
+}
+
+/// Logs [`serve_one_error_line`] at ERROR, without paying for the render when
+/// the level is filtered.
+fn log_serve_one_error(path: &Path, error: &IpcError) {
+    if tracing::enabled!(tracing::Level::ERROR) {
+        error!("{}", serve_one_error_line(path, error));
     }
 }
 
@@ -968,7 +984,7 @@ fn serve_one(
             // `no_scm_rights_fd`/`peer_closed_no_bytes`.
             let state_result = state_requester.request();
             if let Err(error) = state_result.as_ref() {
-                eprintln!("analytics State arm requester FAILED (kind=State): {error} ({error:?})");
+                error!("analytics State arm requester FAILED (kind=State): {error} ({error:?})");
             }
             let reply = match state_result? {
                 StateReply::Unavailable(reason) => StateReply::Unavailable(reason),
@@ -1043,8 +1059,8 @@ fn adopt_for_libreqos(path: &Path) {
     let name = b"libreqos\0";
     let pw = unsafe { libc::getpwnam(name.as_ptr() as *const libc::c_char) };
     if pw.is_null() {
-        eprintln!(
-            "WARN: libreqos user not found; analytics socket {} stays root-owned — lqosd cannot connect until provisioned",
+        warn!(
+            "libreqos user not found; analytics socket {} stays root-owned — lqosd cannot connect until provisioned",
             path.display()
         );
         return;
@@ -1055,8 +1071,8 @@ fn adopt_for_libreqos(path: &Path) {
         Err(_) => return,
     };
     if unsafe { libc::chown(c_path.as_ptr(), uid, gid) } < 0 {
-        eprintln!(
-            "WARN: chown of analytics socket {} failed ({:?}); lqosd cannot connect until provisioned",
+        warn!(
+            "chown of analytics socket {} to libreqos {uid}:{gid} failed ({:?}); lqosd cannot connect until provisioned",
             path.display(),
             std::io::Error::last_os_error()
         );
@@ -1071,8 +1087,8 @@ fn adopt_for_libreqos(path: &Path) {
             })
             .unwrap_or(false);
         if !traversable {
-            eprintln!(
-                "WARN: analytics socket parent dir {} is not traversable by the libreqos user — lqosd cannot connect",
+            warn!(
+                "analytics socket parent dir {} is not traversable by the libreqos user — lqosd cannot connect",
                 parent.display()
             );
         }
@@ -2469,5 +2485,80 @@ mod completion_contract_tests {
             "the enum wire spelling is snake_case: {bytes:?}"
         );
     }
+}
 
+/// REV-T5: one representative emit test for `analytics_ipc`'s converted sites —
+/// the `serve_one` error path, whose whole point is that the serve loop never
+/// discards it silently. Pins the level (ERROR: a `warn!`/`info!` downgrade is
+/// filtered out by the capture's `enabled`, so the test reds) and the rendered
+/// path + typed error.
+#[cfg(test)]
+mod serve_one_error_emit_tests {
+    use super::*;
+
+    /// Message-only capture of one event: the crate has no
+    /// `tracing-subscriber` dev-dependency, so this minimal `Subscriber` is
+    /// the whole scaffold.
+    #[derive(Clone, Default)]
+    struct EventCapture(std::sync::Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>);
+
+    #[derive(Default)]
+    struct MessageVisitor(String);
+
+    impl tracing::field::Visit for MessageVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.0 = format!("{value:?}");
+            }
+        }
+    }
+
+    impl tracing::Subscriber for EventCapture {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::ERROR
+        }
+
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut visitor = MessageVisitor::default();
+            event.record(&mut visitor);
+            self.0
+                .lock()
+                .expect("event capture mutex")
+                .push((*event.metadata().level(), visitor.0));
+        }
+
+        fn enter(&self, _: &tracing::span::Id) {}
+
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    #[test]
+    fn the_serve_one_error_emit_names_the_path_at_error() {
+        let capture = EventCapture::default();
+        let path = Path::new("/run/libreqos/analytics.sock");
+        {
+            let sink = capture.clone();
+            tracing::subscriber::with_default(sink, || {
+                log_serve_one_error(path, &IpcError::MalformedFrame)
+            });
+        }
+        assert_eq!(
+            *capture.0.lock().expect("event capture mutex"),
+            [(
+                tracing::Level::ERROR,
+                "analytics serve_one error (path=/run/libreqos/analytics.sock): \
+                 malformed IPC frame (MalformedFrame)"
+                    .to_string()
+            )],
+            "one ERROR event, the pinned path/typed-error line"
+        );
+    }
 }

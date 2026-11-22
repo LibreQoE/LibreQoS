@@ -1,6 +1,6 @@
 # LibreQoS v3 Documentation
 
-**Version: LibreQoS v3 beta.** These pages cover v3 only. For the previous
+**Version: LibreQoS v3.** These pages cover v3 only. For the previous
 release, see the [LibreQoS v2.0 documentation](../v2.0/index.md).
 
 In v3 the Linux `tc`/eBPF datapath of v2.0 is gone. A userspace DPDK bridge
@@ -11,9 +11,15 @@ dashboard. See [What's new in v3](whats-new.md) for the full list of changes.
 :maxdepth: 1
 
 whats-new
+requirements
+ubuntu-server
 install
 upgrade-from-v2
 operate
+power
+integrations
+radius
+https-caddy
 node-manager-i18n
 known-limitations
 troubleshooting

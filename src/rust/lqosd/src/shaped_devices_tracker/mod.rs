@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 #[cfg(test)]
 use anyhow::Context;
@@ -362,7 +362,7 @@ fn watch_for_topology_runtime_status_changing() -> Result<()> {
     watcher.set_file_changed_callback(load_topology_runtime_status_payload);
     loop {
         let result = watcher.watch();
-        info!("topology_runtime_status.json watcher returned: {result:?}");
+        debug!("topology_runtime_status.json watcher returned: {result:?}");
     }
 }
 

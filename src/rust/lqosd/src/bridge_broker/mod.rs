@@ -53,7 +53,7 @@ use lqos_dataplane_types::{
 };
 use lqos_dataplane_types::wire::AckOutcome;
 use seam::{AttachError, SEGMENT_NAME, SeamSegment};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::urgent;
 
@@ -377,7 +377,10 @@ fn ensure_desired_boot_manifest(config: &lqos_config::Config, artifact_path: &st
                 "bridge-broker: materialized the desired boot manifest at lqosd startup"
             ),
             Err(error) => {
-                warn!("bridge-broker: startup boot-manifest publish failed: {error:#}")
+                warn!(
+                    path = %artifact_path.display(),
+                    "bridge-broker: startup boot-manifest publish failed: {error:#}"
+                )
             }
         },
         Err(errors) => warn!(
@@ -1318,7 +1321,7 @@ fn publish_convergence_snapshot(state: &BrokerState) {
         .placement_stale_since
         .map(|t| t.elapsed().as_millis() as u64);
     slot.placement_stale_episodes = state.placement_stale_episodes;
-    tracing::info!(
+    tracing::debug!(
         event = "SEAM_STATE",
         schema = 1,
         desired_generation = ?slot.desired_generation,
@@ -1330,8 +1333,9 @@ fn publish_convergence_snapshot(state: &BrokerState) {
         held = slot.held.len(),
         "reconciliation state (desired -> applied; the seam, NOT the config posture)"
     );
-    // WP5 observability: lqosd defaults to WARN, so the `info!`
-    // above never reaches the journal at the default. Mirror the
+    // WP5 observability: lqosd defaults to WARN, so the `debug!`
+    // above never reaches the journal at the default (release compiles it out
+    // entirely). Mirror the
     // RESOLVED_POSTURE pattern — persist the snapshot to a well-known file so
     // `lqosd --print-seam-state` is level-independent + diffable.
     if let Ok(json) = serde_json::to_string_pretty(&*slot) {
@@ -2468,7 +2472,7 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
                         ) {
                             let _ = frames;
                         } else {
-                            info!(
+                            debug!(
                                 "Bridge broker emitting {} op(s) for generation {} ({} frame(s))",
                                 delta.inner_ops.len()
                                     + delta.leaf_ops.len()
@@ -2663,7 +2667,7 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
             state.record_applied_reset();
             // AVAIL 0(c): a successful apply is CONVERGENCE on the publish +
             // ack legs (the diff closes -> reset).
-            info!(
+            debug!(
                 "Bridge applied generation {} (fence {})",
                 ack.generation_str(),
                 ack.fence_epoch()
@@ -2707,7 +2711,7 @@ fn resolve_pending(state: &mut BrokerState, mut pending: Pending) -> Resolve {
                 pending.desired_key.clone(),
             );
             // AUDIT GAP 3: the base SETTER marker — folded from an APPLIED ack.
-            info!(
+            debug!(
                 event = "BASE_ACK_FOLD",
                 generation = %pending.generation,
                 inners = pending.applied_after_current.inner_ops.len(),
@@ -4446,7 +4450,8 @@ mod terminal_fence_tests {
 mod wp5_seam_state_tests {
     /// WP5: the reconciliation snapshot SERIALIZES the WP5 fields,
     /// so the persisted `seam_state.json` + `lqosd --print-seam-state` are real
-    /// (level-independent; the `info!` emit is not journal-visible at the default).
+    /// (level-independent; the `debug!` emit is compiled out of release and
+    /// below the dev default).
     #[test]
     fn seam_state_snapshot_serializes_the_wp5_fields() {
         let snap = super::BridgeConvergenceSnapshot::default();

@@ -18,7 +18,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::spawn;
 use tokio::sync::mpsc::{Sender, error::TrySendError};
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::debug;
 
 const CONTROL_CHANNEL_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -272,7 +272,7 @@ impl PrivateState {
             "StartChat",
         )
         .await;
-        info!(
+        debug!(
             "[chatbot] starting session request_id={} browser_ts_ms={:?}",
             request_id, browser_ts_ms
         );

@@ -2,7 +2,7 @@
 
 use lqos_bus::BlackboardSystem;
 use serde::Serialize;
-use tracing::info;
+use tracing::debug;
 
 pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
     let Ok(_) = lqos_config::load_config() else {
@@ -20,7 +20,7 @@ pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Resul
     let _ = lqos_config::load_config()?;
     let blob = serde_cbor::to_vec(&value)?;
     let chunks = blob.chunks(1024 * 128);
-    info!(
+    debug!(
         "Blob {key} is {} bytes long, split into {} chunks",
         blob.len(),
         chunks.len()

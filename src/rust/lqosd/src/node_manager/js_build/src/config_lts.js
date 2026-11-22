@@ -9,7 +9,7 @@ import {
     validateLocalApiKeyName,
 } from "./config/local_api_token";
 import {t, tHtml} from "./i18n/index.js";
-import {formatNumber} from "./i18n/format.js";
+import {formatMappedCircuitLimit, renderAvailabilityAlert} from "./config/license_availability.mjs";
 
 const licenseKeyInput = document.getElementById("licenseKey");
 const toggleLicenseKeyButton = document.getElementById("toggleLicenseKey");
@@ -300,13 +300,6 @@ function removeLegacyLocalApiKey(button) {
     });
 }
 
-function formatMappedCircuitLimit(limit) {
-    if (limit === null || limit === undefined) {
-        return t("config.lts.status.unlimited");
-    }
-    return formatNumber(Number(limit));
-}
-
 function renderCapabilityBadges(capabilities) {
     const container = document.getElementById("licenseCapabilityBadges");
     if (!container) {
@@ -372,30 +365,7 @@ function renderAvailability(capabilities) {
         return;
     }
 
-    let message = "";
-    if (
-        !capabilities.control_service_reachable
-        && (capabilities.can_use_support_tickets || capabilities.can_use_chatbot)
-    ) {
-        message = t("config.lts.alert.control_unavailable");
-    } else if (capabilities.bootstrap_suppressed) {
-        message = t("config.lts.alert.bootstrap_suppressed");
-    } else if (
-        capabilities.bootstrap_intent
-        && !capabilities.control_service_reachable
-        // translatable: false — "Bootstrap pending" is the authority token the server returns and this branch compares
-        && capabilities.authority_label === "Bootstrap pending"
-    ) {
-        message = t("config.lts.alert.bootstrap_pending");
-    }
-
-    if (message) {
-        alert.textContent = message;
-        alert.classList.remove("d-none");
-    } else {
-        alert.textContent = "";
-        alert.classList.add("d-none");
-    }
+    renderAvailabilityAlert(alert, capabilities);
 }
 
 function fetchCapabilities(request = { LtsCapabilities: {} }) {

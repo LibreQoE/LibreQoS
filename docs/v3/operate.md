@@ -1,6 +1,6 @@
 # Operating LibreQoS v3
 
-**Version: LibreQoS v3 beta.** How to check, change and support a running v3
+**Version: LibreQoS v3.** How to check, change and support a running v3
 host.
 
 ## The services
@@ -44,8 +44,9 @@ channels live. The same data is in `/run/libreqos/seam_state.json`.
 
 Do not edit the generated files under `/etc/libreqos/bridge.env.d/`.
 
-Switching the queue mode between `shape` and `observe` takes a restart of
-`libreqos-bridge`.
+Switching the queue mode between `shape` and `observe` (the **Queue Mode**
+toggle in the WebUI) does not need a bridge restart. LibreQoS re-syncs and
+applies the change; the bridge keeps running and traffic is not interrupted.
 
 ## WebUI and API
 
@@ -68,5 +69,5 @@ is read-only and restarts nothing.
 
 Always install `libreqos`, `libreqos-preflight` and `libreqos-dataplane` at the
 same version, through apt; see the
-{ref}`beta-to-beta upgrade <v3-beta-upgrade>`. Mixing a new control
+{ref}`upgrade <v3-beta-upgrade>`. Mixing a new control
 plane with an older dataplane can stop shaping.

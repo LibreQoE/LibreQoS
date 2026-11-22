@@ -5,8 +5,14 @@ Bienvenido a la documentación de LibreQoS
 
 .. toctree::
    :maxdepth: 1
-   :caption: LibreQoS v3 (beta)
+   :caption: LibreQoS v3
 
+   v3/requirements-es
+   v3/ubuntu-server-es
+   v3/power-es
+   v3/integrations-es
+   v3/radius-es
+   v3/https-caddy-es
    v3/node-manager-i18n-es
 
 .. toctree::

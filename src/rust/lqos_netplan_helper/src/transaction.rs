@@ -14,7 +14,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 const BACKUP_KEEP_COUNT: usize = 5;
@@ -459,7 +459,7 @@ fn describe_status(status: std::process::ExitStatus) -> String {
 
 fn log_command_output(prefix: &str, stdout: &str, stderr: &str) {
     if !stdout.is_empty() {
-        info!("{prefix} stdout:\n{stdout}");
+        debug!("{prefix} stdout:\n{stdout}");
     }
     if !stderr.is_empty() {
         warn!("{prefix} stderr:\n{stderr}");

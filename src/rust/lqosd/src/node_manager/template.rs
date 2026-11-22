@@ -75,7 +75,7 @@ const INSIGHT_LINK_ACTIVE: &str = r#"
 const INSIGHT_LINK_OFFER_TRIAL: &str = r#"
 <li class="nav-item">
     <a class="nav-link text-success" id="lnkStats" href="lts_trial.html">
-        <i class="fa fa-line-chart nav-icon"></i> Insight - Free Trial
+        <i class="fa fa-line-chart nav-icon"></i> <span data-i18n="common.nav.buy_license">Buy License</span>
     </a>
 </li>"#;
 
@@ -450,7 +450,8 @@ pub async fn apply_templates(
 mod tests {
     use super::{
         apply_page_templates, cobrand_logo_html, cobrand_logo_status_html,
-        fill_locale_placeholders, i18n_scripts, status_placeholders,
+        fill_locale_placeholders, i18n_scripts, status_placeholders, INSIGHT_LINK_ACTIVE,
+        INSIGHT_LINK_OFFER_TRIAL,
     };
     use crate::node_manager::locale::{dir_for_in, parse_locales};
     use lqos_config::Config;
@@ -766,5 +767,74 @@ mod tests {
 
         // The update item is the only conditional one: no version, no item.
         assert!(status_placeholders(false)[3].1.is_empty());
+    }
+
+    /// The unlicensed sidebar entry funnels to the licence channel under a
+    /// localized label. The extractor sees the key but not the English text
+    /// beside it, and no contract pins a two-word nav label's value, so both are
+    /// pinned here: the fragment keeps its link, icon and highlight, and each
+    /// catalog carries the ruled label. The key and its label are asserted as
+    /// ONE escaped-quote fragment so the pairing cannot drift apart and no
+    /// complete `data-i18n="key"` literal lives in this file — the extractor
+    /// must witness the key at the emitter, not in this test. The
+    /// licensed link is pinned by its own content (product name, URL, nav
+    /// class), not merely by the absence of a catalog key.
+    #[test]
+    fn trial_offer_link_reads_buy_license_in_every_locale() {
+        for kept in [
+            r#"href="lts_trial.html""#,
+            r#"id="lnkStats""#,
+            r#"class="nav-link text-success""#,
+            r#"fa-line-chart nav-icon"#,
+        ] {
+            assert!(
+                INSIGHT_LINK_OFFER_TRIAL.contains(kept),
+                "the offer must keep {kept}: the rename changes the label only"
+            );
+        }
+        assert!(
+            INSIGHT_LINK_OFFER_TRIAL.contains("data-i18n=\"common.nav.buy_license\">Buy License<"),
+            "the offer must pair the catalog key with the English label beside it"
+        );
+        for kept in [
+            "Insight",
+            r#"href="https://insight.libreqos.com/""#,
+            r#"class="nav-link""#,
+        ] {
+            assert!(
+                INSIGHT_LINK_ACTIVE.contains(kept),
+                "the licensed Insight link must keep {kept}"
+            );
+        }
+        assert!(
+            !INSIGHT_LINK_ACTIVE.contains("data-i18n"),
+            "the licensed Insight link keeps the product name and carries no catalog key"
+        );
+
+        for (name, json, label) in [
+            (
+                "en.json",
+                include_str!("static2/i18n/en.json"),
+                "Buy License",
+            ),
+            (
+                "es.json",
+                include_str!("static2/i18n/es.json"),
+                "Comprar licencia",
+            ),
+            (
+                "pt-BR.json",
+                include_str!("static2/i18n/pt-BR.json"),
+                "Comprar licença",
+            ),
+        ] {
+            let catalog: serde_json::Value =
+                serde_json::from_str(json).expect("the shipped catalog is valid JSON");
+            assert_eq!(
+                catalog["messages"]["common.nav.buy_license"].as_str(),
+                Some(label),
+                "{name} must carry the localized label"
+            );
+        }
     }
 }

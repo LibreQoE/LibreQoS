@@ -588,7 +588,7 @@ pub fn start(config: &lqos_config::Config) {
         .name("netflow-exporter".to_string())
         .spawn(move || exporter_loop(receiver, runner, version))
     {
-        Ok(_) => tracing::info!("NetFlow version {version} exporter started -> {target}"),
+        Ok(_) => tracing::warn!("NetFlow version {version} exporter started -> {target}"),
         Err(err) => tracing::error!("Failed to spawn NetFlow exporter: {err:?}"),
     }
 }
@@ -651,7 +651,9 @@ fn exporter_loop(receiver: Receiver<FlowRow>, target: String, version: u8) {
     let socket = match UdpSocket::bind("0.0.0.0:0") {
         Ok(socket) => socket,
         Err(err) => {
-            tracing::error!("NetFlow exporter could not bind a UDP socket: {err}");
+            tracing::error!(
+                "NetFlow exporter (v{version} -> {target}) could not bind a UDP socket: {err}"
+            );
             return;
         }
     };

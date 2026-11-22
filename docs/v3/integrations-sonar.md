@@ -1,0 +1,35 @@
+# Sonar Integration
+
+**Version: LibreQoS v3.**
+
+First, set the relevant parameters for Sonar (sonar_api_key, sonar_api_url, etc.) in `/etc/libreqos/lqos.conf`.
+
+Current behavior notes:
+- `sonar_api_url` may be either the Sonar base URL or the full GraphQL endpoint. LibreQoS normalizes it to `/api/graphql` automatically.
+- Current builds page through Sonar GraphQL results instead of relying on a small first-page sample.
+- Paginated Sonar GraphQL requests now use a split connect/read timeout and retry transient read timeouts before failing the import.
+- Emitted Sonar identities are namespaced (for example `sonar:account:<id>` and `sonar:device:<id>`) so they remain stable across overrides and downstream tooling.
+- Account device discovery now preserves inventory-item IP handling and also imports Radius account and account-level IP assignments when they exist. Inventory-backed MACs are still used for AP mapping; Radius-only and account-level IPs are added as supplemental shaping devices and overlapping subnets are de-duplicated.
+- IPv4 and IPv6 assignments are split into the correct LibreQoS fields. Sonar IPv6 prefixes such as delegated `/56` networks are imported as IPv6 assignments, not IPv4 device entries.
+- Sonar `child_accounts` are also imported when they expose their own service and usable IP data. If a child account lacks its own address, LibreQoS falls back to the parent account address so the child can still be emitted as its own circuit.
+- Sonar settings now support ISP-specific recurring-service fallback rates plus a recurring-service exclusion list. LibreQoS still prefers active `DATA` services first; recurring mappings are only used when an account has no usable `DATA` service.
+- If Sonar returns non-JSON content or GraphQL errors, the integration now raises a more specific error message showing the endpoint and a short response preview.
+
+To test the Sonar Integration, use
+
+```shell
+sudo /opt/libreqos/venv/bin/python integrationSonar.py
+```
+
+On the first successful run, it creates the Sonar import and shaping data LibreQoS needs for scheduled refreshes.
+Built-in Sonar integrations do not write `network.json`; keep that file for DIY/manual deployments.
+You can maintain a separate DIY `network.json` when Sonar is not the system you want to use for topology.
+The Sonar integration refreshes its imported topology and shaping data every run.
+You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/libreqos/lqos.conf`.
+
+
+## Related Pages
+
+- [CRM/NMS Integrations](integrations.md)
+- [Operating LibreQoS v3](operate.md)
+- [Troubleshooting](troubleshooting.md)

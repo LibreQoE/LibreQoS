@@ -3,7 +3,7 @@ use lqos_bus::BlackboardSystem;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 pub static BLACKBOARD_SENDER: OnceLock<Sender<BlackboardCommand>> = OnceLock::new();
 
@@ -115,7 +115,7 @@ pub fn start_blackboard() {
                     let tag_total: usize = tag_sizes.iter().map(|(_, bytes)| bytes).sum();
 
                     // Serialize CBOR to a vec of u8
-                    info!("Sending blackboard data");
+                    debug!("Sending blackboard data");
                     let cbor = match serde_cbor::to_vec(&board) {
                         Ok(j) => j,
                         Err(e) => {
@@ -128,7 +128,7 @@ pub fn start_blackboard() {
                         .map(|(tag, bytes)| format!("{tag}={bytes}"))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    info!(
+                    debug!(
                         "Blackboard session bytes: serialized={} blobs_total={} blobs_tags={} \
                          system={{count={},bytes={}}} sites={{count={},bytes={}}} \
                          circuits={{count={},bytes={}}} devices={{count={},bytes={}}} \
@@ -165,11 +165,11 @@ pub fn start_blackboard() {
                     key,
                     value,
                 }) => {
-                    info!("Received data: {} = {}", key, value);
+                    debug!("Received data: {} = {}", key, value);
                     board.insert_data(subsystem, key, value);
                 }
                 Ok(BlackboardCommand::BlackboardBlob { tag, part, blob }) => {
-                    info!("Received blob: {tag}, part {part}");
+                    debug!("Received blob: {tag}, part {part}");
                     board.append_blob(tag, part, blob);
                 }
                 Err(_) => break,

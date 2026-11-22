@@ -176,9 +176,30 @@ mod tests {
     use super::LtsStatus;
 
     #[test]
-    fn forever_free_api_parses_from_license_state_six() {
+    fn api_only_label_names_the_local_tier() {
+        assert_eq!(LtsStatus::from_i32(4), LtsStatus::ApiOnly);
+        assert_eq!(LtsStatus::ApiOnly.label(), "LibreQoS Local");
+    }
+
+    #[test]
+    fn forever_free_api_label_names_the_local_tier() {
         assert_eq!(LtsStatus::from_i32(6), LtsStatus::ForeverFreeApi);
-        assert_eq!(LtsStatus::ForeverFreeApi.label(), "Forever Free API");
+        assert_eq!(LtsStatus::ForeverFreeApi.label(), "Forever Free Local");
+    }
+
+    #[test]
+    fn untouched_tier_labels_stay_frozen() {
+        // The rename retitled only the two local-API tiers; every other arm,
+        // including the licensed product name "Insight", is unchanged.
+        assert_eq!(LtsStatus::AlwaysFree.label(), "Always Free");
+        assert_eq!(LtsStatus::SelfHosted.label(), "Self Hosted");
+        assert_eq!(LtsStatus::Full.label(), "Insight");
+    }
+
+    #[test]
+    fn from_i32_maps_unknown_license_states_to_invalid() {
+        assert_eq!(LtsStatus::from_i32(7), LtsStatus::Invalid);
+        assert_eq!(LtsStatus::from_i32(-2), LtsStatus::Invalid);
     }
 }
 
@@ -204,9 +225,9 @@ impl LtsStatus {
             LtsStatus::AlwaysFree => "Always Free",
             LtsStatus::FreeTrial => "Free Trial",
             LtsStatus::SelfHosted => "Self Hosted",
-            LtsStatus::ApiOnly => "Local API",
+            LtsStatus::ApiOnly => "LibreQoS Local",
             LtsStatus::Full => "Insight",
-            LtsStatus::ForeverFreeApi => "Forever Free API",
+            LtsStatus::ForeverFreeApi => "Forever Free Local",
         }
     }
 }

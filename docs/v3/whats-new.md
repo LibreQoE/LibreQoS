@@ -1,6 +1,6 @@
 # What's new in LibreQoS v3
 
-**Version: LibreQoS v3 beta.** The operator-visible changes from v2.0.
+**Version: LibreQoS v3.** The operator-visible changes from v2.0.
 
 ## The datapath
 

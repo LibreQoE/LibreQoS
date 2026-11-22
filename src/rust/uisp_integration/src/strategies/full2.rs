@@ -1083,7 +1083,7 @@ async fn build_imported_full2_bundle_from_data(
         .unwrap_or_default();
 
     if !promote_to_root_set.is_empty() {
-        info!(
+        debug!(
             "Applying promote_to_root rules for {} nodes: {:?}",
             promote_to_root_set.len(),
             promote_to_root_set
@@ -1375,7 +1375,7 @@ async fn build_imported_full2_bundle_from_data(
         "UISP shaped devices: processed {} site/AP pair(s) and produced {} shaped device row(s).",
         processed_site_pairs, shaped_device_count
     );
-    info!(
+    debug!(
         shaped_devices = shaped_devices.len(),
         shaped_device_elapsed_ms = shaped_devices_started.elapsed().as_millis(),
         export_elapsed_ms,

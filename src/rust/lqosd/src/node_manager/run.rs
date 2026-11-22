@@ -21,7 +21,7 @@ use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 use tower_http::services::ServeFile;
-use tracing::info;
+use tracing::warn;
 
 /// The WebUI listen address when `webserver_listen` is absent or blank.
 ///
@@ -37,7 +37,7 @@ use tracing::info;
 /// NOT byte-identical to the old default.
 ///
 /// The TLS-terminating Caddy proxy is separate and always loopback
-/// (`lqos_setup::ssl::{RUNTIME_DIRECT_LISTEN, RUNTIME_SECURE_LISTEN,
+/// (`lqos_setup::ssl::{RUNTIME_SECURE_LISTEN,
 /// WEB_UPSTREAM}` = `127.0.0.1:9123`), so an SSL-enabled install does not
 /// expose this listener.
 pub(crate) const DEFAULT_WEBSERVER_LISTEN: &str = "0.0.0.0:9123";
@@ -120,7 +120,7 @@ pub async fn spawn_webserver(
     } else {
         "configured via webserver_listen"
     };
-    info!("Webserver listening on: [{listen_address}] ({listen_source})");
+    warn!("Webserver listening on: [{listen_address}] ({listen_source})");
     axum::serve(
         listener,
         router.into_make_service_with_connect_info::<std::net::SocketAddr>(),

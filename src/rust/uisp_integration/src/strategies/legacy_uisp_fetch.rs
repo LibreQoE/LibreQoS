@@ -2,7 +2,7 @@ use crate::errors::UispIntegrationError;
 use lqos_config::Config;
 use std::sync::Arc;
 use tokio::join;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uisp::{DataLink, Device, Site};
 
 /// Load required data from UISP, using the API.
@@ -17,7 +17,7 @@ pub async fn load_uisp_data(
     ),
     UispIntegrationError,
 > {
-    info!("Loading Devices, Sites and Data-Links from UISP");
+    debug!("Loading Devices, Sites and Data-Links from UISP");
     let (devices, sites, data_links) = join!(
         uisp::load_all_devices_with_interfaces(config.clone()),
         uisp::load_all_sites(config.clone()),
@@ -25,21 +25,30 @@ pub async fn load_uisp_data(
     );
 
     if devices.is_err() {
-        error!("Error downloading devices list from UISP");
+        error!(
+            "Error downloading devices list from UISP at {}",
+            config.uisp_integration.url
+        );
         error!("{:?}", devices);
         return Err(UispIntegrationError::UispConnectError);
     }
     let (mut devices, raw_json_devices_data) = devices.unwrap();
 
     if sites.is_err() {
-        error!("Error downloading sites list from UISP");
+        error!(
+            "Error downloading sites list from UISP at {}",
+            config.uisp_integration.url
+        );
         error!("{:?}", sites);
         return Err(UispIntegrationError::UispConnectError);
     }
     let sites = sites.unwrap();
 
     if data_links.is_err() {
-        error!("Error downloading data_links list from UISP");
+        error!(
+            "Error downloading data_links list from UISP at {}",
+            config.uisp_integration.url
+        );
         error!("{:?}", data_links);
         return Err(UispIntegrationError::UispConnectError);
     }

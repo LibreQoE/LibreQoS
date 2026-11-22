@@ -217,16 +217,22 @@ const PAGES = [
     {
         // S3b: the license screen is half server-driven, so the pin covers the
         // static prose (title, hint), the two <code> paragraphs the bundle writes,
-        // and the count and confirm messages that only the bundle renders.
+        // and the count and confirm messages that only the bundle renders. The
+        // availability alert's branches live in the helper module the bundle
+        // loads, so the funnel notice is pinned through that module.
         name: "config_lts",
         markup: [new URL("../../../static2/config_lts.html", import.meta.url)],
-        bundles: [new URL("../config_lts.js", import.meta.url)],
+        bundles: [
+            new URL("../config_lts.js", import.meta.url),
+            new URL("../config/license_availability.mjs", import.meta.url),
+        ],
         pinned: [
             "config.lts.title",
             "config.lts.status.retry_hint",
             "config.lts.api_keys.subtitle",
             "config.lts.api_keys.count",
             "config.lts.api_keys.revoke_confirm",
+            "config.lts.alert.unlicensed_cap",
         ],
     },
     {
@@ -965,4 +971,38 @@ test("the flow globe labels a cell's bytes as a volume, never as a rate", async 
     // The shared rate label is unchanged: four rate widgets still read it.
     assert.equal(EN["common.table.throughput"], "Throughput");
     assert.equal(ES["common.table.throughput"], "Tasa de transferencia");
+});
+
+// Key extraction does not validate hrefs; pin the destination on the
+// translated Buy License anchor of the help ticket gate.
+test("the help ticket gate's Buy License link targets the licence channel", async () => {
+    const html = await readFile(new URL("../../../static2/help.html", import.meta.url), "utf8");
+    const start = html.indexOf('id="ticketGateNoInsight"');
+    assert.ok(start >= 0, "help.html must keep the ticket gate alert");
+    const gate = html.slice(start, html.indexOf('id="ticketGateInsight"', start));
+    assert.match(
+        gate,
+        /<a [^>]*href="lts_trial\.html"[^>]*data-i18n="common\.nav\.buy_license"/,
+        "the ticket gate's Buy License anchor must keep href=\"lts_trial.html\" beside its catalog key",
+    );
+});
+
+// Same rule for the chatbot gate: the anchor the Libby page shows an
+// unlicensed operator must target the licence channel. Attribute order is
+// not part of the contract, so both properties are checked within one tag.
+test("the chatbot gate's Buy License link targets the licence channel", async () => {
+    const html = await readFile(new URL("../../../static2/chatbot.html", import.meta.url), "utf8");
+    const start = html.indexOf('id="libbyInsightNotice"');
+    assert.ok(start >= 0, "chatbot.html must keep the entitled-license gate alert");
+    const gate = html.slice(start, html.indexOf('id="chatLog"', start));
+    const anchors = gate.match(/<a\b[^>]*>/g) ?? [];
+    assert.ok(
+        anchors.some((tag) => /href="lts_trial\.html"/.test(tag) && /data-i18n="common\.nav\.buy_license"/.test(tag)),
+        "the chatbot gate's Buy License anchor must keep href=\"lts_trial.html\" beside its catalog key",
+    );
+});
+
+// catalogs_contract forces es/pt-BR to differ from en; this pins the en half.
+test("the API Docs capability badge keeps the buy-a-license wording", () => {
+    assert.equal(EN["config.lts.badge.api_docs_license"], "API Docs: buy a license");
 });

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::urgent;
 
@@ -169,7 +169,7 @@ pub fn start_libreqos_network_watcher() -> anyhow::Result<()> {
             watcher.set_file_changed_callback(ingest_libreqos_network);
             loop {
                 let result = watcher.watch();
-                info!("libreqos_network.json watcher returned: {result:?}");
+                debug!("libreqos_network.json watcher returned: {result:?}");
             }
         })?;
     Ok(())

@@ -3,7 +3,7 @@ use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
 use lqos_config::Config;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use tracing::info;
+use tracing::{debug, info};
 
 /// Represents a set of IP ranges that are allowed or ignored.
 pub struct IpRanges {
@@ -16,7 +16,7 @@ pub struct IpRanges {
 impl IpRanges {
     /// Creates a new IpRanges from a configuration.
     pub fn new(config: &Config) -> Result<Self, UispIntegrationError> {
-        info!("Building allowed/excluded IP range lookups from configuration file");
+        debug!("Building allowed/excluded IP range lookups from configuration file");
 
         let mut allowed = IpNetworkTable::new();
         let mut ignored = IpNetworkTable::new();

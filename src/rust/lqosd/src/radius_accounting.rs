@@ -26,7 +26,7 @@ use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{Sleep, sleep_until};
-use tracing::{Level, debug, error, info, trace, warn};
+use tracing::{Level, debug, error, trace, warn};
 
 const DYNAMIC_CIRCUIT_APPLICATION_TIMEOUT: Duration = Duration::from_secs(35);
 const DYNAMIC_CIRCUIT_APPLICATION_QUEUE_CAPACITY: usize = 1024;
@@ -63,7 +63,7 @@ pub(crate) async fn start_configured_radius_accounting(
     let local_addr = listener
         .local_addr()
         .map_err(RadiusAccountingStartupError::Listener)?;
-    info!(
+    warn!(
         "RADIUS accounting listener started on {local_addr} with {} trusted client(s)",
         runtime_config.clients.len()
     );

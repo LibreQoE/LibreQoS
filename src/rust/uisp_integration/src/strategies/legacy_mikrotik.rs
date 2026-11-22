@@ -41,13 +41,13 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
 
     let output = Command::new("/usr/bin/python3").arg(&code).output();
     if let Err(e) = output {
-        tracing::error!("Python error: {:?}", e);
-        return Err(anyhow::anyhow!("Python error: {:?}", e));
+        tracing::error!("Python error running Mikrotik helper {code}: {e:?}");
+        return Err(anyhow::anyhow!("Python error: {e:?}"));
     }
     let output = output?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::error!("Mikrotik helper failed: {}", stderr.trim());
+        tracing::error!("Mikrotik helper {code} failed: {}", stderr.trim());
         return Err(anyhow::anyhow!("Mikrotik helper failed: {}", stderr.trim()));
     }
     let json_from_python = String::from_utf8(output.stdout)?;

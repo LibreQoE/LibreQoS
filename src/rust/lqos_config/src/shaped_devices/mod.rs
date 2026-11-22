@@ -171,13 +171,13 @@ impl ConfigShapedDevices {
                 if let Ok(device) = device {
                     devices.push(device);
                 } else {
-                    error!("Error reading Device line: {:?}", &device);
+                    error!("Error reading Device line in {}: {:?}", final_path.display(), &device);
                     return Err(ShapedDevicesError::DeviceDecode(format!(
                         "DEVICE DECODE: {device:?}"
                     )));
                 }
             } else {
-                error!("Error reading CSV record: {:?}", result);
+                error!("Error reading CSV record in {}: {:?}", final_path.display(), result);
 
                 // Safely extract error details if available
                 if let Err(ref csv_err) = result {

@@ -49,7 +49,7 @@ use lqos_probe::ProbeClient;
 use once_cell::sync::Lazy;
 use serde_cbor::Value as CborValue;
 use tokio::sync::{Semaphore, mpsc::Sender};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 pub(crate) mod messages;
 mod publish_subscribe;
@@ -215,7 +215,7 @@ async fn ws_handler(
         .get(header::USER_AGENT)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown");
-    info!("WS upgrade requested (cookie present: {has_cookie}, ua: {user_agent})");
+    debug!("WS upgrade requested (cookie present: {has_cookie}, ua: {user_agent})");
     let channels = channels.clone();
     let browser_language = headers
         .get(header::ACCEPT_LANGUAGE)
@@ -278,7 +278,7 @@ fn websocket_origin_allowed(headers: &HeaderMap) -> bool {
 }
 
 async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
-    info!("Websocket connected");
+    debug!("Websocket connected");
 
     let WsUpgradeContext {
         channels,
@@ -334,7 +334,7 @@ async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     loop {
         tokio::select! {
             _ = &mut handshake_timeout, if !handshake_complete => {
-                warn!("Websocket handshake timed out");
+                debug!("Websocket handshake timed out");
                 break;
             }
             inbound = ws_rx.next() => {
@@ -370,7 +370,7 @@ async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
                     }
                     Some(Err(err)) => {
                         if is_benign_recv_error(&err, handshake_complete) {
-                            info!("Websocket client disconnected: {err}");
+                            debug!("Websocket client disconnected: {err}");
                         } else {
                             warn!("Websocket recv error: {err}");
                         }
@@ -388,7 +388,7 @@ async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     drop(tx);
     outbound_handle.abort();
     let _ = outbound_handle.await;
-    info!("Websocket disconnected");
+    debug!("Websocket disconnected");
 }
 
 fn is_benign_recv_error(err: &axum::Error, handshake_complete: bool) -> bool {
@@ -432,7 +432,7 @@ async fn receive_channel_message(
         }
         Message::Close(frame) => {
             if is_benign_close_frame(frame.as_ref()) {
-                info!("Websocket close frame received: {:?}", frame);
+                debug!("Websocket close frame received: {:?}", frame);
             } else {
                 warn!("Websocket close frame received: {:?}", frame);
             }
@@ -464,7 +464,7 @@ async fn receive_channel_message(
                 return true;
             }
             *handshake_complete = true;
-            info!("Websocket handshake completed");
+            debug!("Websocket handshake completed");
             return false;
         }
         warn!("Websocket message received before handshake complete");

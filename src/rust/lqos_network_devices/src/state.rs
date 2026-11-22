@@ -211,7 +211,7 @@ pub(crate) fn refresh_dynamic_circuits_last_seen_for_circuit_ids(
         if refreshed > refreshed_ids.len() {
             shown.push_str(&format!(" (+{} more)", refreshed - refreshed_ids.len()));
         }
-        tracing::info!(
+        tracing::debug!(
             "Dynamic liveness: last_seen_unix={now_unix} refreshed {refreshed} circuit(s): {shown}"
         );
         publish_dynamic_circuits_snapshot(updated);

@@ -757,7 +757,10 @@ fn load_config_from_location(
 ) -> Result<Arc<Config>, LibreQoSConfigError> {
     debug!("Loading configuration file {config_location}");
     migrate_if_needed(config_location).map_err(|e| {
-        error!("Unable to migrate configuration: {:?}", e);
+        error!(
+            "Unable to migrate configuration at {config_location}: {:?}",
+            e
+        );
         match &e {
             migration::MigrationError::ReadError(io)
                 if io.kind() == std::io::ErrorKind::NotFound =>
@@ -912,7 +915,11 @@ fn update_config_at(
     if config_path.exists() {
         let backup_path = std::path::PathBuf::from(format!("{}.webbackup", config_path.display()));
         std::fs::copy(&config_path, &backup_path).map_err(|e| {
-            error!("Unable to create backup configuration: {e:?}");
+            error!(
+                "Unable to create backup configuration {} from {}: {e:?}",
+                backup_path.display(),
+                config_path.display()
+            );
             LibreQoSConfigError::CannotCopy
         })?;
     }
@@ -925,7 +932,10 @@ fn update_config_at(
     })?;
     let serialized = with_bridge_use_xdp_bridge_compat(serialized)?;
     std::fs::write(&config_path, serialized).map_err(|e| {
-        error!("Unable to write new configuration: {e:?}");
+        error!(
+            "Unable to write new configuration to {}: {e:?}",
+            config_path.display()
+        );
         LibreQoSConfigError::CannotWrite {
             path: config_path.display().to_string(),
             source: e,

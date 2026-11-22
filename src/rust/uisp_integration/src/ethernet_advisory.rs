@@ -79,12 +79,18 @@ pub fn write_ethernet_advisories(
     })?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            error!("Unable to create circuit Ethernet metadata directory: {e:?}");
+            error!(
+                "Unable to create circuit Ethernet metadata directory {}: {e:?}",
+                parent.display()
+            );
             UispIntegrationError::CsvError
         })?;
     }
-    std::fs::write(path, payload).map_err(|e| {
-        error!("Unable to write circuit Ethernet metadata: {e:?}");
+    std::fs::write(&path, payload).map_err(|e| {
+        error!(
+            "Unable to write circuit Ethernet metadata to {}: {e:?}",
+            path.display()
+        );
         UispIntegrationError::CsvError
     })?;
     Ok(())

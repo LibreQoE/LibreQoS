@@ -674,7 +674,7 @@ pub(crate) fn spawn(socket: PathBuf, cursor_path: PathBuf) {
                         }
                         ticks = ticks.wrapping_add(1);
                         if ticks % 240 == 0 {
-                            tracing::info!("completion feed health: {:?}", health());
+                            tracing::debug!("completion feed health: {:?}", health());
                         }
                     }
                     Err(_) => {

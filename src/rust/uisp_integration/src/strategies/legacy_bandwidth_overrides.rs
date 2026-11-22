@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const LEGACY_UISP_BANDWIDTH_FILE: &str = "integrationUISPbandwidths.csv";
 
@@ -137,7 +137,7 @@ fn try_migrate_legacy_csv_to_operator_overrides(
         return Ok(None);
     }
 
-    info!("Looking for {LEGACY_UISP_BANDWIDTH_FILE}");
+    debug!("Looking for {LEGACY_UISP_BANDWIDTH_FILE}");
     let migrated = load_bandwidth_overrides_from_csv(&file_path)?;
     if migrated.is_empty() {
         warn!(

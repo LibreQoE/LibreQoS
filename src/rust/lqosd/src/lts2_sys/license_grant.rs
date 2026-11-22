@@ -97,8 +97,13 @@ pub fn invalidate_license_grant() -> Result<()> {
         .get()
         .context("License grant path not initialized")?;
     if grant_path.exists() {
-        fs::remove_file(grant_path).ok();
-        info!("Deleted stale Insight license grant");
+        match fs::remove_file(grant_path) {
+            Ok(()) => info!("Deleted stale Insight license grant"),
+            Err(err) => warn!(
+                "Unable to delete the stale Insight license grant file {}: {err}",
+                grant_path.display()
+            ),
+        }
     }
     store_grant_state(None);
     set_license_status(LicenseStatus {
@@ -113,8 +118,13 @@ pub fn purge_license_grant_file() -> Result<()> {
         .get()
         .context("License grant path not initialized")?;
     if grant_path.exists() {
-        fs::remove_file(grant_path).ok();
-        info!("Deleted Insight license grant");
+        match fs::remove_file(grant_path) {
+            Ok(()) => info!("Deleted Insight license grant"),
+            Err(err) => warn!(
+                "Failed to delete the Insight license grant file {}: {err}",
+                grant_path.display()
+            ),
+        }
     }
     store_grant_state(None);
     Ok(())

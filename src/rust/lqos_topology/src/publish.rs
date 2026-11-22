@@ -594,7 +594,7 @@ fn diagnose_operator_view_generation(
         }
     };
     if file_generation == effective_generation {
-        tracing::info!(
+        tracing::debug!(
             "Topology operator-view diag: file generation MATCHES status {effective_generation} (roundtrip={roundtrip_generation:?}, skipped_write={write_skipped}, file_mtime_unix={mtime_unix:?}, diag_path={path:?}, status_operator_view_path={status_path:?})"
         );
         return;
