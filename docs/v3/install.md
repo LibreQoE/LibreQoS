@@ -3,7 +3,7 @@
 LibreQoS v3 is the DPDK dataplane plus the `lqosd` control plane. Pick the path
 that matches your host:
 
-- **Fresh install**: a new Ubuntu 24.04 host (below).
+- **Fresh install**: a new Ubuntu Server 26.04 host (below).
 - **Upgrade**: a host already running v3 (below).
 - **v2.0 to v3**: a production v2 host. See
   [Upgrading from v2.0](upgrade-from-v2.md).
@@ -12,7 +12,8 @@ that matches your host:
 
 See [System Requirements](requirements.md) for the hardware. In short:
 
-- Ubuntu Server 24.04 LTS or newer, with root/sudo.
+- Ubuntu Server 26.04 LTS (recommended) with root/sudo. 24.04 LTS is still
+  supported.
 - Two supported dataplane NICs, or one for an on-a-stick trunk. The dataplane
   NICs must have no management address and no bridge/bond/VLAN on top of them.
 - Hugepages: the installer reserves 3072 × 2M pages. If that fails, add

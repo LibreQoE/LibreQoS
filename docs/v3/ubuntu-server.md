@@ -2,9 +2,9 @@
 
 **Version: LibreQoS v3.**
 
-LibreQoS v3 needs Ubuntu Server 24.04 LTS or newer. Download it from
-[ubuntu.com](https://ubuntu.com/download/server), boot it from USB, and follow
-the installer. The screenshots below are from 24.04.
+We recommend Ubuntu Server 26.04 LTS; 24.04 LTS is also supported. Download
+it from [ubuntu.com](https://ubuntu.com/download/server), boot it from USB, and
+follow the installer. The screenshots below are from 24.04.
 
 <img width="1287" alt="01 select-language" src="https://github.com/user-attachments/assets/af33c525-129c-4ecc-9e35-0ca4fd69b192" />
 

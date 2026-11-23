@@ -201,6 +201,22 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // PLACEMENT_STALE instrument: one read-only fetch of the bridge's applied
+    // report, with the placement-identity verdict against the desired world.
+    if std::env::args().any(|arg| arg == "--print-applied-report") {
+        let args: Vec<String> = std::env::args().collect();
+        let value = |flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .and_then(|index| args.get(index + 1))
+                .map(std::path::PathBuf::from)
+        };
+        std::process::exit(bridge_broker::print_applied_report(
+            value("--socket"),
+            value("--artifact"),
+        ));
+    }
+
     // Set up logging
     set_console_logging()?;
 

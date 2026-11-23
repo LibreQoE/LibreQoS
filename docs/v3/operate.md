@@ -48,6 +48,24 @@ Switching the queue mode between `shape` and `observe` (the **Queue Mode**
 toggle in the WebUI) does not need a bridge restart. LibreQoS re-syncs and
 applies the change; the bridge keeps running and traffic is not interrupted.
 
+## CPU autobalancing
+
+The bridge spreads sites and APs across its workers when the configuration is
+published, and that placement keeps most hosts evenly loaded. Automatic
+rebalancing while running ("autobalancing") is **off by default**.
+
+Turn it on only if one worker stays well above the others for long periods.
+Check this in the WebUI's CPU & Workers view. Add this line to
+`/etc/libreqos/bridge.env` and restart `libreqos-bridge`:
+
+```bash
+LIBREQOS_DPDK_PLACEMENT_AUTOBALANCE=1
+```
+
+Each rebalancing move briefly pauses the workers, so do not turn it on to fix
+a host whose workers are all busy; that host needs more CPU. To turn it off
+again, remove the line (or set it to `0`) and restart the bridge.
+
 ## WebUI and API
 
 `lqosd` serves the dashboard on port 9123 and the local API. The dashboard frame

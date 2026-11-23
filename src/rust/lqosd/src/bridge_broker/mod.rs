@@ -390,6 +390,152 @@ fn ensure_desired_boot_manifest(config: &lqos_config::Config, artifact_path: &st
     }
 }
 
+/// `lqosd --print-applied-report [--socket PATH] [--artifact PATH]`: a read-only probe for the
+/// PLACEMENT_STALE identity terms. Fetches the bridge's applied-state report
+/// ONCE (the same request the broker's cadence re-read makes), adopts it into
+/// a scratch [`applied::AppliedState`], and prints the identity verdict against
+/// the desired artifact as JSON. Writes nothing; needs root (the analytics
+/// socket). The same-generation divergence term needs two reads, so a single
+/// probe cannot show it. Returns the process exit code.
+pub fn print_applied_report(socket_override: Option<PathBuf>, artifact_override: Option<PathBuf>) -> i32 {
+    // With BOTH paths given the probe never loads the config: `load_config`
+    // can write migration stamps, and the probe must be read-only by
+    // construction on a production host.
+    let config = if socket_override.is_some() && artifact_override.is_some() {
+        None
+    } else {
+        match lqos_config::load_config() {
+            Ok(config) => Some(config),
+            Err(error) => {
+                println!("{}", serde_json::json!({ "error": format!("config: {error:?}") }));
+                return 1;
+            }
+        }
+    };
+    let Some(socket) = socket_override.or_else(|| {
+        config
+            .as_deref()
+            .and_then(crate::bridge_analytics::analytics_socket_path_if_active)
+    }) else {
+        println!(
+            "{}",
+            serde_json::json!({
+                "error": "no analytics socket; pass --socket PATH (the LIBREQOS_ANALYTICS_SOCKET \
+                          value from `systemctl show libreqos-lqosd -p Environment`)"
+            })
+        );
+        return 1;
+    };
+    let Some(artifact_path) = artifact_override
+        .or_else(|| config.as_deref().map(topology_dataplane_transaction_path))
+    else {
+        println!("{}", serde_json::json!({ "error": "no desired artifact path" }));
+        return 1;
+    };
+    let (tx, content_key, desired_world_content_key, slot_order, owners, slot_numbers) =
+        match adopt_bridge_baseline(&socket) {
+            AdoptedBaseline::Report {
+                tx,
+                content_key,
+                desired_world_content_key,
+                slot_order,
+                owners,
+                slot_numbers,
+                workers: _,
+            } => (tx, content_key, desired_world_content_key, slot_order, owners, slot_numbers),
+            AdoptedBaseline::Unavailable(reason) => {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "error": format!("the bridge's applied-state report is unavailable: {reason}"),
+                        "socket": socket.display().to_string(),
+                    })
+                );
+                return 1;
+            }
+        };
+    let content_key = if content_key.is_empty() {
+        translate::content_key(&tx)
+    } else {
+        content_key
+    };
+    let desired_world_content_key = if desired_world_content_key.is_empty() {
+        content_key.clone()
+    } else {
+        desired_world_content_key
+    };
+    let numbers = slot_numbers.clone().unwrap_or_default();
+    let numbers_increasing = numbers.windows(2).all(|pair| pair[0] < pair[1]);
+    let first_out_of_order = numbers
+        .windows(2)
+        .position(|pair| pair[0] >= pair[1])
+        .map(|index| (index + 1, numbers[index], numbers[index + 1]));
+    let report_generation = tx.generation.clone();
+    let report_leaves = tx.leaf_ops.len();
+    let order_len = slot_order.as_ref().map(Vec::len);
+    let owners_len = owners.as_ref().map(Vec::len);
+    let reported = applied::AppliedGeneration {
+        generation: tx.generation.clone(),
+        content_key: content_key.clone(),
+        desired_world_content_key: Some(desired_world_content_key.clone()),
+        slot_order,
+        owners,
+        slot_numbers,
+    };
+    let mut scratch = applied::AppliedState::default();
+    scratch.adopt(reported, tx);
+    let desired = std::fs::read_to_string(&artifact_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<DataplaneTransaction>(&raw).ok());
+    let desired_json = desired.as_ref().map(|desired| {
+        serde_json::json!({
+            "generation": desired.generation,
+            "content_key": translate::content_key(desired),
+            "leaf_ops": desired.leaf_ops.len(),
+        })
+    });
+    let verdict = match desired.as_ref() {
+        Some(desired) => match placement_identity_check(&scratch, desired) {
+            Ok(()) => "converged".to_string(),
+            Err(mismatch) => mismatch.to_string(),
+        },
+        None => format!("desired artifact {} unreadable", artifact_path.display()),
+    };
+    let keys_equal = desired
+        .as_ref()
+        .map(|desired| translate::content_key(desired) == desired_world_content_key);
+    let report = serde_json::json!({
+        "socket": socket.display().to_string(),
+        "report": {
+            "generation": report_generation,
+            "content_key": content_key,
+            "desired_world_content_key": desired_world_content_key,
+            "leaf_ops": report_leaves,
+            "slot_order": order_len,
+            "slot_numbers": numbers.len(),
+            "owners": owners_len,
+            "slot_numbers_increasing": numbers_increasing,
+            "first_out_of_order": first_out_of_order,
+            "slot_numbers_min": numbers.iter().min(),
+            "slot_numbers_max": numbers.iter().max(),
+        },
+        "adopted": {
+            "owners_reported": scratch.owners_reported(),
+            "owner_map": scratch.owners().len(),
+            "owner_table": scratch.slot_owners().len(),
+        },
+        "desired": desired_json,
+        "desired_key_equals_report_desired_key": keys_equal,
+        "identity": verdict,
+        "note": "the same-generation divergence term needs two reads; one probe cannot show it",
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).unwrap_or_else(|_| report.to_string())
+    );
+    0
+}
+
 pub fn start_bridge_broker(config: &lqos_config::Config) {
     if STARTED.set(()).is_err() {
         return;
@@ -946,6 +1092,7 @@ fn bridge_json(convergence: &BridgeConvergenceSnapshot) -> serde_json::Value {
             .unwrap_or(serde_json::Value::Null),
         "autobalance": {
             "configured": configured,
+            "effective": crate::node_manager::local_api::dpdk_status::effective_autobalance(configured),
             "runtime": serde_json::Value::Null,
             "reason": "log_only",
         },
@@ -1888,6 +2035,7 @@ fn placement_unconverged_reason(
     state: &BrokerState,
     applied_key: Option<&str>,
     desired_key: Option<&str>,
+    desired: Option<&DataplaneTransaction>,
 ) -> String {
     if desired_key.is_none() {
         return "no desired world key".to_string();
@@ -1907,7 +2055,11 @@ fn placement_unconverged_reason(
     if !state.applied.owners_reported() {
         return "owners not reported".to_string();
     }
-    "slot-map identity mismatch (names / slots / owners / holes)".to_string()
+    match desired.map(|desired| placement_identity_check(&state.applied, desired)) {
+        Some(Err(mismatch)) => mismatch.to_string(),
+        Some(Ok(())) => "identity matches now (transient; clears on the next tick)".to_string(),
+        None => "slot-map identity mismatch (no desired world to compare)".to_string(),
+    }
 }
 
 /// W3: the placement identity the broker can prove from the applied report:
@@ -1917,10 +2069,129 @@ fn placement_unconverged_reason(
 /// non-empty world carries the owner table. The incarnations remain the
 /// bridge-side S2b backstop.
 fn placement_identity_matches(state: &BrokerState, desired: &DataplaneTransaction) -> bool {
-    if state.applied.provenance() != Some(applied::BaseProvenance::Report)
-        || !state.applied.owners_reported()
-    {
-        return false;
+    placement_identity_check(&state.applied, desired).is_ok()
+}
+
+/// How many example names a [`IdentityMismatch::NameSet`] carries.
+const IDENTITY_EXAMPLE_NAMES: usize = 3;
+
+/// Which placement-identity term failed, with the counts that localize it.
+/// Diagnostic only: [`placement_identity_check`] fails exactly when the old
+/// boolean rule failed; this only names the term (the PLACEMENT_STALE text and
+/// `lqosd --print-applied-report`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum IdentityMismatch {
+    /// The base is not report-proven.
+    NotReportProvenance,
+    /// The last report carried no owner table.
+    OwnersNotReported,
+    /// The desired leaf names and the report's `slot_order` names differ.
+    NameSet {
+        desired: usize,
+        applied: usize,
+        desired_only: usize,
+        applied_only: usize,
+        desired_only_examples: Vec<String>,
+        applied_only_examples: Vec<String>,
+    },
+    /// `slot_order` / `slot_numbers` / owner map are not the same length.
+    ParallelLengths {
+        slot_order: usize,
+        slot_numbers: usize,
+        owners: usize,
+    },
+    /// A non-empty world but the numeric owner table was rejected/empty.
+    OwnerTableEmpty {
+        desired: usize,
+        slot_order: usize,
+        slot_numbers: usize,
+    },
+    /// The numeric table is not sized to the highest live slot.
+    TableSize { table: usize, max_live: u64 },
+    /// Live numeric slots with no owner, and/or owned rows at non-live slots.
+    TableRows {
+        live_holes: usize,
+        stale_rows: usize,
+        first_slot: usize,
+    },
+    /// Owned live rows do not match the live slot count.
+    LiveCount { table_live: usize, live: usize },
+    /// The ordered map changed under the same (desired key, generation).
+    SlotMapDiverged,
+}
+
+impl std::fmt::Display for IdentityMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotReportProvenance => write!(f, "applied base is not report-proven"),
+            Self::OwnersNotReported => write!(f, "owners not reported"),
+            Self::NameSet {
+                desired,
+                applied,
+                desired_only,
+                applied_only,
+                desired_only_examples,
+                applied_only_examples,
+            } => write!(
+                f,
+                "slot-map names differ: desired {desired} vs applied {applied}; \
+                 {desired_only} desired-only {desired_only_examples:?}, \
+                 {applied_only} applied-only {applied_only_examples:?}"
+            ),
+            Self::ParallelLengths {
+                slot_order,
+                slot_numbers,
+                owners,
+            } => write!(
+                f,
+                "slot-map lists not parallel: slot_order {slot_order}, slot_numbers \
+                 {slot_numbers}, owners {owners}"
+            ),
+            Self::OwnerTableEmpty {
+                desired,
+                slot_order,
+                slot_numbers,
+            } => write!(
+                f,
+                "owner table rejected or empty for {desired} desired circuits \
+                 (slot_order {slot_order}, slot_numbers {slot_numbers})"
+            ),
+            Self::TableSize { table, max_live } => write!(
+                f,
+                "owner table size {table} != highest live slot {max_live} + 1"
+            ),
+            Self::TableRows {
+                live_holes,
+                stale_rows,
+                first_slot,
+            } => write!(
+                f,
+                "owner table rows: {live_holes} live slot(s) without an owner, \
+                 {stale_rows} owned row(s) at non-live slots (first at slot {first_slot})"
+            ),
+            Self::LiveCount { table_live, live } => write!(
+                f,
+                "owner table live rows {table_live} != live slots {live}"
+            ),
+            Self::SlotMapDiverged => write!(
+                f,
+                "slot map changed under the same desired key and generation"
+            ),
+        }
+    }
+}
+
+/// The W3 identity rule, naming the first failing term. `Ok` exactly when the
+/// pre-instrument boolean rule held (same terms, same order).
+fn placement_identity_check(
+    applied: &applied::AppliedState,
+    desired: &DataplaneTransaction,
+) -> Result<(), IdentityMismatch> {
+    if applied.provenance() != Some(applied::BaseProvenance::Report) {
+        return Err(IdentityMismatch::NotReportProvenance);
+    }
+    if !applied.owners_reported() {
+        return Err(IdentityMismatch::OwnersNotReported);
     }
     let desired_names: BTreeSet<&str> = desired
         .leaf_ops
@@ -1930,32 +2201,55 @@ fn placement_identity_matches(state: &BrokerState, desired: &DataplaneTransactio
             _ => None,
         })
         .collect();
-    let applied_names: BTreeSet<&str> = state
-        .applied
-        .slot_order()
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let applied_names: BTreeSet<&str> = applied.slot_order().iter().map(String::as_str).collect();
     if desired_names != applied_names {
-        return false;
+        let desired_only: Vec<&str> = desired_names.difference(&applied_names).copied().collect();
+        let applied_only: Vec<&str> = applied_names.difference(&desired_names).copied().collect();
+        return Err(IdentityMismatch::NameSet {
+            desired: desired_names.len(),
+            applied: applied_names.len(),
+            desired_only: desired_only.len(),
+            applied_only: applied_only.len(),
+            desired_only_examples: desired_only
+                .iter()
+                .take(IDENTITY_EXAMPLE_NAMES)
+                .map(|name| (*name).to_string())
+                .collect(),
+            applied_only_examples: applied_only
+                .iter()
+                .take(IDENTITY_EXAMPLE_NAMES)
+                .map(|name| (*name).to_string())
+                .collect(),
+        });
     }
-    if state.applied.slot_order().len() != state.applied.slot_numbers().len()
-        || state.applied.slot_numbers().len() != state.applied.owners().len()
+    if applied.slot_order().len() != applied.slot_numbers().len()
+        || applied.slot_numbers().len() != applied.owners().len()
     {
-        return false;
+        return Err(IdentityMismatch::ParallelLengths {
+            slot_order: applied.slot_order().len(),
+            slot_numbers: applied.slot_numbers().len(),
+            owners: applied.owners().len(),
+        });
     }
     // The numeric-indexed table's holes are LEGAL (a removed circuit's row);
     // a hole in a LIVE numeric slot, or a stale live row at a non-live numeric,
     // is not. Index 0 is the reserved best-effort row.
-    let numbers = state.applied.slot_numbers();
-    let table = state.applied.slot_owners();
+    let numbers = applied.slot_numbers();
+    let table = applied.slot_owners();
     if !desired_names.is_empty() && table.is_empty() {
-        return false;
+        return Err(IdentityMismatch::OwnerTableEmpty {
+            desired: desired_names.len(),
+            slot_order: applied.slot_order().len(),
+            slot_numbers: numbers.len(),
+        });
     }
     if !numbers.is_empty() {
-        let max_live = numbers.iter().copied().max().unwrap_or(0) as usize;
-        if table.len() != max_live + 1 {
-            return false;
+        let max_live = numbers.iter().copied().max().unwrap_or(0);
+        if table.len() != max_live as usize + 1 {
+            return Err(IdentityMismatch::TableSize {
+                table: table.len(),
+                max_live,
+            });
         }
     }
     let live: BTreeSet<usize> = numbers
@@ -1963,28 +2257,44 @@ fn placement_identity_matches(state: &BrokerState, desired: &DataplaneTransactio
         .filter_map(|n| usize::try_from(*n).ok())
         .collect();
     let mut table_live = 0usize;
+    let mut live_holes = 0usize;
+    let mut stale_rows = 0usize;
+    let mut first_slot: Option<usize> = None;
     for (idx, &owner) in table.iter().enumerate() {
         if idx == 0 {
             continue; // reserved best-effort row
         }
         if live.contains(&idx) {
             if owner == u16::MAX {
-                return false; // a hole in a LIVE slot
+                live_holes += 1; // a hole in a LIVE slot
+                first_slot.get_or_insert(idx);
+            } else {
+                table_live += 1;
             }
-            table_live += 1;
         } else if owner != u16::MAX {
-            return false; // a stale live row at a non-live numeric
+            stale_rows += 1; // a stale live row at a non-live numeric
+            first_slot.get_or_insert(idx);
         }
     }
+    if live_holes > 0 || stale_rows > 0 {
+        return Err(IdentityMismatch::TableRows {
+            live_holes,
+            stale_rows,
+            first_slot: first_slot.unwrap_or(0),
+        });
+    }
     if table_live != live.len() {
-        return false;
+        return Err(IdentityMismatch::LiveCount {
+            table_live,
+            live: live.len(),
+        });
     }
     // A same (desired key, generation) map change is a divergence; a new
     // key/generation is a new world and resets the converged map.
-    if state.applied.slot_map_diverged() {
-        return false;
+    if applied.slot_map_diverged() {
+        return Err(IdentityMismatch::SlotMapDiverged);
     }
-    true
+    Ok(())
 }
 
 /// W3: the ONE placement-convergence rule. Compares the desired world key with
@@ -2045,7 +2355,12 @@ fn refresh_placement_stale(state: &mut BrokerState, desired_now: Option<&Datapla
                 elapsed.as_secs(),
                 applied_key.as_deref(),
                 desired_key.as_deref(),
-                placement_unconverged_reason(state, applied_key.as_deref(), desired_key.as_deref()),
+                placement_unconverged_reason(
+                    state,
+                    applied_key.as_deref(),
+                    desired_key.as_deref(),
+                    Some(desired),
+                ),
             ),
             None,
             Some("bridge-broker:placement-stale".to_string()),
@@ -4286,7 +4601,7 @@ mod ghost_segment_tests {
         assert!(state.placement_stale_reported, "an unconverged desired change alerts at the bound");
         assert_eq!(state.placement_stale_episodes, 1);
         assert_eq!(
-            super::placement_unconverged_reason(&state, Some("tx-b207"), Some("tx-next")),
+            super::placement_unconverged_reason(&state, Some("tx-b207"), Some("tx-next"), None),
             "applied key differs from desired"
         );
         // (4) Semantics kept: identical keys but a report that NEVER confirms still alerts.
@@ -4298,9 +4613,59 @@ mod ghost_segment_tests {
         super::refresh_placement_stale(&mut stuck, Some(&tx));
         assert!(stuck.placement_stale_reported, "an unconfirmed fold still alerts at the bound");
         assert!(
-            super::placement_unconverged_reason(&stuck, Some("tx-b207"), Some("tx-b207")).starts_with("applied report pending"),
+            super::placement_unconverged_reason(&stuck, Some("tx-b207"), Some("tx-b207"), None).starts_with("applied report pending"),
             "the message names the failing term"
         );
+    }
+
+    /// Instrument (PLACEMENT_STALE "slot-map identity mismatch"): the check
+    /// names the failing term with counts, and agrees with the boolean rule.
+    #[test]
+    fn placement_identity_check_names_the_failing_term() {
+        let key = "tx-ident";
+        let report_tx = fence_tx(&["c1", "c2"]);
+        // Converged: Ok, and the boolean rule agrees.
+        let mut state = test_state(None);
+        state
+            .applied
+            .adopt(map_report("g-1", key, &["c1", "c2"], &[0, 1], &[1, 2]), report_tx.clone());
+        assert_eq!(super::placement_identity_check(&state.applied, &report_tx), Ok(()));
+        assert!(super::placement_identity_matches(&state, &report_tx));
+
+        // A desired circuit the report does not carry: NameSet with counts.
+        let desired = fence_tx(&["c1", "c2", "c3"]);
+        let err = super::placement_identity_check(&state.applied, &desired)
+            .expect_err("a desired-only name fails");
+        assert_eq!(
+            err,
+            super::IdentityMismatch::NameSet {
+                desired: 3,
+                applied: 2,
+                desired_only: 1,
+                applied_only: 0,
+                desired_only_examples: vec!["c3".to_string()],
+                applied_only_examples: vec![],
+            }
+        );
+        assert!(!super::placement_identity_matches(&state, &desired));
+        state.last_desired_world_key = Some(key.to_string());
+        let reason = super::placement_unconverged_reason(&state, Some(key), Some(key), Some(&desired));
+        assert!(
+            reason.contains("1 desired-only [\"c3\"]"),
+            "the alert names the missing circuit: {reason}"
+        );
+
+        // Numerics out of row order (a middle remove+add on the bridge): the
+        // owner table is rejected today (the owner map empties), and the check
+        // says so by name.
+        let mut out_of_order = test_state(None);
+        out_of_order
+            .applied
+            .adopt(map_report("g-2", key, &["c1", "c2"], &[0, 1], &[2, 1]), report_tx.clone());
+        assert!(matches!(
+            super::placement_identity_check(&out_of_order.applied, &report_tx),
+            Err(super::IdentityMismatch::ParallelLengths { slot_order: 2, slot_numbers: 2, owners: 0 })
+        ));
     }
 
     /// W3: the exact 2026-11-12 incident shape. Applied desired key

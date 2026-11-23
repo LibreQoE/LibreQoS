@@ -59,6 +59,7 @@ fn bridge() -> BridgeSection {
         deferred_maintenance: None,
         autobalance: AutobalanceSection {
             configured: Some(true),
+            effective: Some(true),
             runtime: None,
             reason: Some("log_only".to_string()),
         },

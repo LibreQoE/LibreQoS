@@ -8,7 +8,8 @@ LibreQoS v3 runs on a dedicated physical server or in a VM.
 
 ## Operating system
 
-- Ubuntu Server 24.04 LTS or newer (preflight blocks older releases). See
+- Ubuntu Server 26.04 LTS (recommended). 24.04 LTS is still supported; the
+  preflight blocks anything older. See
   [Install Ubuntu Server](ubuntu-server.md).
 - Root or sudo access.
 - About 50 GB of disk.

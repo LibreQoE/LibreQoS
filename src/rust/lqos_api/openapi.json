@@ -7854,6 +7854,13 @@
             ],
             "description": "The CONFIGURED posture from `bridge.env` (`None` = absent/unreadable)."
           },
+          "effective": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The EFFECTIVE posture: `configured`, else the bridge default (OFF since\ndocs/autobalance_default_off_card.md). `None` only when unavailable."
+          },
           "reason": {
             "type": [
               "string",

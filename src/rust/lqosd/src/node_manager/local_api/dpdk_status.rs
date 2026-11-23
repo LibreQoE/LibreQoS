@@ -225,6 +225,16 @@ fn read_bridge_env() -> BTreeMap<String, String> {
     bridge_env
 }
 
+/// The bridge's autobalance default when `bridge.env` does not set the key.
+/// Mirrors `placement_autobalance_enabled()` in `bridge_rs/src/config.rs`
+/// (DEFAULT OFF since docs/autobalance_default_off_card.md); change both together.
+pub(crate) const AUTOBALANCE_DEFAULT: bool = false;
+
+/// The EFFECTIVE autobalance posture: the configured value, else the default.
+pub(crate) fn effective_autobalance(configured: Option<bool>) -> bool {
+    configured.unwrap_or(AUTOBALANCE_DEFAULT)
+}
+
 /// `lqos-74t.118.2`: the CONFIGURED bridge autobalance posture from
 /// `bridge.env`. `None` = the key is absent/unparseable; runtime ACTIVE state is
 /// not exposed by the bridge (log-only), so the API reports `runtime: null`.
@@ -624,6 +634,16 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docs/autobalance_default_off_card.md: an absent key reports OFF, never
+    /// "unknown" or on; an explicit value wins.
+    #[test]
+    fn effective_autobalance_defaults_off_and_respects_the_configured_value() {
+        assert!(!AUTOBALANCE_DEFAULT);
+        assert!(!effective_autobalance(None));
+        assert!(effective_autobalance(Some(true)));
+        assert!(!effective_autobalance(Some(false)));
+    }
 
     fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

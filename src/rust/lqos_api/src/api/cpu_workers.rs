@@ -182,6 +182,10 @@ pub struct DeferredMaintenanceSection {
 pub struct AutobalanceSection {
     /// The CONFIGURED posture from `bridge.env` (`None` = absent/unreadable).
     pub configured: Option<bool>,
+    /// The EFFECTIVE posture: `configured`, else the bridge default (OFF since
+    /// docs/autobalance_default_off_card.md). `None` only when unavailable.
+    #[serde(default)]
+    pub effective: Option<bool>,
     /// Runtime ACTIVE/INACTIVE is log-only in v1; always `null`.
     pub runtime: Option<bool>,
     pub reason: Option<String>,
@@ -191,6 +195,7 @@ impl AutobalanceSection {
     fn unavailable(reason: &str) -> Self {
         Self {
             configured: None,
+            effective: None,
             runtime: None,
             reason: Some(reason.to_string()),
         }
