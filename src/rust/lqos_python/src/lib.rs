@@ -2125,7 +2125,7 @@ fn fast_queues_fq_codel() -> PyResult<f32> {
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps as u32)
+    Ok(config.queues.downlink_bandwidth_mbps as u32)
 }
 
 #[pyfunction]
