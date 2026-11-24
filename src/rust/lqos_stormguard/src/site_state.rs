@@ -1799,6 +1799,48 @@ mod tests {
     }
 
     #[test]
+    fn delay_probe_increase_stops_at_max() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        // 28 * 1.15 = 32 overshoots the 30 Mbps max: the step must land on 30
+        let mut site = site_state(10, 28, 50, 30);
+        site.current_throughput = (0.0, 25.0);
+        site.current_rtt_ms = Some(610.0);
+        site.rtt_baseline_ms = Some(600.0);
+        site.ticks_since_last_probe_upload = 10;
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Upload
+                && r.action == RecommendationAction::Increase
+        }));
+        let decision = site.decision(RecommendationDirection::Upload);
+        assert_eq!(decision.target_mbps, Some(30));
+        assert!(decision.blocker.is_none());
+    }
+
+    #[test]
+    fn delay_probe_decrease_stops_at_min() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        // 16 * 0.88 = 14 undershoots the 15 Mbps min: the step must land on 15
+        let mut site = site_state(10, 16, 50, 30);
+        site.config.min_upload_mbps = 15;
+        site.current_throughput = (0.0, 15.0);
+        site.current_rtt_ms = Some(900.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Upload
+                && r.action == RecommendationAction::DecreaseFast
+        }));
+        let decision = site.decision(RecommendationDirection::Upload);
+        assert_eq!(decision.target_mbps, Some(15));
+        assert!(decision.blocker.is_none());
+    }
+
+    #[test]
     fn cooldown_records_candidate_without_emitting_recommendation() {
         let cfg = test_config(StormguardStrategy::DelayProbe);
         let mut site = site_state(20, 20, 50, 50);
