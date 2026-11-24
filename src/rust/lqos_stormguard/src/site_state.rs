@@ -1799,6 +1799,56 @@ mod tests {
     }
 
     #[test]
+    fn delay_probe_ignores_retransmits_on_an_idle_queue() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(20, 20, 20, 20);
+        // 0.04 Mbps on a 20 Mbps queue: a few TCP packets, one retransmit is a quarter of them
+        site.current_throughput = (0.0, 0.04);
+        for _ in 0..10 {
+            site.retransmits_up.add(0.25);
+        }
+        site.current_rtt_ms = Some(600.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(
+            !recs
+                .iter()
+                .any(|(r, _)| r.direction == RecommendationDirection::Upload)
+        );
+        let decision = site.decision(RecommendationDirection::Upload);
+        assert!(decision.candidate_action.is_none());
+        assert!(
+            decision
+                .reason
+                .contains("retransmits=0.250 (ignored: load < 0.10)")
+        );
+    }
+
+    #[test]
+    fn delay_probe_still_cuts_on_retransmits_under_load() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(20, 20, 20, 20);
+        // 5 Mbps through a 20 Mbps queue: the uplink itself may have shrunk
+        site.current_throughput = (0.0, 5.0);
+        for _ in 0..10 {
+            site.retransmits_up.add(0.25);
+        }
+        site.current_rtt_ms = Some(600.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Upload
+                && r.action == RecommendationAction::DecreaseFast
+        }));
+        let decision = site.decision(RecommendationDirection::Upload);
+        assert!(decision.reason.contains("retransmits=0.250;"));
+    }
+
+    #[test]
     fn cooldown_records_candidate_without_emitting_recommendation() {
         let cfg = test_config(StormguardStrategy::DelayProbe);
         let mut site = site_state(20, 20, 50, 50);

@@ -10,6 +10,11 @@ use allocative::Allocative;
 use std::time::Instant;
 use tracing::{debug, info};
 
+/// Below this load ratio (throughput / queue rate) delay_probe ignores the retransmit signal.
+/// An idle queue cannot be the cause of the loss, so a rate cut cannot help, and with only a
+/// few TCP packets per tick a single retransmit is a large fraction of them.
+const LOSS_SIGNAL_MIN_LOAD_RATIO: f64 = 0.10;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DirectionDecision {
     pub(crate) score: Option<f64>,
@@ -542,14 +547,16 @@ impl SiteState {
             severe_bloat = delay >= fast_threshold_ms || ratio >= fast_threshold_ratio;
         }
 
-        let high_loss = retransmits_avg.is_some_and(|p| p >= 0.10);
-        let moderate_loss = retransmits_avg.is_some_and(|p| p >= 0.05);
-
         let load_ratio = if queue_mbps > 0 {
             throughput_mbps / queue_mbps as f64
         } else {
             0.0
         };
+
+        let loss_signal_allowed = load_ratio >= LOSS_SIGNAL_MIN_LOAD_RATIO;
+        let high_loss = loss_signal_allowed && retransmits_avg.is_some_and(|p| p >= 0.10);
+        let moderate_loss = loss_signal_allowed && retransmits_avg.is_some_and(|p| p >= 0.05);
+
         let ticks_since_last_probe = match direction {
             RecommendationDirection::Download => self.ticks_since_last_probe_download,
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload,
@@ -599,7 +606,14 @@ impl SiteState {
             "{evaluation_reason}; delay={} ms (decrease {threshold_ms:.1}, fast {fast_threshold_ms:.1}); delay ratio={} (decrease {threshold_ratio:.2}, fast {fast_threshold_ratio:.2}); retransmits={}; load ratio={load_ratio:.3}; probe requirements: delay <= {good_threshold_ms:.1} ms, ratio <= {good_threshold_ratio:.2}, load >= 0.800, age >= {probe_interval_ticks} ticks; current probe age={ticks_since_last_probe} ticks",
             format_metric(delay_ms),
             format_metric(delay_ratio),
-            format_metric(retransmits_avg),
+            if loss_signal_allowed || retransmits_avg.is_none() {
+                format_metric(retransmits_avg)
+            } else {
+                format!(
+                    "{} (ignored: load < {LOSS_SIGNAL_MIN_LOAD_RATIO:.2})",
+                    format_metric(retransmits_avg)
+                )
+            },
         );
 
         let target_mbps = action.and_then(|action| {
