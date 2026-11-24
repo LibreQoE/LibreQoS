@@ -35,7 +35,9 @@ static __always_inline __be16 kprobe_scan_current_vlan(struct sk_buff *skb)
         if (bpf_probe_read_kernel(&vlan, sizeof(vlan), data + offset) < 0) {
             break;
         }
-        current_vlan = vlan.h_vlan_TCI;
+        if (i == 0) {
+            current_vlan = lqos_vlan_vid(vlan.h_vlan_TCI);
+        }
         eth_type = bpf_ntohs(vlan.h_vlan_encapsulated_proto);
         offset += sizeof(struct vlan_hdr_kprobe);
     }
@@ -61,7 +63,7 @@ static __always_inline __be16 kprobe_current_vlan(struct sk_buff *skb)
     // Prefer the skb metadata tag (matches TC egress behavior).
     __u16 vlan_tci = BPF_CORE_READ(skb, vlan_tci);
     if (vlan_tci) {
-        return bpf_htons(vlan_tci);
+        return lqos_vlan_vid(bpf_htons(vlan_tci));
     }
     // Fall back to scanning the L2 header for non-accelerated VLAN tags.
     return kprobe_scan_current_vlan(skb);
